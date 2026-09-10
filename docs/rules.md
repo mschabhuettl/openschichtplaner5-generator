@@ -102,7 +102,9 @@ des Planungszeitraums werden ausschließlich vorhandene Fixierungen eingeplant.
 
 ## Optimierung und unabhängige Kontrolle
 
-CP-SAT läuft lokal mit vier begrenzten Threads und festem Startwert 0. Ein erster
+CP-SAT läuft lokal mit einem Suchworker und festem Startwert 0. Diese Einstellung
+vermeidet einen in OR-Tools 9.15.6755 reproduzierten Absturz bei paralleler Suche.
+Ein erster
 Zulässigkeitslauf dient als Ausgangslösung. Bei mindestens 40 Personen wird davor
 eine zeitlich begrenzte, nach Arbeitslast geordnete Belegung versucht. Jede
 Erweiterung wird arithmetisch geprüft; der fertige Plan wird zusätzlich komplett

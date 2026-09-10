@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from . import __version__
 from .models import Snapshot, Result
 
 
@@ -21,6 +22,7 @@ def _write(value, path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="sp5-generator")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     demo = commands.add_parser("demo")
     demo.add_argument("--employees", type=int, default=12)
@@ -61,7 +63,7 @@ def main(argv=None):
                     json.dumps(
                         {
                             "error": "missing_web_dependencies",
-                            "message": "Install openschichtplaner5-generator[web,sp5]",
+                            "message": "Install openschichtplaner5-generator[web]",
                         }
                     ),
                     file=sys.stderr,

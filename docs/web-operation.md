@@ -31,8 +31,9 @@ einem kontrollierten Reverse-Proxy verwenden. Der Generator ist nicht als
 ## Aktualisieren und zurückwechseln
 
 Neben `latest` und dem Commit-Tag `sha-…` werden neue Images mit der
-Produktversion veröffentlicht, beispielsweise `:0.4.0`. Für reproduzierbare
-Installationen eine geprüfte Version oder einen Image-Digest festhalten.
+Produktversion veröffentlicht, beispielsweise `:0.7.0`. Da Versions-Tags bei
+erneuten Builds derselben Version ersetzt werden können, für reproduzierbare
+Installationen den getesteten Commit-Tag oder einen Image-Digest festhalten.
 Vor Updates eines persistenten Betriebs das Zustandsvolume sichern. Beim
 temporären Stack ist keine Wiederherstellung vorgesehen: Importe und Entwürfe
 werden beim Neustart verworfen. Ein Imagewechsel kann diesen Verlust nicht

@@ -1,12 +1,38 @@
 # OpenSchichtplaner5 Generator
 
-Experimenteller, branchenneutraler Dienstplangenerator mit lokaler mathematischer Optimierung. Er unterstützt Vorschläge und deren unabhängige Prüfung; er ist keine institutionell freigegebene Lösung und garantiert keine Rechtskonformität.
+Branchenneutraler Dienstplangenerator mit lokaler mathematischer Optimierung, eigener Weboberfläche und CLI. Er erzeugt Dienstplanvorschläge, prüft sie unabhängig und exportiert sie als JSON, CSV oder Excel.
+
+**Version 0.7.0:** eigenständig installierbare Anwendung für lokale Planung und Export. Unterstützter Betriebsweg ist Linux mit Python 3.12 oder das Linux-amd64-Containerimage. Regelprofile müssen zum jeweiligen Einsatz passen; die Anwendung garantiert keine Rechtskonformität. [Änderungen und Grenzen dieser Version](docs/release-0.7.0.md).
 
 ## Stand
 
 Der allgemeine Python-Kern liest versionierte JSON-Snapshots, erzeugt vollständige oder ausdrücklich gekennzeichnete Teilpläne, prüft Regeln und exportiert JSON, CSV und XLSX. Konfigurierbar sind Funktionen, Arbeitsplätze, Freigaben, Qualifikationen, Verfügbarkeiten, wechselnde Wochenmodelle, Abwesenheiten, Fixierungen, Ruheprofile und Optimierungsgewichte. Eine eigene Weboberfläche mit Hintergrundworker ist enthalten; eine optionale Integration ergänzt die Generatoransicht im Schwesterprojekt.
 
-**Native SP5-Übernahme ist gesperrt.** Der lesende Adapter bewahrt ungeklärte Originalsemantik als blockierende Diagnosen. Eine transaktionale Übernahme ist ausschließlich für den ausdrücklich aktivierten, isolierten synthetischen Testbestand implementiert. Dieser Weg schreibt keine originalen Dienstpläne. Die SP5-Integration ist damit noch nicht vollständig abnahmefähig.
+**SP5 wird lesend angebunden.** Der Adapter bewahrt ungeklärte Originalsemantik als blockierende Diagnosen. Native Rückübernahme in originale SP5-Dienstpläne ist nicht implementiert. Die vollständige Schreibintegration ist nicht Bestandteil dieses Releases; der interne synthetische Übernahmetest ändert daran nichts.
+
+## Erster Start
+
+Nach dem Klonen bzw. Entpacken im Projektverzeichnis ausführen:
+
+```sh
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install -c requirements-web.lock '.[web,sp5]'
+python -m pip check
+sp5-generator --version
+sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
+```
+
+Im Browser `http://127.0.0.1:8080` öffnen. **Synthetische Demo laden**, **Speichern und berechnen**, anschließend **Entwurf prüfen** und **XLSX exportieren**. Dafür sind weder SP5-Bestand noch API oder Zugangsdaten erforderlich. Der Server startet den Berechnungsworker automatisch. Gespeicherte Stände und Aufträge liegen im Zustandsverzeichnis und können nach einem Neustart wieder geöffnet werden.
+
+Alternativ das Wheel aus dem Workflow-Artefakt `openschichtplaner5-generator-python` installieren:
+
+```sh
+python -m pip install './openschichtplaner5_generator-0.7.0-py3-none-any.whl[web,sp5]'
+sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
+```
+
+Das Extra `web` ergänzt die Oberfläche, `sp5` den DBF-Adapter. Für reine JSON-Planung über die CLI genügt die Installation ohne Extras. Native Windows-Ausführung wird nicht unterstützt; Worker und Dateisperren benötigen POSIX-Funktionen.
 
 ## Webbetrieb und Updates
 
@@ -14,12 +40,12 @@ Die Weboberfläche enthält eine Dienstmatrix, Monatsansichten und vollständige
 
 ## Eigenständig starten
 
-Python 3.12 oder neuer, empfohlen 3.12. Die Engine benötigt weder ein SP5-System noch einen laufenden Webserver.
+Python 3.12 unter Linux ist der geprüfte Referenzbetrieb. Die Engine benötigt weder ein SP5-System noch einen laufenden Webserver.
 
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install .
+python -m pip install -c requirements.lock .
 sp5-generator demo -o /tmp/example.json
 sp5-generator solve /tmp/example.json --time-limit 30 -o /tmp/result.json
 sp5-generator validate /tmp/example.json /tmp/result.json
@@ -37,7 +63,7 @@ sp5-generator schema input -o /tmp/input.schema.json
 sp5-generator schema result -o /tmp/result.schema.json
 ```
 
-Exitcodes: `0` vollständiger geprüfter Plan/erfolgreicher Export; `2` ungültige Eingabe oder Modell; `3` Teilplan bzw. unvollständige/fehlgeschlagene Prüfung; `4` bewiesen unlösbar; `5` noch keine Lösung. `FEASIBLE` bedeutet nicht bewiesene Optimalität. Der konkrete Solverstatus steht immer im Ergebnis. CLI-Fehler sind JSON auf stderr.
+Exitcodes: `0` vollständiger geprüfter Plan/erfolgreicher Export; `2` ungültige Eingabe oder Modell; `3` Teilplan bzw. unvollständige/fehlgeschlagene Prüfung; `4` bewiesen unlösbar; `5` noch keine Lösung. `FEASIBLE` bedeutet nicht bewiesene Optimalität. Der konkrete Solverstatus steht immer im Ergebnis. Verarbeitungsfehler sind JSON auf stderr; fehlerhafte Kommandozeilenargumente zeigt argparse mit Nutzungshinweis an.
 
 ## Eigenständige Weboberfläche
 
@@ -84,8 +110,12 @@ Für den lesenden SP5-Adapter zusätzlich `python -m pip install './openschichtp
 - [Jobs, Datenhaltung und Übernahme](docs/operations.md)
 - [Bedienung](docs/usage.md)
 - [Prüfungen und Benchmark](docs/verification.md)
+- [Release 0.7.0 und Aktualisierung](docs/release-0.7.0.md)
 
 ```sh
-python -m pip install '.[dev]'
+python -m pip install -c requirements-web.lock '.[dev,web,sp5]'
+python -m pip check
 python -m pytest -q
+python -m build
+python tools/check_distribution.py
 ```

@@ -19,7 +19,8 @@ class Conflict(ValueError):
 
 class Store:
     def __init__(self, path):
-        self.path = str(path)
+        # A symlink or relative spelling must not create a second worker lock.
+        self.path = str(Path(path).resolve())
         Path(self.path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.connect() as conn:
             conn.executescript("""
@@ -28,15 +29,22 @@ class Store:
             CREATE TABLE IF NOT EXISTS accepted(snapshot_id TEXT PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS receipts(key TEXT PRIMARY KEY,owner TEXT NOT NULL,job_id TEXT NOT NULL,payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,actor TEXT NOT NULL,job_id TEXT NOT NULL,created_at REAL NOT NULL,payload TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS jobs_queue ON jobs(state,created_at);
+            CREATE INDEX IF NOT EXISTS jobs_owner_created ON jobs(owner,created_at DESC);
             """)
         os.chmod(self.path, 0o600)
 
+    @contextlib.contextmanager
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=10, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=10000")
-        return conn
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=10000")
+            yield conn
+        finally:
+            # sqlite3.Connection.__exit__ commits/rolls back, but does not close.
+            conn.close()
 
     @contextlib.contextmanager
     def transaction(self):
@@ -80,14 +88,36 @@ class Store:
             raise KeyError(id)
         return Snapshot.model_validate_json(row["payload"])
 
-    def submit(self, id, owner, time_limit=30, partial=False):
+    def list_snapshots(self, owner):
+        """Summaries for reopening saved work, without personnel or source data."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT id,revision,
+                json_extract(payload,'$.created_at') AS created_at,
+                json_extract(payload,'$.period_start') AS period_start,
+                json_extract(payload,'$.period_end') AS period_end,
+                json_extract(payload,'$.source') AS source,
+                json_array_length(payload,'$.employees') AS employee_count
+                FROM snapshots WHERE owner=? ORDER BY rowid DESC""",
+                (owner,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def submit(self, id, owner, time_limit=30, partial=False, revision=None):
         if not 0 < time_limit <= 600:
             raise ValueError(
                 "Time limit must be greater than 0 and at most 600 seconds"
             )
-        snapshot = self.get_snapshot(id, owner)
         job_id = str(uuid.uuid4())
         with self.transaction() as conn:
+            snapshot = conn.execute(
+                "SELECT payload,revision FROM snapshots WHERE id=? AND owner=?",
+                (id, owner),
+            ).fetchone()
+            if not snapshot:
+                raise KeyError(id)
+            if revision is not None and str(revision) != str(snapshot["revision"]):
+                raise Conflict("Snapshot revision changed; reload before calculation")
             active = conn.execute(
                 "SELECT count(*) FROM jobs WHERE state IN ('queued','running')"
             ).fetchone()[0]
@@ -99,13 +129,42 @@ class Store:
                     job_id,
                     owner,
                     id,
-                    snapshot.model_dump_json(),
+                    snapshot["payload"],
                     "queued",
                     time.time(),
                     json.dumps({"time_limit": time_limit, "partial": partial}),
                 ),
             )
         return self.get_job(job_id, owner)
+
+    def list_jobs(self, owner, snapshot_id=None, limit=50):
+        """Return bounded job summaries; retrieve full results only on demand."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("Job list limit must be between 1 and 200")
+        query = """SELECT id,snapshot_id,state,created_at,started_at,finished_at,
+        parameters,error FROM jobs WHERE owner=?"""
+        parameters = [owner]
+        if snapshot_id is not None:
+            query += " AND snapshot_id=?"
+            parameters.append(snapshot_id)
+        query += " ORDER BY created_at DESC,rowid DESC LIMIT ?"
+        parameters.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(query, parameters).fetchall()
+        return [
+            {**dict(row), "parameters": json.loads(row["parameters"])}
+            for row in rows
+        ]
+
+    def get_job_snapshot(self, id, owner):
+        """Recover exactly the revision solved, even after later snapshot edits."""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM jobs WHERE id=? AND owner=?", (id, owner)
+            ).fetchone()
+        if not row:
+            raise KeyError(id)
+        return Snapshot.model_validate_json(row["payload"])
 
     def get_job(self, id, owner):
         with self.connect() as conn:
@@ -237,14 +296,31 @@ def _solve_child(path, job, parent_pid):
             )
 
 
-def run_worker(path, once=False):
+def _terminate_child(child):
+    """Bound shutdown even if a calculation ignores the graceful signal."""
+    if child.is_alive():
+        child.terminate()
+        child.join(5)
+        if child.is_alive():
+            child.kill()
+            child.join(5)
+        if child.is_alive():
+            raise RuntimeError("Calculation process could not be stopped")
+
+
+def run_worker(path, once=False, ready=None):
     store = Store(path)
-    lock = open(str(path) + ".worker.lock", "a")
+    lock = open(store.path + ".worker.lock", "a")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
+        lock.close()
         raise Conflict("A worker already owns this store") from None
+    except BaseException:
+        lock.close()
+        raise
     child = None
+    active_job = None
     stopping = False
 
     def stop(*_):
@@ -261,6 +337,8 @@ def run_worker(path, once=False):
                 "UPDATE jobs SET state='failed',error='Worker interrupted; explicit resubmission required',finished_at=? WHERE state='running'",
                 (time.time(),),
             )
+        if ready is not None:
+            ready.set()
         while not stopping:
             with store.transaction() as conn:
                 row = conn.execute(
@@ -268,6 +346,7 @@ def run_worker(path, once=False):
                 ).fetchone()
                 if row:
                     job = dict(row)
+                    active_job = job["id"]
                     conn.execute(
                         "UPDATE jobs SET state='running',started_at=? WHERE id=?",
                         (time.time(), job["id"]),
@@ -278,7 +357,7 @@ def run_worker(path, once=False):
                 time.sleep(0.25)
                 continue
             child = multiprocessing.get_context("spawn").Process(
-                target=_solve_child, args=(str(path), job, os.getpid())
+                target=_solve_child, args=(store.path, job, os.getpid())
             )
             child.start()
             deadline = (
@@ -290,25 +369,38 @@ def run_worker(path, once=False):
                         "SELECT state FROM jobs WHERE id=?", (job["id"],)
                     ).fetchone()[0]
                 if stopping or state == "cancelled" or time.monotonic() > deadline:
-                    child.terminate()
-                    child.join(5)
-                    if child.is_alive():
-                        child.kill()
+                    _terminate_child(child)
                     break
                 child.join(0.2)
             child.join()
             with store.connect() as conn:
                 conn.execute(
-                    "UPDATE jobs SET state='failed',error='Worker stopped before result',finished_at=? WHERE id=? AND state='running'",
-                    (time.time(), job["id"]),
+                    "UPDATE jobs SET state='failed',error=?,finished_at=? WHERE id=? AND state='running'",
+                    (
+                        f"Calculation process exited before result (exit code {child.exitcode})",
+                        time.time(),
+                        job["id"],
+                    ),
                 )
+            child.close()
             child = None
+            active_job = None
             if once:
                 break
     finally:
-        if child and child.is_alive():
-            child.terminate()
-            child.join()
-        signal.signal(signal.SIGINT, old_int)
-        signal.signal(signal.SIGTERM, old_term)
-        lock.close()
+        try:
+            if child is not None:
+                _terminate_child(child)
+                child.close()
+        finally:
+            try:
+                if active_job is not None:
+                    with store.connect() as conn:
+                        conn.execute(
+                            "UPDATE jobs SET state='failed',error='Worker stopped before result',finished_at=? WHERE id=? AND state='running'",
+                            (time.time(), active_job),
+                        )
+            finally:
+                signal.signal(signal.SIGINT, old_int)
+                signal.signal(signal.SIGTERM, old_term)
+                lock.close()

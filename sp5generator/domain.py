@@ -2,13 +2,14 @@
 
 import hashlib
 import json
+from collections import deque
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 from .models import Diagnostic
 from .timeutils import (
     minute,
     local_day,
-    localize,
+    availability_window,
     midnight,
     dates,
     segments,
@@ -41,12 +42,56 @@ def snapshot_hash(snapshot):
     ).hexdigest()
 
 
+def maximum_matching(adjacency):
+    """Map right vertices to left vertices without a recursion-depth limit."""
+    matched = {}
+    for root in adjacency:
+        parents = {root: None}
+        pending = deque([root])
+        seen = set()
+        augmented = False
+        while pending and not augmented:
+            left = pending.popleft()
+            for right in adjacency[left]:
+                if right in seen:
+                    continue
+                seen.add(right)
+                if right in matched:
+                    displaced = matched[right]
+                    if displaced not in parents:
+                        parents[displaced] = (left, right)
+                        pending.append(displaced)
+                    continue
+                # Reverse the alternating path ending at this free slot.
+                while True:
+                    matched[right] = left
+                    previous = parents[left]
+                    if previous is None:
+                        break
+                    left, right = previous
+                augmented = True
+                break
+    return matched
+
+
 def profiles_for(snapshot, employee, day):
     return [
         p
         for p in snapshot.profiles
         if p.id in employee.profile_ids and p.valid_from <= day <= p.valid_until
     ]
+
+
+def availability_active(availability, day):
+    return (
+        availability.valid_from <= day <= availability.valid_until
+        and day.weekday() in availability.weekdays
+        and (
+            availability.cycle_anchor is None
+            or ((day - availability.cycle_anchor).days // 7) % availability.cycle_weeks
+            == availability.cycle_phase
+        )
+    )
 
 
 def eligibility(snapshot, employee, demand):
@@ -106,27 +151,9 @@ def eligibility(snapshot, employee, demand):
         windows = []
         for day in dates(first - timedelta(days=1), last):
             for v in employee.availability:
-                if (
-                    not v.valid_from <= day <= v.valid_until
-                    or day.weekday() not in v.weekdays
-                ):
+                if not availability_active(v, day):
                     continue
-                if (
-                    v.cycle_anchor
-                    and ((day - v.cycle_anchor).days // 7) % v.cycle_weeks
-                    != v.cycle_phase
-                ):
-                    continue
-                start = minute(localize(day, v.start_time, snapshot.timezone))
-                end = minute(localize(day, v.end_time, snapshot.timezone))
-                if end <= start:
-                    end = minute(
-                        localize(day + timedelta(days=1), v.end_time, snapshot.timezone)
-                    )
-                end = min(
-                    end, midnight(v.valid_until + timedelta(days=1), snapshot.timezone)
-                )
-                windows.append((start, end))
+                windows.append(availability_window(day, v, snapshot.timezone))
         for start, end in segments(shift):
             cursor = start
             for x, y in sorted(windows):
@@ -170,7 +197,8 @@ def input_diagnostics(snapshot):
         return errors
     if (any(len(getattr(snapshot, key)) > limit
             for key, limit in COLLECTION_LIMITS.items())
-            or len(snapshot.employees) * len(snapshot.demands) > MAX_CANDIDATE_PAIRS):
+            or len(snapshot.employees) * len(snapshot.demands) > MAX_CANDIDATE_PAIRS
+            or sum(d.minimum for d in snapshot.demands) > MAX_ASSIGNMENTS):
         issue("size_limit", "Datensatz überschreitet die unterstützte Planungsgröße.")
         return errors
 
@@ -304,12 +332,11 @@ def input_diagnostics(snapshot):
                 ):
                     issue("availability", "Ungültige Wochenphase: " + e.id)
                 for day in dates(
-                    max(v.valid_from, snapshot.context_start),
+                    max(v.valid_from, snapshot.context_start - timedelta(days=1)),
                     min(v.valid_until, snapshot.context_end),
                 ):
-                    if day.weekday() in v.weekdays:
-                        minute(localize(day, v.start_time, snapshot.timezone))
-                        minute(localize(day, v.end_time, snapshot.timezone))
+                    if availability_active(v, day):
+                        availability_window(day, v, snapshot.timezone)
             for i in e.unavailable:
                 if minute(i.start) >= minute(i.end):
                     issue("absence", "Ungültige Abwesenheit: " + e.id)

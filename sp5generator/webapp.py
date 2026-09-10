@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -38,6 +38,7 @@ class ImportRequest(ApiImportRequest):
 
 class JobRequest(BaseModel):
     snapshot_id: str
+    snapshot_revision: str | None = None
     time_limit: float = Field(default=30, gt=0, le=600)
     partial: bool = False
 
@@ -47,6 +48,17 @@ class PlanRequest(BaseModel):
     assignments: list[Assignment] = Field(max_length=5000)
 
 
+def check_project_structure(snapshot: Snapshot):
+    """Reject unsafe display/input boundaries while allowing unfinished rules."""
+    from .domain import input_diagnostics
+    blocking_codes = {'input', 'date_range', 'period', 'interval', 'size_limit', 'numeric_range'}
+    codes = sorted({item.code for item in input_diagnostics(snapshot)
+                    if item.code in blocking_codes})
+    if codes:
+        raise HTTPException(422, 'Projektstruktur ungültig: ' + ', '.join(codes))
+    return snapshot
+
+
 def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     store = Store(Path(state_dir) / 'planning.sqlite3')
     owner = 'local-user'
@@ -54,23 +66,33 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     @asynccontextmanager
     async def lifespan(app):
         worker = None
-        if start_worker:
-            worker = multiprocessing.get_context('spawn').Process(target=run_worker, args=(store.path,))
-            worker.start()
-            await asyncio.sleep(0.2)
-            if not worker.is_alive():
-                worker.join()
-                raise RuntimeError('Solver worker could not start; check state directory and existing worker')
-        app.state.worker = worker
         try:
+            if start_worker:
+                context = multiprocessing.get_context('spawn')
+                ready = context.Event()
+                worker = context.Process(target=run_worker, args=(store.path,), kwargs={'ready': ready})
+                worker.start()
+                # Importing the solver in a spawned process and acquiring its
+                # exclusive store lock must finish before the web service is ready.
+                deadline = asyncio.get_running_loop().time() + 15
+                while not ready.is_set():
+                    if not worker.is_alive() or asyncio.get_running_loop().time() >= deadline:
+                        raise RuntimeError('Solver worker could not start; check state directory and existing worker')
+                    await asyncio.sleep(0.05)
+                if not worker.is_alive():
+                    raise RuntimeError('Solver worker stopped during startup')
+            app.state.worker = worker
             yield
         finally:
-            if worker:
-                worker.terminate()
-                worker.join(8)
+            if worker and worker.pid is not None:
+                if worker.is_alive():
+                    worker.terminate()
+                worker.join(12)
                 if worker.is_alive():
                     worker.kill()
-                    worker.join()
+                    worker.join(5)
+                worker.close()
+            app.state.worker = None
 
     app = FastAPI(title='OpenSchichtplaner5 Generator', lifespan=lifespan)
     app.state.store = store
@@ -174,15 +196,18 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
         snapshot = import_api(**data.model_dump())
         return {'snapshot': snapshot, 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
 
+    @app.post('/api/snapshots/check')
+    def check_snapshot(snapshot: Snapshot):
+        """Normalize an imported project without replacing a persisted revision."""
+        return check_project_structure(snapshot)
+
     @app.put('/api/snapshots')
     def save(snapshot: Snapshot):
-        return store.save_snapshot(snapshot, owner)
+        return store.save_snapshot(check_project_structure(snapshot), owner)
 
     @app.get('/api/snapshots')
     def list_snapshots():
-        with store.connect() as conn:
-            rows = conn.execute('SELECT id,revision FROM snapshots WHERE owner=? ORDER BY rowid DESC', (owner,)).fetchall()
-        return [dict(row) for row in rows]
+        return store.list_snapshots(owner)
 
     @app.get('/api/snapshots/{id}')
     def get_snapshot(id: str):
@@ -193,7 +218,16 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
         worker = getattr(app.state, 'worker', None)
         if start_worker and (worker is None or not worker.is_alive()):
             raise HTTPException(503, 'Berechnungsprozess nicht verfügbar; Anwendung neu starten')
-        return store.submit(data.snapshot_id, owner, data.time_limit, data.partial)
+        return store.submit(data.snapshot_id, owner, data.time_limit, data.partial,
+                            revision=data.snapshot_revision)
+
+    @app.get('/api/jobs')
+    def list_jobs(snapshot_id: str | None = None, limit: int = Query(default=50, ge=1, le=100)):
+        return store.list_jobs(owner, snapshot_id=snapshot_id, limit=limit)
+
+    @app.get('/api/jobs/{id}/snapshot')
+    def get_job_snapshot(id: str):
+        return store.get_job_snapshot(id, owner)
 
     @app.get('/api/jobs/{id}')
     def get_job(id: str):
@@ -212,11 +246,11 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     def export_plan(format: str, data: PlanRequest):
         from .domain import snapshot_hash
         from .validator import validate
-        from .export import export_table
+        from .export import export_table, vacancy_counts
         validation = validate(data.snapshot, data.assignments)
         if not validation.valid:
             raise HTTPException(422, 'Ungültigen Entwurf zuerst korrigieren')
-        result = Result(snapshot_id=data.snapshot.id, snapshot_hash=snapshot_hash(data.snapshot), solver_status='UNKNOWN', assignments=data.assignments, validation=validation, runtime_seconds=0, parameters={'origin': 'edited-draft', 'solver_status_available': False})
+        result = Result(snapshot_id=data.snapshot.id, snapshot_hash=snapshot_hash(data.snapshot), solver_status='UNKNOWN', assignments=data.assignments, vacancies=vacancy_counts(data.snapshot, data.assignments), validation=validation, runtime_seconds=0, parameters={'origin': 'edited-draft', 'solver_status_available': False})
         if format == 'json':
             return Response(result.model_dump_json(indent=2), media_type='application/json', headers={'Content-Disposition': 'attachment; filename="plan.json"'})
         if format not in ('csv', 'xlsx'):

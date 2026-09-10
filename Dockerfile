@@ -4,6 +4,7 @@ COPY pyproject.toml requirements.lock requirements-web.lock README.md LICENSE MA
 COPY sp5generator ./sp5generator
 RUN pip install --no-cache-dir -r requirements-web.lock \
     && pip install --no-cache-dir --no-deps . \
+    && pip check \
     && useradd --uid 10001 --create-home planner \
     && mkdir -p /state /source \
     && chown planner:planner /state

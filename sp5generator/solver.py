@@ -13,6 +13,7 @@ from .domain import (
     pair_conflict,
     supervised,
     night_block_conflict,
+    maximum_matching,
 )
 from .timeutils import (
     bounds,
@@ -26,12 +27,17 @@ from .timeutils import (
 from .validator import validate
 
 
+# OR-Tools 9.15 can segfault during parallel quality search on a valid demo
+# model. Use the verified single-worker path for every production solve.
+SEARCH_WORKERS = 1
+
+
 def solve(snapshot, time_limit=30, partial=False):
     started = monotonic()
     parameters = {
         "time_limit": time_limit,
         "partial": partial,
-        "workers": 4,
+        "workers": SEARCH_WORKERS,
         "random_seed": 0,
         "objective_semantics": "lexicographic vacancies, then configured weighted costs",
     }
@@ -156,19 +162,7 @@ def solve(snapshot, time_limit=30, partial=False):
         candidates = {
             did: [eid for eid in employees if (eid, did) in xs] for did in set(slots)
         }
-        occupied = {}
-
-        def augment(slot, seen):
-            for eid in candidates[slots[slot]]:
-                if eid in seen:
-                    continue
-                seen.add(eid)
-                if eid not in occupied or augment(occupied[eid], seen):
-                    occupied[eid] = slot
-                    return True
-            return False
-
-        matched = sum(augment(i, set()) for i in range(len(slots)))
+        matched = len(maximum_matching({i: candidates[did] for i, did in enumerate(slots)}))
         if matched < len(slots):
             diagnostics.append(
                 Diagnostic(
@@ -226,6 +220,7 @@ def solve(snapshot, time_limit=30, partial=False):
         daily = defaultdict(list)
         work = defaultdict(list)
         night = defaultdict(list)
+        period_weekend = defaultdict(list)
         paid = []
         for d, x in entries:
             s = shifts[d.shift_id]
@@ -236,6 +231,9 @@ def solve(snapshot, time_limit=30, partial=False):
                 night[shift_day[s.id]].append(x)
             if snapshot.period_start <= shift_day[s.id] <= snapshot.period_end:
                 paid.append(s.paid_minutes * x)
+                for day in dates_by_shift[s.id]:
+                    if day.weekday() >= 5:
+                        period_weekend[day - timedelta(days=day.weekday())].append(x)
                 if e.preferred_kind and e.preferred_kind != s.kind:
                     cost("preferences", x, snapshot.objectives.wishes)
                 if (
@@ -253,12 +251,8 @@ def solve(snapshot, time_limit=30, partial=False):
             v = model.new_bool_var("night:" + e.id + ":" + str(day))
             model.add_max_equality(v, choices)
             nv[day] = v
-        weekend = defaultdict(list)
-        for day, v in wv.items():
-            if day.weekday() >= 5:
-                weekend[day - timedelta(days=day.weekday())].append(v)
         wev = {}
-        for week, choices in weekend.items():
+        for week, choices in period_weekend.items():
             v = model.new_bool_var("weekend:" + e.id + ":" + str(week))
             model.add_max_equality(v, choices)
             wev[week] = v
@@ -340,12 +334,18 @@ def solve(snapshot, time_limit=30, partial=False):
             if p.max_nights is not None:
                 model.add(sum(nv.get(day, 0) for day in active) <= p.max_nights)
             if p.max_weekends is not None:
-                relevant = {
-                    day - timedelta(days=day.weekday())
-                    for day in active
-                    if day.weekday() >= 5
-                }
-                model.add(sum(wev.get(w, 0) for w in relevant) <= p.max_weekends)
+                relevant = defaultdict(list)
+                for day in active:
+                    if day.weekday() >= 5 and day in wv:
+                        relevant[day - timedelta(days=day.weekday())].append(wv[day])
+                profile_weekends = []
+                for week, choices in relevant.items():
+                    v = model.new_bool_var(
+                        "profile_weekend:" + e.id + ":" + p.id + ":" + str(week)
+                    )
+                    model.add_max_equality(v, choices)
+                    profile_weekends.append(v)
+                model.add(sum(profile_weekends) <= p.max_weekends)
             for variables, limit in (
                 (wv, p.max_consecutive_work_days),
                 (nv, p.max_consecutive_nights),
@@ -433,7 +433,7 @@ def solve(snapshot, time_limit=30, partial=False):
         ("weekends", snapshot.objectives.weekends, "historical_weekends"),
         ("holidays", snapshot.objectives.holidays, "historical_holidays"),
     ):
-        counts, opportunities = {}, {}
+        counts, opportunities, count_bounds = {}, {}, {}
         for e in snapshot.employees:
             eligible = [
                 (d, x)
@@ -459,22 +459,41 @@ def solve(snapshot, time_limit=30, partial=False):
                     for day, v in nights_vars[e.id].items()
                     if snapshot.period_start <= day <= snapshot.period_end
                 )
+                count_bounds[e.id] = len({shift_day[d.shift_id] for d, x in eligible})
             elif category == "weekends":
                 count = sum(weekend_vars[e.id].values())
+                count_bounds[e.id] = len(weekend_vars[e.id])
             else:
                 count = sum(x for d, x in eligible)
+                count_bounds[e.id] = len(eligible)
             counts[e.id] = count + getattr(e, history)
+            count_bounds[e.id] += getattr(e, history)
         total_opp = sum(opportunities.values())
         total_count = sum(
             counts[e.id] for e in snapshot.employees if opportunities[e.id]
         )
         if total_opp and weight:
-            upper = (
-                len(snapshot.demands)
-                + sum(getattr(e, history) for e in snapshot.employees)
-            ) * total_opp
+            total_count_bound = sum(
+                count_bounds[e.id] for e in snapshot.employees if opportunities[e.id]
+            )
             for e in snapshot.employees:
                 if opportunities[e.id]:
+                    # A demand can staff several people. Both sides of the
+                    # weighted share difference need their own valid bound.
+                    upper = max(
+                        count_bounds[e.id] * total_opp,
+                        total_count_bound * opportunities[e.id],
+                    )
+                    if upper > cp_model.INT_MAX // 400:
+                        return result(
+                            "MODEL_INVALID",
+                            validation=Validation(valid=False, complete=False, diagnostics=[
+                                Diagnostic(
+                                    code="numeric_range",
+                                    message="Die kombinierte Belastungsbewertung überschreitet den unterstützten Zahlenbereich.",
+                                )
+                            ]),
+                        )
                     deviation = model.new_int_var(
                         0, upper, "fair:" + category + ":" + e.id
                     )
@@ -570,7 +589,7 @@ def solve(snapshot, time_limit=30, partial=False):
                     model.add_hint(x, int(key in chosen))
     weighted = sum(costs)
     solver = cp_model.CpSolver()
-    solver.parameters.num_search_workers = 4
+    solver.parameters.num_search_workers = SEARCH_WORKERS
     solver.parameters.random_seed = 0
     solver.parameters.symmetry_level = 0
     separation_rounds = 0
@@ -620,7 +639,7 @@ def solve(snapshot, time_limit=30, partial=False):
                 + e.credit_minutes
                 + e.balance_minutes
                 - e.target_minutes,
-                "nights": sum(s.kind == "night" for s in selected),
+                "nights": len({shift_day[s.id] for s in selected if s.kind == "night"}),
                 "weekends": len(
                     {
                         day - timedelta(days=day.weekday())
@@ -794,7 +813,7 @@ def solve(snapshot, time_limit=30, partial=False):
                 + e.credit_minutes
                 + e.balance_minutes
                 - e.target_minutes,
-                "nights": sum(s.kind == "night" for s in selected),
+                "nights": len({shift_day[s.id] for s in selected if s.kind == "night"}),
                 "weekends": len(
                     {
                         day - timedelta(days=day.weekday())

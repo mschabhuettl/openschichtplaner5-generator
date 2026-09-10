@@ -2,13 +2,18 @@ name: Container
 on:
   push:
     branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -21,9 +26,21 @@ jobs:
         with:
           node-version: "22"
       - name: Install test dependencies
-        run: python -m pip install '.[dev,web,sp5]'
+        run: python -m pip install -c requirements-web.lock '.[dev,web,sp5]'
+      - name: Verify dependency compatibility
+        run: python -m pip check
       - name: Domain and source tests
         run: python -m pytest -q
+      - name: Build Python distributions
+        run: python -m build
+      - name: Verify clean installed packages outside checkout
+        run: python tools/check_distribution.py
+      - name: Save verified Python distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: openschichtplaner5-generator-python
+          path: dist/*
+          retention-days: 30
       - name: Install browser
         working-directory: tests/browser
         run: |

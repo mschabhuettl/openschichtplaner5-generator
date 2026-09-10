@@ -1,6 +1,16 @@
 """Native group hierarchy translation using GROUP.SUPERID."""
 
 
+def _group_id(value, allow_root=False):
+    try:
+        number = int(str(value).removeprefix("sp5:group:"))
+    except (TypeError, ValueError):
+        raise ValueError("Gruppenhierarchie enthält eine ungültige ID.") from None
+    if number < (0 if allow_root else 1):
+        raise ValueError("Gruppenhierarchie enthält eine ungültige ID.")
+    return number
+
+
 def group_tree(groups):
     """Return a stable pre-order tree; missing visible parents form local roots.
 
@@ -9,13 +19,13 @@ def group_tree(groups):
     """
     nodes = {}
     for group in groups:
-        gid = int(group["ID"])
+        gid = _group_id(group["ID"])
         if gid in nodes:
             raise ValueError("Gruppenhierarchie enthält doppelte IDs.")
         nodes[gid] = {
             "id": str(gid),
             "name": group.get("NAME", ""),
-            "parent_id": str(int(group.get("SUPERID") or 0)),
+            "parent_id": str(_group_id(group.get("SUPERID") or 0, allow_root=True)),
         }
     for gid in nodes:
         seen = set()
@@ -45,7 +55,7 @@ def group_tree(groups):
 
 def selected_group_ids(groups, root):
     tree = group_tree(groups)
-    root = int(str(root).removeprefix("sp5:group:"))
+    root = _group_id(root)
     if root not in {int(g["id"]) for g in tree}:
         raise ValueError("Gewählte Gruppe fehlt in den sichtbaren Stammdaten.")
     selected = {root}
@@ -64,7 +74,7 @@ def resolve_group_selection(groups, team_id=None, team_ids=None):
     if team_id is not None:
         raise ValueError("team_id und team_ids nicht gleichzeitig angeben.")
     tree = group_tree(groups)
-    selected = {int(str(g).removeprefix("sp5:group:")) for g in team_ids}
+    selected = {_group_id(g) for g in team_ids}
     if not selected or not selected <= {int(g["id"]) for g in tree}:
         raise ValueError("Mindestens eine sichtbare Gruppe auswählen; unbekannte IDs sind nicht erlaubt.")
     return [int(g["id"]) for g in tree if int(g["id"]) in selected]

@@ -14,14 +14,20 @@ def minute(value: datetime) -> int:
     return int(value.timestamp()) // 60
 
 
-def localize(day: date, clock: str, zone: str, fold: int | None = None) -> datetime:
+def _local_datetime(day: date, clock: str) -> datetime:
     if clock == "24:00":
         day += timedelta(days=1)
         clock = "00:00"
     parsed = time.fromisoformat(clock)
     if parsed.tzinfo is not None or parsed.second or parsed.microsecond:
         raise ValueError("Lokale Uhrzeit muss ohne UTC-Offset und auf ganze Minuten angegeben werden.")
-    naive = datetime.combine(day, parsed)
+    return datetime.combine(day, parsed)
+
+
+def localize(day: date, clock: str, zone: str, fold: int | None = None) -> datetime:
+    if fold not in (None, 0, 1):
+        raise ValueError("fold muss 0 oder 1 sein.")
+    naive = _local_datetime(day, clock)
     tz = ZoneInfo(zone)
     candidates = []
     for f in (0, 1):
@@ -39,6 +45,20 @@ def localize(day: date, clock: str, zone: str, fold: int | None = None) -> datet
         )
     return (
         candidates[0] if len(candidates) == 1 else naive.replace(tzinfo=tz, fold=fold)
+    )
+
+
+def availability_window(day, availability, zone):
+    """Resolve the actual dates of an overnight window before DST validation."""
+    start = _local_datetime(day, availability.start_time)
+    end = _local_datetime(day, availability.end_time)
+    if end <= start:
+        end += timedelta(days=1)
+    if end.date() > availability.valid_until:
+        end = datetime.combine(availability.valid_until, time()) + timedelta(days=1)
+    return (
+        minute(localize(start.date(), start.strftime("%H:%M"), zone)),
+        minute(localize(end.date(), end.strftime("%H:%M"), zone)),
     )
 
 

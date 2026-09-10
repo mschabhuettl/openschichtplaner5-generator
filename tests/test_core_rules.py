@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 from itertools import product
+from zoneinfo import ZoneInfo
 import pytest
 from sp5generator.models import (
     RuleProfile,
@@ -18,7 +19,8 @@ from sp5generator.models import (
 )
 from sp5generator.solver import solve
 from sp5generator.validator import validate, weekly_windows
-from sp5generator.timeutils import localize, minute, longest_free
+from sp5generator.timeutils import availability_window, localize, minute, longest_free
+from sp5generator.domain import input_diagnostics, maximum_matching
 
 
 def case(n=2, shifts=None):
@@ -486,3 +488,156 @@ def test_unbounded_maximum_is_distinct_from_zero():
     assert not validate(s, result.assignments).valid
     zero = solve(s, time_limit=5)
     assert zero.validation.complete and zero.assignments == []
+
+
+@pytest.mark.parametrize("category", ["nights", "weekends", "holidays"])
+def test_fairness_cannot_make_multi_person_demand_infeasible(category):
+    duty = shift("s", 10 if category == "weekends" else 5, 8, 8,
+                 "night" if category == "nights" else "day")
+    duty.holiday = category == "holidays"
+    s = case(3, [duty])
+    s.demands[0].minimum = s.demands[0].maximum = 3
+    for employee in s.employees[1:]:
+        employee.employment_fraction = 1
+    s.objectives = Objectives(hours=0, nights=0, weekends=0, holidays=0,
+                              wishes=0, changes=0)
+    setattr(s.objectives, category, 1)
+    assert validate(s, [assignment(e.id) for e in s.employees]).complete
+    result = solve(s, 2)
+    assert result.validation.complete
+    assert result.solver_status == "OPTIMAL"
+    # One actual burden each; opportunity shares are 100/102, 1/102, 1/102.
+    expected = sum(100 * abs(102 - 3 * share) // 102 for share in (100, 1, 1))
+    assert result.metrics["objective_contributions"][category] == expected
+
+
+def test_weekend_limit_counts_only_profile_active_days():
+    s = case(1, [shift("s", 10, 8, 8)])
+    p = s.profiles[0].model_copy(deep=True)
+    p.id = "sunday"
+    p.valid_from = p.valid_until = date(2026, 1, 11)
+    p.max_weekends = 0
+    s.profiles.append(p)
+    s.employees[0].profile_ids.append(p.id)
+    assert validate(s, [assignment()]).complete
+    assert solve(s, 2).validation.complete
+
+
+def test_weekend_fairness_excludes_fixed_context_duties():
+    s = case(2, [shift("before", 3, 8, 8), shift("s", 10, 8, 8)])
+    s.assignments = [Assignment(employee_id="e0", demand_id="before", fixed=True)]
+    s.objectives = Objectives(hours=0, nights=0, weekends=1, holidays=0,
+                              wishes=0, changes=0)
+    result = solve(s, 2)
+    assert result.validation.complete
+    assert sum(e["weekends"] for e in result.metrics["employees"].values()) == 1
+    assert result.metrics["objective_contributions"]["weekends"] == 100
+
+
+def test_night_metrics_count_start_days_not_multiple_duties():
+    s = case(1, [shift("a", 5, 0, 2, "night"), shift("b", 5, 4, 2, "night")])
+    s.profiles[0].min_rest_minutes = 0
+    s.profiles[0].max_nights = 1
+    result = solve(s, 2)
+    assert result.validation.complete
+    assert result.metrics["employees"]["e0"]["nights"] == 1
+
+
+def test_validator_rejects_new_assignment_outside_planning_period():
+    s = case(1, [shift("context", 12, 8, 8)])
+    s.demands[0].minimum = 0
+    checked = validate(s, [assignment(d="context")])
+    assert not checked.valid
+    assert any(d.code == "context_assignment" for d in checked.diagnostics)
+    s.assignments = [Assignment(employee_id="e0", demand_id="context", fixed=True)]
+    assert validate(s, s.assignments).complete
+
+
+@pytest.mark.parametrize(
+    "start,end,weekdays,expected_valid",
+    [
+        (date(2026, 3, 28), date(2026, 3, 29), [5], False),
+        (date(2026, 10, 24), date(2026, 10, 25), [5], False),
+        (date(2026, 3, 29), date(2026, 3, 30), [6], True),
+        (date(2026, 3, 28), date(2026, 3, 28), [5], True),
+    ],
+)
+def test_overnight_availability_validates_actual_end_date(start, end, weekdays, expected_valid):
+    s = case(1)
+    s.timezone = "Europe/Berlin"
+    s.context_end = date(2026, 11, 1)
+    availability = Availability(valid_from=start, valid_until=end, weekdays=weekdays,
+                                start_time="22:00", end_time="02:30")
+    s.employees[0].availability = [availability]
+    assert (not input_diagnostics(s)) == expected_valid
+    if not expected_valid:
+        assert solve(s, 2).solver_status == "MODEL_INVALID"
+    elif start == end:
+        a, b = availability_window(start, availability, s.timezone)
+        assert b - a == 120
+
+
+def test_inactive_alternating_week_does_not_resolve_nonexistent_clock():
+    s = case(1)
+    s.timezone = "Europe/Berlin"
+    s.context_end = date(2026, 4, 1)
+    s.employees[0].availability = [Availability(
+        valid_from=date(2026, 3, 29), valid_until=date(2026, 3, 29),
+        weekdays=[6], start_time="02:30", end_time="04:00",
+        cycle_anchor=date(2026, 3, 23), cycle_weeks=2, cycle_phase=1,
+    )]
+    assert input_diagnostics(s) == []
+
+
+def test_indefinitely_valid_availability_and_rolling_profile():
+    s = case(1)
+    s.employees[0].availability = [Availability(valid_from=date.min, valid_until=date.max)]
+    s.profiles[0].valid_from = date.min
+    s.profiles[0].valid_until = date.max
+    s.profiles[0].weekly_rest_frame = "rolling_elapsed"
+    s.profiles[0].weekly_rest_minutes = 1440
+    assert solve(s, 2).validation.complete
+
+
+def test_localize_rejects_invalid_fold_even_for_unambiguous_clock():
+    with pytest.raises(ValueError, match="fold"):
+        localize(date(2026, 1, 5), "12:00", "Europe/Berlin", fold=2)
+
+
+def test_candidate_matching_handles_thousand_position_augmenting_path():
+    adjacency = {i: [i, i + 1] for i in range(1000)}
+    adjacency[1000] = [0]
+    matching = maximum_matching(adjacency)
+    assert len(matching) == len(adjacency)
+    assert len(set(matching.values())) == len(adjacency)
+    assert all(right in adjacency[left] for right, left in matching.items())
+
+
+def test_supported_thousand_employee_pool_does_not_exceed_recursion_limit():
+    s = case(1000)
+    s.demands[0].minimum = s.demands[0].maximum = 1000
+    assert input_diagnostics(s) == []
+    assert solve(s, 0.01).solver_status in {"UNKNOWN", "FEASIBLE", "OPTIMAL"}
+
+
+def test_result_interval_comparison_uses_actual_instant_during_dst_fold():
+    s = case(1)
+    s.timezone = "Europe/Berlin"
+    s.period_start = s.period_end = date(2026, 10, 25)
+    s.context_start, s.context_end = date(2026, 10, 1), date(2026, 11, 10)
+    s.profiles[0].valid_from, s.profiles[0].valid_until = s.context_start, s.context_end
+    employee = s.employees[0]
+    employee.employment_start, employee.employment_end = s.context_start, s.context_end
+    employee.approvals[0].valid_from = s.context_start
+    employee.approvals[0].valid_until = s.context_end
+    tz = ZoneInfo(s.timezone)
+    start = datetime(2026, 10, 25, 2, 10, tzinfo=tz, fold=0)
+    end = datetime(2026, 10, 25, 2, 40, tzinfo=tz, fold=0)
+    s.shifts[0].segments = [Interval(start=start, end=end)]
+    proposal = assignment()
+    proposal.segments = [Interval(start=start.replace(fold=1), end=end.replace(fold=1))]
+    checked = validate(s, [proposal])
+    assert not checked.valid
+    assert any(d.code == "interval_mismatch" for d in checked.diagnostics)
+    proposal.segments = [Interval(start=start.astimezone(UTC), end=end.astimezone(UTC))]
+    assert validate(s, [proposal]).complete

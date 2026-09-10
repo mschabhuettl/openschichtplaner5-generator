@@ -163,3 +163,22 @@ def test_history_groups_by_service_even_without_workplace():
     assert snapshot.demands == demands
     assert not snapshot.employees[0].approvals
     assert not snapshot.employees[0].qualifications
+
+
+def test_import_detects_a_table_added_during_read(tmp_path, monkeypatch):
+    for name in ["EMPL", "GROUP", "GRASG", "SHIFT", "WOPL"]:
+        empty_table(tmp_path / f"5{name}.DBF", [("ID", "N", 8)])
+    from sp5lib.dbf_reader import get_table_fields
+    from sp5lib.dbf_writer import append_record
+    groups = str(tmp_path / "5GROUP.DBF")
+    append_record(groups, get_table_fields(groups), {"ID": 1})
+    original = adapter.historical_matrix
+
+    def changed(*args):
+        result = original(*args)
+        empty_table(tmp_path / "5HOLID.DBF", [("ID", "N", 8)])
+        return result
+
+    monkeypatch.setattr(adapter, "historical_matrix", changed)
+    with pytest.raises(ValueError, match="verändert"):
+        adapter.import_directory(str(tmp_path), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")

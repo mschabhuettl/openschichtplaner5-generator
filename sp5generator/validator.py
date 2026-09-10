@@ -12,9 +12,11 @@ from .domain import (
     pair_conflict,
     supervised,
     night_block_conflict,
+    maximum_matching,
 )
 from .timeutils import (
     bounds,
+    minute,
     segments,
     local_day,
     midnight,
@@ -80,10 +82,14 @@ def weekly_windows(snapshot, profile, spans, employee=None):
             if profile.weekly_rest_add_daily
         }
         for p in applicable:
-            boundary = midnight(p.valid_from, snapshot.timezone)
-            points.update((boundary, boundary + length))
-            boundary = midnight(p.valid_until + timedelta(days=1), snapshot.timezone)
-            points.update((boundary, boundary + length))
+            # Profiles may be valid indefinitely. Only boundaries inside the
+            # inspected context can change a relevant window's requirement.
+            if snapshot.context_start <= p.valid_from <= snapshot.context_end:
+                boundary = midnight(p.valid_from, snapshot.timezone)
+                points.update((boundary, boundary + length))
+            if snapshot.context_start <= p.valid_until < snapshot.context_end:
+                boundary = midnight(p.valid_until + timedelta(days=1), snapshot.timezone)
+                points.update((boundary, boundary + length))
         for point in points:
             for r in possible_required:
                 for anchor in (point + r - length, point - r, point, point - length):
@@ -121,6 +127,7 @@ def validate(snapshot, assignments):
     positions = {p.id: p for p in snapshot.positions}
     by_employee, by_demand = defaultdict(list), defaultdict(list)
     seen = set()
+    fixed = {(a.employee_id, a.demand_id) for a in snapshot.assignments if a.fixed}
 
     def add(code, message, employee=None, demand=None, day=None):
         errors.append(
@@ -144,7 +151,24 @@ def validate(snapshot, assignments):
             continue
         d = demands[a.demand_id]
         e = employees[a.employee_id]
-        if a.segments and a.segments != shifts[d.shift_id].segments:
+        day = local_day(bounds(shifts[d.shift_id])[0], snapshot.timezone)
+        if not snapshot.period_start <= day <= snapshot.period_end and key not in fixed:
+            add(
+                "context_assignment",
+                "Außerhalb des Planungszeitraums sind nur vorhandene Fixierungen zulässig.",
+                e.id,
+                d.id,
+                day,
+            )
+        try:
+            intervals_match = not a.segments or [
+                (minute(i.start), minute(i.end)) for i in a.segments
+            ] == [
+                (minute(i.start), minute(i.end)) for i in shifts[d.shift_id].segments
+            ]
+        except (ValueError, OverflowError):
+            intervals_match = False
+        if not intervals_match:
             add(
                 "interval_mismatch",
                 "Ergebnisintervalle stimmen nicht mit dem Snapshot überein.",
@@ -332,20 +356,9 @@ def validate(snapshot, assignments):
         key = (a.employee_id, a.demand_id)
         trainees.append(key)
         mentor_edges[key] = options
-    allocated = {}
-
-    def match(key, visited):
-        for slot in mentor_edges[key]:
-            if slot in visited:
-                continue
-            visited.add(slot)
-            if slot not in allocated or match(allocated[slot], visited):
-                allocated[slot] = key
-                return True
-        return False
-
+    allocated = set(maximum_matching(mentor_edges).values())
     for key in trainees:
-        if not match(key, set()):
+        if key not in allocated:
             add(
                 "mentoring",
                 "Keine gleichzeitig eingeteilte geeignete Betreuung mit freier Kapazität.",

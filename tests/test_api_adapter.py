@@ -206,3 +206,45 @@ def test_parent_team_imports_nested_people_without_duplicates(transport):
     assert any('group_id=3' in c.full_url for c in calls)
     described = inspect_api()['groups']
     assert next(g for g in described if g['id'] == '3')['depth'] == 2
+
+
+@pytest.mark.parametrize("url", ["http://[broken", "http://source.test:wrong", "http://source.test:65536", "http://source.test/\napi"])
+def test_malformed_url_is_reported_without_configuration_disclosure(transport, monkeypatch, url):
+    monkeypatch.setenv("SP5_API_URL", url)
+    with pytest.raises(APIImportError) as error:
+        APIClient()
+    assert "source.test" not in str(error.value)
+
+
+@pytest.mark.parametrize("payload", [b'{"ID":1,"ID":2}', b'{"value":NaN}', b'{"value":Infinity}'])
+def test_ambiguous_json_is_rejected(transport, payload):
+    client = APIClient()
+    class Broken:
+        def open(self, *args, **kwargs):
+            return BytesIO(payload)
+    client.opener = Broken()
+    with pytest.raises(APIImportError):
+        client.get("/api/groups")
+
+
+def test_transport_retains_specific_redirect_error(transport):
+    client = APIClient()
+    class Redirect:
+        def open(self, *args, **kwargs):
+            raise APIImportError("API-Weiterleitungen sind nicht erlaubt.")
+    client.opener = Redirect()
+    with pytest.raises(APIImportError, match="Weiterleitungen"):
+        client.get("/api/groups")
+
+
+def test_inspection_sanitizes_invalid_hierarchy(transport):
+    transport[0]["/api/groups"] = [{"ID": 1, "SUPERID": 1}]
+    with pytest.raises(APIImportError, match="Gruppenformat"):
+        inspect_api()
+
+
+def test_requirement_rows_must_be_objects(transport):
+    transport[0]["/api/staffing-requirements"] = {
+        "shift_requirements": ["invalid"], "daily_requirements": []}
+    with pytest.raises(APIImportError, match="Bedarfsformat"):
+        import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")

@@ -1,13 +1,14 @@
 """Read-only translation of the optional sp5lib facade into the public contract."""
 
 from datetime import date, datetime, timedelta, timezone as dt_timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, DecimalException, ROUND_HALF_UP
 from hashlib import sha256
 import json
 import re
 from zoneinfo import ZoneInfo
 
 from .hierarchy import group_tree, resolve_group_selection
+from .domain import MAX_PLANNING_DAYS
 
 from .models import (
     Employee,
@@ -72,14 +73,20 @@ def _parse_native_windows(value):
         a, b, c, d = map(int, match.groups())
         if a > 23 or b > 59 or c > 24 or d > 59 or (c == 24 and d):
             raise ValueError("Ungültige Uhrzeit")
-        windows.append((a * 60 + b, c * 60 + d))
+        # Native 00:00-00:00 is an unused time slot, not a 24-hour duty.
+        if (a, b, c, d) != (0, 0, 0, 0):
+            windows.append((a * 60 + b, c * 60 + d))
     return windows
 
 
 def _minutes(hours):
-    return int(
-        (Decimal(str(hours or 0)) * 60).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
+    try:
+        value = Decimal(str(hours or 0))
+        if not value.is_finite():
+            raise ValueError("Ungültige Stundenangabe")
+        return int((value * 60).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except DecimalException:
+        raise ValueError("Ungültige Stundenangabe") from None
 
 
 def _local(day, minute, zone):
@@ -107,8 +114,10 @@ def import_snapshot(
     """
     from sp5lib import calculations as calc
 
-    if period_end < period_start:
-        raise ValueError("Ungültiger Zeitraum")
+    if not 0 <= (period_end - period_start).days < MAX_PLANNING_DAYS:
+        raise ValueError(f"Planungszeitraum muss 1 bis {MAX_PLANNING_DAYS} Kalendertage umfassen.")
+    if (period_start - date.min).days < 31 or (date.max - period_end).days < 32:
+        raise ValueError("Zeitraum bietet keinen Platz für den erforderlichen Randkontext.")
     if existing_plan_mode not in ("reference", "fixed"):
         raise ValueError("Bestehender Plan: Modus muss reference oder fixed sein.")
     zone = ZoneInfo(timezone)
@@ -341,6 +350,7 @@ def import_snapshot(
                         )
                     )
     month = context_start.replace(day=1)
+    seen_schedule = set()
     while month <= context_end:
         for row in _scope_schedule(db, scope, month.year, month.month):
             d = calc.to_date(row.get("date"))
@@ -369,6 +379,10 @@ def import_snapshot(
                     "spshi_type",
                 )
             }
+            schedule_key = json.dumps(safe, sort_keys=True, default=str)
+            if schedule_key in seen_schedule:
+                continue
+            seen_schedule.add(schedule_key)
             metadata["context_schedule"].append(safe)
             kind = row.get("kind")
             if kind == "special_shift" and row.get("spshi_type", 0) == 0 and row.get("shift_id") in native_shifts:
@@ -384,11 +398,12 @@ def import_snapshot(
                 mode = row.get("interval", 0)
                 bounds = {0: (0, 1440), 1: (0, 720), 2: (720, 1440)}.get(mode)
                 if mode == 3:
-                    a, b = (
-                        int(row.get("start_time") or 0),
-                        int(row.get("end_time") or 0),
-                    )
-                    bounds = (a, b + (1440 if b < a else 0)) if a != b else None
+                    try:
+                        a, b = (int(str(row.get("start_time"))), int(str(row.get("end_time"))))
+                        bounds = ((a, b + (1440 if b < a else 0))
+                                  if 0 <= a < 1440 and 0 <= b <= 1440 and a != b else None)
+                    except (ValueError, TypeError):
+                        bounds = None
                 if bounds is None:
                     unresolved.append(f"ABSEN {eid} {d}: ungültiges Intervall.")
                     continue
@@ -453,13 +468,20 @@ def import_snapshot(
                         )
                         for a, b in windows
                     ]
-                    sid = f"sp5:context:{row['employee_id']}:{d}:{row['shift_id']}"
-                    pid = f"sp5:context-position:{row['shift_id']}:{row.get('workplace_id') or 'unresolved'}"
+                    workplace = row.get("workplace_id")
+                    workplace = "unresolved" if workplace in (None, "") else str(workplace)
+                    sid = (f"sp5:context:{row['employee_id']}:{d}:{row['shift_id']}"
+                           f":workplace:{workplace}:group:{row.get('group_id') or 'unresolved'}")
+                    if sid in shifts:
+                        # The source may expose a nominal entry and an identical
+                        # special replacement; this is one duty, not two.
+                        continue
+                    pid = f"sp5:context-position:{row['shift_id']}:{workplace}"
                     positions[pid] = Position(
                         id=pid,
                         name=native.get("NAME", ""),
                         function_id=f"sp5:service:{row['shift_id']}",
-                        workplace_id=f"sp5:workplace:{row.get('workplace_id') or 'unresolved'}",
+                        workplace_id=f"sp5:workplace:{workplace}",
                         qualifications_required=True,
                     )
                     member_teams = [
@@ -467,26 +489,22 @@ def import_snapshot(
                         for g in employee_map[eid].team_ids
                         if g in {f"sp5:group:{v}" for v in scope}
                     ]
+                    explicit_group = row.get("group_id")
+                    if explicit_group not in (None, 0, "", "0"):
+                        member_teams = [g for g in member_teams if g == f"sp5:group:{explicit_group}"]
                     if len(member_teams) != 1:
                         unresolved.append(
                             f"Bestehender Dienst {eid} {d}: konkrete Gruppe bei mehrfacher oder fehlender Mitgliedschaft bestätigen."
                         )
                     metadata["provenance"][sid] = {
-                        "team_source": "employee_membership",
+                        "team_source": "schedule_group" if explicit_group not in (None, 0, "", "0") else "employee_membership",
                         "team_confirmed": len(member_teams) == 1,
                     }
                     shifts[sid] = Shift(
                         id=sid,
                         name=native.get("NAME", ""),
                         kind="unconfirmed",
-                        team_id=next(
-                            (
-                                g
-                                for g in employee_map[eid].team_ids
-                                if g in {f"sp5:group:{v}" for v in scope}
-                            ),
-                            f"sp5:group:{native_team}",
-                        ),
+                        team_id=next(iter(member_teams), f"sp5:group:{native_team}"),
                         segments=segments,
                         paid_minutes=_minutes(native.get(f"DURATION{idx}")),
                         holiday=d in holidays,
@@ -764,8 +782,8 @@ def import_directory(
     existing_plan_mode="reference",
 ):
     """Explicit local directory import with change detection and matrix suggestions."""
-    if (period_end - period_start).days > 366:
-        raise ValueError("Planungszeitraum auf höchstens 366 Tage begrenzen.")
+    if not 0 <= (period_end - period_start).days < MAX_PLANNING_DAYS:
+        raise ValueError(f"Planungszeitraum muss 1 bis {MAX_PLANNING_DAYS} Kalendertage umfassen.")
     db, files = _source_database(directory)
     before = _source_fingerprint(files)
     snapshot = import_snapshot(
@@ -791,7 +809,8 @@ def import_directory(
     )
     snapshot.metadata["source_fingerprint"] = before
     snapshot.metadata["source_read_only"] = True
-    if before != _source_fingerprint(files):
+    _, after_files = _source_database(directory)
+    if files != after_files or before != _source_fingerprint(after_files):
         raise ValueError(
             "Quelldateien haben sich während des Imports verändert. Import erneut ausführen."
         )

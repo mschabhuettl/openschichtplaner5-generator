@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from .sp5_adapter import historical_matrix, import_snapshot
 from .hierarchy import resolve_group_selection, group_tree
+from .domain import MAX_PLANNING_DAYS
 
 
 class APIImportError(ValueError):
@@ -23,10 +24,27 @@ class _NoRedirect(HTTPRedirectHandler):
         raise APIImportError("API-Weiterleitungen sind nicht erlaubt.")
 
 
+def _json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise APIImportError("API-Antwort enthält mehrdeutige JSON-Felder.")
+        result[key] = value
+    return result
+
+
+def _invalid_number(value):
+    raise APIImportError("API-Antwort enthält ungültige Zahlenwerte.")
+
+
 class APIClient:
     def __init__(self):
         base = os.environ.get("SP5_API_URL", "").rstrip("/")
-        parsed = urlsplit(base)
+        try:
+            parsed = urlsplit(base)
+            parsed.port  # Reject malformed or out-of-range ports before sending a request.
+        except ValueError:
+            raise APIImportError("SP5_API_URL enthält keine gültige HTTP(S)-Adresse.") from None
         if (
             parsed.scheme not in ("http", "https")
             or not parsed.hostname
@@ -34,6 +52,7 @@ class APIClient:
             or parsed.password
             or parsed.query
             or parsed.fragment
+            or any(c.isspace() or ord(c) < 32 for c in base)
         ):
             raise APIImportError(
                 "SP5_API_URL muss eine HTTP(S)-Adresse ohne Zugangsdaten sein."
@@ -69,7 +88,10 @@ class APIClient:
                 raw = response.read(32 * 1024 * 1024 + 1)
                 if len(raw) > 32 * 1024 * 1024:
                     raise APIImportError("API-Antwort überschreitet die Importgrenze.")
-                return json.loads(raw)
+                return json.loads(raw, object_pairs_hook=_json_object,
+                                  parse_constant=_invalid_number)
+        except APIImportError:
+            raise
         except HTTPError as exc:
             raise APIImportError(
                 f"API-Anfrage abgelehnt (HTTP {exc.code}); Zugriff und API-Version prüfen."
@@ -139,7 +161,7 @@ class _Database:
     def get_staffing_requirements(self):
         data = self.client.get("/api/staffing-requirements")
         if not isinstance(data, dict) or not all(
-            isinstance(data.get(k), list)
+            isinstance(data.get(k), list) and all(isinstance(row, dict) for row in data[k])
             for k in ("shift_requirements", "daily_requirements")
         ):
             raise APIImportError("API-Bedarfsformat ist unvollständig.")
@@ -175,7 +197,9 @@ def inspect_api():
             "source_read_only": True,
             "source": "sp5-api",
         }
-    except (KeyError, TypeError):
+    except APIImportError:
+        raise
+    except (ValueError, KeyError, TypeError, OverflowError):
         raise APIImportError("API-Gruppenformat ist nicht kompatibel.") from None
 
 
@@ -191,8 +215,8 @@ def import_api(
     existing_plan_mode="reference",
 ):
     """Read canonical snapshots and explicit history proposals through the existing API."""
-    if not 0 <= (period_end - period_start).days <= 366:
-        raise APIImportError("Planungszeitraum muss 1 bis 367 Kalendertage umfassen.")
+    if not 0 <= (period_end - period_start).days < MAX_PLANNING_DAYS:
+        raise APIImportError(f"Planungszeitraum muss 1 bis {MAX_PLANNING_DAYS} Kalendertage umfassen.")
     history_end = history_end or period_start - timedelta(days=1)
     history_start = history_start or history_end - timedelta(days=89)
     if (

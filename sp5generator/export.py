@@ -1,6 +1,7 @@
 """Portable tabular exports with spreadsheet formula protection."""
 
 import csv
+from collections import Counter
 from pathlib import Path
 from .models import Snapshot, Result
 
@@ -11,6 +12,23 @@ def safe_cell(value):
     ):
         return "'" + value
     return value
+
+
+def vacancy_counts(snapshot: Snapshot, assignments):
+    """Derive staffing gaps from current assignments, never cached solver output."""
+    employee_ids = {employee.id for employee in snapshot.employees}
+    counts = Counter(
+        demand_id
+        for employee_id, demand_id in {
+            (assignment.employee_id, assignment.demand_id)
+            for assignment in assignments
+            if assignment.employee_id in employee_ids
+        }
+    )
+    return {
+        demand.id: max(0, demand.minimum - counts[demand.id])
+        for demand in snapshot.demands
+    }
 
 
 def rows(snapshot: Snapshot, result: Result):
@@ -75,22 +93,29 @@ def rows(snapshot: Snapshot, result: Result):
         ]
     yield []
     yield ["Offener Bedarf", "Anzahl", "Dienst", "Funktion", "Arbeitsplatz"]
-    for did, n in result.vacancies.items():
+    for did, n in vacancy_counts(snapshot, result.assignments).items():
         if n:
             d = demands[did]
             p = positions[d.position_id]
             yield [did, n, shifts[d.shift_id].name, p.function_id, p.workplace_id]
+    if result.validation.diagnostics:
+        yield []
+        yield ["Prüfhinweis", "Meldung", "Person-ID", "Bedarf", "Datum"]
+        for diagnostic in result.validation.diagnostics:
+            yield [diagnostic.code, diagnostic.message, diagnostic.employee_id or "",
+                   diagnostic.demand_id or "", diagnostic.date or ""]
 
 
 def export_table(snapshot: Snapshot, result: Result, path: str | Path):
     from .domain import snapshot_hash
     from .validator import validate
 
-    if result.snapshot_hash != snapshot_hash(snapshot):
+    if result.snapshot_id != snapshot.id or result.snapshot_hash != snapshot_hash(snapshot):
         raise ValueError("Result does not reference this snapshot")
-    result = result.model_copy(
-        update={"validation": validate(snapshot, result.assignments)}
-    )
+    validation = validate(snapshot, result.assignments)
+    if not validation.valid:
+        raise ValueError("Ungültigen Entwurf zuerst korrigieren; Export wurde nicht erstellt.")
+    result = result.model_copy(update={"validation": validation})
     path = Path(path)
     if path.suffix.lower() == ".xlsx":
         from openpyxl import Workbook

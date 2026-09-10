@@ -6,3 +6,7 @@ main{max-width:1680px}.team-picker{grid-column:span 2;border:1px solid #acb8c5;b
 #notice.error{background:#fde4e4;color:#8c2020;border:1px solid #d99}button[aria-busy=true]{cursor:progress;opacity:.65}button[aria-busy=true]::after{content:" …"}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #245ddb;outline-offset:2px}
 
 #profiles fieldset{min-width:0;border:1px solid #d6dfe8;border-radius:6px;margin:.8rem 0;padding:1rem}#profiles legend{font-weight:600}#profiles input[readonly]{background:#edf1f6}#profiles details{overflow-wrap:anywhere}
+
+.workspace-status{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;padding:.2rem 1rem;background:#fff;border:1px solid #cbd5e1;border-radius:8px}.workspace-status p{margin:.6rem 0}#savedJobs{max-width:min(100%,55rem)}button:disabled{cursor:default}
+
+#inspect{align-self:end}

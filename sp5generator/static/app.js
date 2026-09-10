@@ -1,29 +1,88 @@
 'use strict';
 let snapshot=null, assignments=[], jobId=null, timer=null, previous=[];
 let groups=[], checkedTeams=new Set(), transposed=false, planMonth="", solving=false;
+let dirty=false, jsonDirty=false, changeVersion=0;
 const $=id=>document.getElementById(id);
 const el=(tag,text,parent)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(parent)parent.append(n);return n;};
 const notice=(text,error=false)=>{$('notice').textContent=text;$('notice').classList.toggle('error',error);};
-async function api(path,method='GET',data){const r=await fetch(path,{method,headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});if(!r.ok){let e;try{e=await r.json();}catch{throw Error(`Anfrage fehlgeschlagen (HTTP ${r.status}). Bitte erneut versuchen.`);}throw Error(typeof e.detail==='string'?e.detail:JSON.stringify(e.detail??e));}return r.json();}
-async function runAction(b,fn){if(b.dataset.busy==='true')return;b.dataset.busy='true';const disabled=b.disabled;b.disabled=true;b.setAttribute('aria-busy','true');updateJobButtons();try{await fn();}catch(e){notice(e.message,true);}finally{delete b.dataset.busy;b.removeAttribute('aria-busy');b.disabled=disabled;updateJobButtons();}}
-function updateJobButtons(){for(const id of ['solve','recompute'])$(id).disabled=solving||!!jobId||$(id).dataset.busy==='true';$('cancel').disabled=!jobId||$('cancel').dataset.busy==='true';const switchIds=['demo','import','restore','applyJson','file'];const busy=solving||!!jobId||$('save').dataset.busy==='true'||switchIds.some(id=>$(id).dataset.busy==='true');for(const id of switchIds)$(id).disabled=busy;$('save').disabled=busy;}
+async function responseError(response){
+ let payload;
+ try{payload=await response.json();}catch{payload=null;}
+ const fields=payload?.fields?.map(f=>f.location.filter(x=>x!=='body').join('.')).filter(Boolean);
+ const message=typeof payload?.detail==='string'?payload.detail:`Anfrage fehlgeschlagen (HTTP ${response.status}). Bitte erneut versuchen.`;
+ const error=Error(message+(fields?.length?' Betroffene Felder: '+fields.join(', '):''));error.status=response.status;return error;
+}
+async function api(path,method='GET',data){
+ let r;
+ try{r=await fetch(path,{method,headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});}
+ catch{throw Error('Server nicht erreichbar. Verbindung prüfen und erneut versuchen. Änderungen bleiben in dieser Ansicht erhalten.');}
+ if(!r.ok)throw await responseError(r);
+ if(!r.headers.get('content-type')?.includes('application/json'))throw Error('Keine gültige Serverantwort. Bei abgelaufener Anmeldung die Seite neu laden. Ungespeicherte Änderungen vorher als Projekt sichern.');
+ return r.json();
+}
+async function runAction(b,fn){if(b.disabled||b.dataset.busy==='true')return;b.dataset.busy='true';const disabled=b.disabled;b.disabled=true;b.setAttribute('aria-busy','true');updateJobButtons();try{await fn();}catch(e){notice(e.message,true);}finally{delete b.dataset.busy;b.removeAttribute('aria-busy');b.disabled=disabled;updateJobButtons();}}
+const lockedControls=new Map();
+function updateJobButtons(){
+ $('cancel').disabled=!jobId||$('cancel').dataset.busy==='true';
+ const switchIds=['demo','import','restore','restoreJob','applyJson','file'];
+ const busy=solving||!!jobId||['save','saveDraft'].some(id=>$(id).dataset.busy==='true')||switchIds.some(id=>$(id).dataset.busy==='true');
+ for(const id of switchIds)$(id).disabled=busy||(id==='restore'&&!$('saved').value)||(id==='restoreJob'&&!$('savedJobs').value);
+ $('save').disabled=busy;$('saveDraft').disabled=busy;
+ for(const id of ['solve','recompute'])$(id).disabled=busy||$(id).dataset.busy==='true';
+ const editing='#matrix, #people, #details, #history, #shifts, #positions, #demands, #profiles, #unresolved, #weights, #plan';
+ const regions=[...document.querySelectorAll(editing)];for(const region of regions)region.inert=busy;
+ $('json').readOnly=busy;
+ const controls=[$('confirmHistory'),$('refreshJson')];
+ if(busy){for(const input of controls){if(!lockedControls.has(input))lockedControls.set(input,input.disabled);input.disabled=true;}}
+ else{for(const [input,disabled] of lockedControls)input.disabled=disabled;lockedControls.clear();}
+}
+function projectId(){
+ if(typeof crypto.randomUUID==='function')return crypto.randomUUID();
+ const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+ const hex=[...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
+function currentSnapshot(){return {...snapshot,assignments:structuredClone(assignments)};}
+function updateSaveStatus(){
+ $('saveStatus').textContent=jsonDirty?'JSON-Änderungen noch nicht übernommen.':dirty?'Ungespeicherte Änderungen – Entwurf und Regeln speichern.':`Gespeicherter Stand ${snapshot?.revision??''}`;
+ $('saveStatus').classList.toggle('bad',dirty||jsonDirty);
+}
+function markChanged(){changeVersion++;dirty=true;updateSaveStatus();}
+function canReplace(){return !(dirty||jsonDirty)||window.confirm('Ungespeicherte Änderungen verwerfen und einen anderen Stand öffnen? Mit Abbrechen können Sie den aktuellen Stand zuerst speichern oder als Projekt sichern.');}
+window.addEventListener('beforeunload',event=>{if(dirty||jsonDirty){event.preventDefault();event.returnValue='';}});
 function action(id,fn){$(id).onclick=()=>runAction($(id),fn);}
-function field(parent,label,value,change,type='text'){const l=el('label',label,parent),i=el('input',undefined,l);i.type=type;if(type==='checkbox')i.checked=!!value;else i.value=value??'';i.onchange=()=>{change(type==='checkbox'?i.checked:type==='number'?(i.value===''?null:Number(i.value)):i.value);invalidateResult();};return i;}
+function field(parent,label,value,change,type='text'){const l=el('label',label,parent),i=el('input',undefined,l);i.type=type;if(type==='number')i.step='any';if(type==='checkbox')i.checked=!!value;else i.value=value??'';i.onchange=()=>{change(type==='checkbox'?i.checked:type==='number'?(i.value===''?null:Number(i.value)):i.value);invalidateResult();};return i;}
 function select(parent,label,value,options,change){const l=el('label',label,parent),s=el('select',undefined,l);for(const [v,t] of options){const o=el('option',t,s);o.value=v;}s.value=value;s.onchange=()=>{change(s.value);invalidateResult();};return s;}
 function button(parent,text,fn){const b=el('button',text,parent);b.type='button';b.onclick=()=>runAction(b,fn);return b;}
 function table(parent,head){parent.replaceChildren();const t=el('table',undefined,parent),tr=el('tr',undefined,el('thead',undefined,t));head.forEach(x=>{const th=el('th',x,tr);th.scope='col';});return el('tbody',undefined,t);}
-async function saved(){const list=await api('/api/snapshots');$('saved').replaceChildren();list.forEach(x=>{const o=el('option',`${x.id} · Stand ${x.revision}`,$('saved'));o.value=x.id;});}
-function load(s){clearTimeout(timer);timer=null;jobId=null;previous=[];$('cancel').disabled=true;$('job').textContent='';$('result').replaceChildren();$('validation').textContent='';snapshot=s;updateJobButtons();$('planView').querySelector('[value=positions]').textContent=serviceMatrix()?'Einsatzplan · Dienste':'Einsatzplan · Funktionen / Arbeitsplätze';$('start').value=s.period_start;$('end').value=s.period_end;$('timezone').value=s.timezone;$('matrixSearch').value='';if(s.metadata.history_period){$('historyStart').value=s.metadata.history_period.start;$('historyEnd').value=s.metadata.history_period.end;}else{historyDefaults();}planMonth=s.period_start.slice(0,7);assignments=structuredClone(s.assignments);$('workspace').hidden=false;render();renderPlan();notice(`Daten geladen: ${s.employees.length} Personen${s.metadata.selected_group_ids?' aus '+s.metadata.selected_group_ids.length+' ausgewählten Teams':''}. Regeln und offene Angaben prüfen.`);}
+async function saved(){
+ const list=await api('/api/snapshots');const selected=snapshot?.id??$('saved').value;$('saved').replaceChildren();
+ if(!list.length)el('option','Keine gespeicherten Projekte',$('saved')).value='';
+ list.forEach(x=>{const o=el('option',`${x.period_start??x.id} bis ${x.period_end??''} · ${x.employee_count??'?'} Personen · Stand ${x.revision} · ${x.id.slice(0,8)}`,$('saved'));o.value=x.id;});
+ if(list.some(x=>x.id===selected))$('saved').value=selected;updateJobButtons();
+}
+const jobStates={queued:'In Warteschlange',running:'Berechnung läuft',succeeded:'Berechnung beendet',failed:'Fehlgeschlagen',cancelled:'Abgebrochen'};
+async function savedJobs(){
+ const list=await api('/api/jobs');const selected=jobId??$('savedJobs').value;$('savedJobs').replaceChildren();
+ if(!list.length)el('option','Keine Berechnungen vorhanden',$('savedJobs')).value='';
+ list.forEach(j=>{const date=new Date(j.created_at*1000).toLocaleString('de-DE');const o=el('option',`${date} · ${jobStates[j.state]??j.state} · ${j.snapshot_id}`,$('savedJobs'));o.value=j.id;});
+ if(list.some(j=>j.id===selected))$('savedJobs').value=selected;updateJobButtons();
+}
+async function readProject(text){
+ let candidate;try{candidate=JSON.parse(text);}catch{throw Error('Ungültige JSON-Datei. Syntax prüfen; der aktuelle Stand wurde beibehalten.');}
+ if(candidate?.snapshot_id&&!candidate?.employees)throw Error('Diese Datei ist ein Prüfergebnis. Zum Weiterarbeiten die vollständige Datei aus „Projekt als JSON sichern“ laden oder eine gespeicherte Berechnung öffnen.');
+ return api('/api/snapshots/check','POST',candidate);
+}
+function load(s,persisted=false){new Intl.DateTimeFormat('de-DE',{timeZone:s.timezone}).format();if(s.period_start>s.period_end)throw Error('Planungsbeginn muss vor dem Planungsende liegen.');clearTimeout(timer);timer=null;jobId=null;previous=[];$('cancel').disabled=true;$('job').textContent='';$('result').replaceChildren();$('validation').textContent='';snapshot=s;changeVersion++;dirty=!persisted;jsonDirty=false;$('details').replaceChildren();updateSaveStatus();updateJobButtons();$('planView').querySelector('[value=positions]').textContent=serviceMatrix()?'Einsatzplan · Dienste':'Einsatzplan · Funktionen / Arbeitsplätze';$('start').value=s.period_start;$('end').value=s.period_end;$('timezone').value=s.timezone;$('matrixSearch').value='';if(s.metadata.history_period){$('historyStart').value=s.metadata.history_period.start;$('historyEnd').value=s.metadata.history_period.end;}else{historyDefaults();}planMonth=s.period_start.slice(0,7);assignments=structuredClone(s.assignments);$('workspace').hidden=false;render();renderPlan();updateJobButtons();notice(`Daten geladen: ${s.employees.length} Personen${s.metadata.selected_group_ids?' aus '+s.metadata.selected_group_ids.length+' ausgewählten Teams':''}. Regeln und offene Angaben prüfen.`);}
 function render(){
  $('source').textContent=`Quelle: ${snapshot.source==='synthetic'?'SYNTHETISCHE DEMO':snapshot.source} · ${snapshot.period_start} bis ${snapshot.period_end} · ${snapshot.timezone} · Stand ${snapshot.revision}`;
  renderMatrix();
  let body=table($('people'),['Person','Dienstart','Bevorzugt','Sollstunden','Teams','Profile','Details']);
  snapshot.employees.forEach(e=>{const tr=el('tr',undefined,body);el('td',e.name,tr);select(el('td',undefined,tr),'Erlaubt',e.allowed_kinds.join(','),[['day','Nur Tag'],['night','Nur Nacht'],['day,night','Tag und Nacht']],v=>e.allowed_kinds=v.split(','));select(el('td',undefined,tr),'Wunsch',e.preferred_kind??'',[['','Keine Präferenz'],['day','Bevorzugt Tag'],['night','Bevorzugt Nacht']],v=>e.preferred_kind=v||null);field(el('td',undefined,tr),'Stunden',e.target_minutes/60,v=>e.target_minutes=Math.round(v*60),'number');el('td',e.team_ids.map(id=>(snapshot.metadata.group_tree??[]).find(g=>'sp5:group:'+g.id===id)?.name??id).join(', '),tr);el('td',e.profile_ids.join(', '),tr);button(el('td',undefined,tr),'Bearbeiten',()=>personDetails(e));});
- renderHistory(); renderRules(); $('json').value=JSON.stringify(snapshot,null,2);
+ renderHistory(); renderRules(); if(!jsonDirty)$('json').value=JSON.stringify(currentSnapshot(),null,2);
 }
 function personDetails(e){const box=$('details');box.replaceChildren();el('h3',e.name,box);const grid=el('div',undefined,box);grid.className='grid';field(grid,'Beschäftigung in %',e.employment_fraction,v=>e.employment_fraction=v,'number');field(grid,'Saldo Minuten',e.balance_minutes,v=>e.balance_minutes=v,'number');field(grid,'Wochenenden erlaubt',e.allow_weekends,v=>e.allow_weekends=v,'checkbox');field(grid,'Feiertage erlaubt',e.allow_holidays,v=>e.allow_holidays=v,'checkbox');field(grid,'Profil-IDs (Komma)',e.profile_ids.join(','),v=>e.profile_ids=v.split(',').map(x=>x.trim()).filter(Boolean));
- el('h3','Freigaben',box);const approvals=el('div',undefined,box);const draw=()=>{approvals.replaceChildren();e.approvals.forEach((a,i)=>{const row=el('div',undefined,approvals);row.className='grid card';select(row,'Dienst / Arbeitsplatz',approvalPositions().find(p=>samePosition(a,p))?.id??'', [['','Position auswählen'],...approvalPositions().map(p=>[p.id,p.name])],id=>{const p=approvalPositions().find(p=>p.id===id);if(p){a.function_id=p.function_id;a.workplace_id=p.workplace_id;}});field(row,'Gültig ab',a.valid_from,v=>a.valid_from=v,'date');field(row,'Gültig bis',a.valid_until,v=>a.valid_until=v,'date');field(row,'Betreuung erforderlich',a.supervised,v=>a.supervised=v,'checkbox');button(row,'Entfernen',()=>{e.approvals.splice(i,1);draw();});});};draw();button(box,'Freigabe hinzufügen',()=>{e.approvals.push({function_id:'',workplace_id:'',valid_from:snapshot.period_start,valid_until:snapshot.period_end,supervised:false});draw();});
- el('h3','Verfügbarkeit / Teilzeit / wechselnde Wochen',box);el('p','Ein Dienst muss vollständig in erlaubte Zeitfenster passen. Wochentage: 0 = Montag bis 6 = Sonntag. Mehrere Fenster sind möglich.',box);const avail=el('div',undefined,box);const drawAvail=()=>{avail.replaceChildren();e.availability.forEach((a,i)=>{const row=el('div',undefined,avail);row.className='grid card';field(row,'Gültig ab',a.valid_from,v=>a.valid_from=v,'date');field(row,'Gültig bis',a.valid_until,v=>a.valid_until=v,'date');field(row,'Wochentage (Komma)',a.weekdays.join(','),v=>a.weekdays=v.split(',').map(Number));field(row,'Von',a.start_time,v=>a.start_time=v);field(row,'Bis (24:00 möglich)',a.end_time,v=>a.end_time=v);field(row,'Wochenzyklus',a.cycle_weeks,v=>a.cycle_weeks=v,'number');field(row,'Zyklusphase',a.cycle_phase,v=>a.cycle_phase=v,'number');field(row,'Zyklus-Startdatum',a.cycle_anchor??'',v=>a.cycle_anchor=v||null,'date');button(row,'Fenster entfernen',()=>{e.availability.splice(i,1);drawAvail();});});};drawAvail();button(box,'Zeitfenster hinzufügen',()=>{e.availability.push({valid_from:snapshot.period_start,valid_until:snapshot.period_end,weekdays:[0,1,2,3,4],start_time:'08:00',end_time:'13:00',cycle_weeks:1,cycle_phase:0,cycle_anchor:null,source:'additional'});drawAvail();});button(box,'Details schließen',()=>{box.replaceChildren();render();});}
+ el('h3','Freigaben',box);const approvals=el('div',undefined,box);const draw=()=>{approvals.replaceChildren();e.approvals.forEach((a,i)=>{const row=el('div',undefined,approvals);row.className='grid card';select(row,'Dienst / Arbeitsplatz',approvalPositions().find(p=>samePosition(a,p))?.id??'', [['','Position auswählen'],...approvalPositions().map(p=>[p.id,p.name])],id=>{const p=approvalPositions().find(p=>p.id===id);if(p){a.function_id=p.function_id;a.workplace_id=p.workplace_id;}});field(row,'Gültig ab',a.valid_from,v=>a.valid_from=v,'date');field(row,'Gültig bis',a.valid_until,v=>a.valid_until=v,'date');field(row,'Betreuung erforderlich',a.supervised,v=>a.supervised=v,'checkbox');button(row,'Entfernen',()=>{e.approvals.splice(i,1);invalidateResult();draw();});});};draw();button(box,'Freigabe hinzufügen',()=>{e.approvals.push({function_id:'',workplace_id:'',valid_from:snapshot.period_start,valid_until:snapshot.period_end,supervised:false});invalidateResult();draw();});
+ el('h3','Verfügbarkeit / Teilzeit / wechselnde Wochen',box);el('p','Ein Dienst muss vollständig in erlaubte Zeitfenster passen. Wochentage: 0 = Montag bis 6 = Sonntag. Mehrere Fenster sind möglich.',box);const avail=el('div',undefined,box);const drawAvail=()=>{avail.replaceChildren();e.availability.forEach((a,i)=>{const row=el('div',undefined,avail);row.className='grid card';field(row,'Gültig ab',a.valid_from,v=>a.valid_from=v,'date');field(row,'Gültig bis',a.valid_until,v=>a.valid_until=v,'date');field(row,'Wochentage (Komma)',a.weekdays.join(','),v=>a.weekdays=v.split(',').map(Number));field(row,'Von',a.start_time,v=>a.start_time=v);field(row,'Bis (24:00 möglich)',a.end_time,v=>a.end_time=v);field(row,'Wochenzyklus',a.cycle_weeks,v=>a.cycle_weeks=v,'number');field(row,'Zyklusphase',a.cycle_phase,v=>a.cycle_phase=v,'number');field(row,'Zyklus-Startdatum',a.cycle_anchor??'',v=>a.cycle_anchor=v||null,'date');button(row,'Fenster entfernen',()=>{e.availability.splice(i,1);invalidateResult();drawAvail();});});};drawAvail();button(box,'Zeitfenster hinzufügen',()=>{e.availability.push({valid_from:snapshot.period_start,valid_until:snapshot.period_end,weekdays:[0,1,2,3,4],start_time:'08:00',end_time:'13:00',cycle_weeks:1,cycle_phase:0,cycle_anchor:null,source:'additional'});invalidateResult();drawAvail();});button(box,'Details schließen',()=>{box.replaceChildren();render();});}
 function renderHistory(){
  const box=$('history');box.replaceChildren();const rows=snapshot.metadata.history_matrix??[];
  if(!rows.length){el('p','Keine historischen Vorschläge vorhanden.',box);return;}
@@ -40,6 +99,7 @@ function renderRules(){let body=table($('shifts'),['Schicht','Dienstart','Zeitfe
  $('unresolved').replaceChildren();snapshot.unresolved.forEach((u,i)=>{const row=el('div',undefined,$('unresolved'));row.className='card';el('span',u,row);button(row,'Nach fachlicher Korrektur als geklärt markieren',()=>{snapshot.unresolved.splice(i,1);invalidateResult();renderRules();});});if(!snapshot.unresolved.length)el('p','Keine offenen Importangaben.', $('unresolved'));$('weights').replaceChildren();Object.entries(snapshot.objectives).forEach(([k,v])=>field($('weights'),({hours:'Stunden',nights:'Nächte',weekends:'Wochenenden',holidays:'Feiertage',wishes:'Wünsche',changes:'Änderungen'})[k],v,n=>snapshot.objectives[k]=n,'number'));}
 function invalidateResult(){
  if(!snapshot)return;
+ markChanged();
  $('result').textContent='Daten oder Entwurf geändert. Erneut prüfen oder berechnen.';
  $('validation').textContent='Prüfbericht nicht aktuell. Entwurf erneut prüfen.';
 }
@@ -84,14 +144,88 @@ function renderProfiles(){
  });
 }
 function renderPlan(){renderCalendar();const body=table($('plan'),['Person','Dienst / Position','Fixiert','Aktion']);assignments.forEach((a,i)=>{const d=snapshot.demands.find(x=>x.id===a.demand_id),s=snapshot.shifts.find(x=>x.id===d?.shift_id);const tr=el('tr',undefined,body);select(el('td',undefined,tr),'Person',a.employee_id,snapshot.employees.map(e=>[e.id,e.name]),v=>{a.employee_id=v;renderCalendar();notice('Entwurf geändert: erneut prüfen.');});el('td',`${s?.name??'Unbekannter Dienst'} · ${snapshot.positions.find(p=>p.id===d?.position_id)?.name??'Unbekannte Position'}`,tr);field(el('td',undefined,tr),'Fixieren',a.fixed,v=>{a.fixed=v;renderCalendar();},'checkbox');button(el('td',undefined,tr),'Entfernen',()=>{assignments.splice(i,1);invalidateResult();renderPlan();});});if(!assignments.length)el('p','Noch keine Einteilungen.',$('plan'));const add=el('div',undefined,$('plan'));add.className='actions';let employee=snapshot.employees[0]?.id,demand=snapshot.demands[0]?.id;select(add,'Person hinzufügen',employee,snapshot.employees.map(e=>[e.id,e.name]),v=>employee=v);select(add,'Bedarfsposition',demand,snapshot.demands.map(d=>[d.id,`${snapshot.shifts.find(s=>s.id===d.shift_id)?.name??'Dienst'} / ${snapshot.positions.find(p=>p.id===d.position_id)?.name??'Position'}`]),v=>demand=v);button(add,'Einteilung hinzufügen',()=>{if(!employee||!demand)return;assignments.push({employee_id:employee,demand_id:demand,fixed:false,segments:[]});invalidateResult();renderPlan();notice('Einteilung ergänzt. Vor Export oder Neuberechnung erneut prüfen.');});}
-async function save(){const invalid=$('profiles').querySelector('input:invalid');if(invalid){invalid.closest('details').open=true;invalid.reportValidity();throw Error('Regelprofil: ungültige oder fehlende Eingabe korrigieren.');}snapshot.assignments=structuredClone(assignments);const persisted=await api('/api/snapshots','PUT',snapshot);snapshot.revision=persisted.revision;await saved();notice('Regeln und Snapshot dauerhaft gespeichert.');}
-async function solve(){if(solving||jobId)throw Error('Eine Berechnung läuft bereits.');if(!snapshot)throw Error('Zuerst Daten laden');solving=true;updateJobButtons();try{await save();const j=await api('/api/jobs','POST',{snapshot_id:snapshot.id,time_limit:Number($('limit').value),partial:$('partial').checked});jobId=j.id;updateJobButtons();$('cancel').disabled=false;clearTimeout(timer);await poll();}finally{solving=false;updateJobButtons();}}
-async function poll(){const requestedJob=jobId;if(!requestedJob)return;try{const j=await api('/api/jobs/'+requestedJob);if(jobId!==requestedJob)return;$('job').textContent=`${({queued:'In Warteschlange',running:'Berechnung läuft',succeeded:'Berechnung beendet',failed:'Fehlgeschlagen',cancelled:'Abgebrochen'})[j.state]} · ${Math.max(0,Math.round((j.finished_at??Date.now()/1000)-(j.started_at??j.created_at)))} Sekunden`;if(['queued','running'].includes(j.state)){timer=setTimeout(poll,700);return;}$('cancel').disabled=true;jobId=null;updateJobButtons();if(j.error)notice(j.error);if(j.result){assignments=j.result.assignments;$('result').replaceChildren();el('p',`Solver: ${j.result.solver_status} · ${j.result.validation.complete?'Vollständig':'Nicht vollständig'} · Laufzeit ${j.result.runtime_seconds.toFixed(2)} s`,$('result'));const evaluation=el('details',undefined,$('result'));el('summary','Auswertung und offene Stellen',evaluation);el('pre',JSON.stringify({offene_Stellen:j.result.vacancies,auswertung:j.result.metrics},null,2),evaluation);$('validation').textContent=JSON.stringify(j.result.validation,null,2);if(previous.length){const old=new Set(previous.map(a=>a.employee_id+'|'+a.demand_id)),next=new Set(assignments.map(a=>a.employee_id+'|'+a.demand_id));el('p',`Vergleich: ${[...next].filter(x=>!old.has(x)).length} hinzugefügt, ${[...old].filter(x=>!next.has(x)).length} entfernt.`,$('result'));}renderPlan();}}catch(e){if(jobId!==requestedJob)return;notice(e.message,true);timer=setTimeout(poll,2000);}}
-action('demo',async()=>load(await api('/api/demo')));
-action('inspect',async()=>{const source=await api($('sourceType').value==='api'?'/api/remote-source':'/api/source?directory='+encodeURIComponent($('directory').value));groups=source.groups;checkedTeams.clear();renderTeams();notice(`${groups.length} Teams gefunden. Gewünschte Teams auswählen.`);});
-action('import',async()=>{if(!checkedTeams.size)throw Error('Mindestens ein Team auswählen.');notice('Import einschließlich historischer Basis läuft …');const r=await api($('sourceType').value==='api'?'/api/remote-import':'/api/import','POST',{...($('sourceType').value==='directory'?{directory:$('directory').value}:{}),period_start:$('start').value,period_end:$('end').value,team_ids:[...checkedTeams],timezone:$('timezone').value,history_plan:$('historyPlan').value,existing_plan_mode:$('existingPlanMode').value,history_start:$('historyStart').value||null,history_end:$('historyEnd').value||null});load(r.snapshot);});
-action('save',save);action('restore',async()=>load(await api('/api/snapshots/'+encodeURIComponent($('saved').value))));action('solve',solve);action('cancel',async()=>{await api('/api/jobs/'+jobId+'/cancel','POST');await poll();});action('validate',async()=>{$('validationDetails').open=true;$('validation').textContent=JSON.stringify(await api('/api/validate','POST',{snapshot,assignments}),null,2);});action('recompute',async()=>{previous=structuredClone(assignments);snapshot.assignments=structuredClone(assignments);await solve();});action('refreshJson',()=>{$('json').value=JSON.stringify(snapshot,null,2);});action('applyJson',()=>{load(JSON.parse($('json').value));});$('file').onchange=()=>runAction($('file'),async()=>{if($('file').files[0])load(JSON.parse(await $('file').files[0].text()));});document.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>runAction(b,async()=>{const f=b.dataset.export,r=await fetch('/api/export/'+f,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({snapshot,assignments})});if(!r.ok)throw Error(JSON.stringify(await r.json()));const url=URL.createObjectURL(await r.blob()),a=el('a');a.href=url;a.download='plan.'+f;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));saved().catch(e=>notice(e.message));
+async function save(){
+ if(jsonDirty)throw Error('JSON-Änderungen zuerst übernehmen oder mit „Aktuelle Daten anzeigen“ verwerfen.');
+ const invalid=$('workspace').querySelector('input:invalid');
+ if(invalid){let parent=invalid.parentElement;while(parent){if(parent.tagName==='DETAILS')parent.open=true;parent=parent.parentElement;}invalid.reportValidity();throw Error('Ungültige oder fehlende Eingabe korrigieren.');}
+ const persisted=await api('/api/snapshots','PUT',currentSnapshot());
+ snapshot.revision=persisted.revision;snapshot.assignments=structuredClone(assignments);dirty=false;updateSaveStatus();
+ $('json').value=JSON.stringify(currentSnapshot(),null,2);
+ await saved();notice('Regeln und Entwurf dauerhaft gespeichert.');
+}
+async function solve(){
+ if(solving||jobId)throw Error('Eine Berechnung läuft bereits.');if(!snapshot)throw Error('Zuerst Daten laden');
+ if(!$('limit').checkValidity()){$('limit').reportValidity();throw Error('Zeitlimit zwischen 1 und 600 Sekunden eingeben.');}
+ solving=true;updateJobButtons();
+ try{await save();const j=await api('/api/jobs','POST',{snapshot_id:snapshot.id,snapshot_revision:snapshot.revision,time_limit:Number($('limit').value),partial:$('partial').checked});jobId=j.id;updateJobButtons();clearTimeout(timer);await poll();await savedJobs().catch(e=>notice('Liste der Berechnungen konnte nicht aktualisiert werden. '+e.message,true));}
+ finally{solving=false;updateJobButtons();}
+}
+async function poll(){
+ const requestedJob=jobId;if(!requestedJob)return;
+ try{
+  const j=await api('/api/jobs/'+encodeURIComponent(requestedJob));if(jobId!==requestedJob)return;
+  $('job').textContent=`${jobStates[j.state]??j.state} · ${Math.max(0,Math.round((j.finished_at??Date.now()/1000)-(j.started_at??j.created_at)))} Sekunden`;
+  if(['queued','running'].includes(j.state)){timer=setTimeout(poll,700);return;}
+  jobId=null;updateJobButtons();
+  if(j.error)notice(j.error,true);
+  if(j.result){
+   assignments=structuredClone(j.result.assignments);markChanged();$('result').replaceChildren();
+   const valid=j.result.validation.valid,complete=j.result.validation.complete;
+   const summary=el('p',`Solver: ${j.result.solver_status} · ${valid?(complete?'Vollständig und geprüft':'Geprüfter Teilplan'):'Prüfung fehlgeschlagen'} · Laufzeit ${j.result.runtime_seconds.toFixed(2)} s`,$('result'));summary.className=valid&&complete?'good':'bad';
+   const evaluation=el('details',undefined,$('result'));el('summary','Auswertung und offene Stellen',evaluation);el('pre',JSON.stringify({offene_Stellen:j.result.vacancies,auswertung:j.result.metrics},null,2),evaluation);
+   $('validation').textContent=JSON.stringify(j.result.validation,null,2);
+   if(previous.length){const old=new Set(previous.map(a=>a.employee_id+'|'+a.demand_id)),next=new Set(assignments.map(a=>a.employee_id+'|'+a.demand_id));el('p',`Vergleich: ${[...next].filter(x=>!old.has(x)).length} hinzugefügt, ${[...old].filter(x=>!next.has(x)).length} entfernt.`,$('result'));}
+   renderPlan();$('json').value=JSON.stringify(currentSnapshot(),null,2);notice(valid&&complete?'Berechnung abgeschlossen. Entwurf prüfen und dauerhaft speichern.':'Berechnung abgeschlossen. Prüfbericht und offene Stellen beachten.',!valid);
+  }
+  await savedJobs();
+ }catch(e){
+  if(jobId!==requestedJob)return;notice(e.message,true);
+  if(e.status===404||e.status===401){jobId=null;updateJobButtons();return;}
+  $('job').textContent='Verbindung zur Berechnung unterbrochen. Status wird erneut abgerufen …';timer=setTimeout(poll,2000);
+ }
+}
+action('demo',async()=>{if(canReplace())load(await api('/api/demo'));});
+action('inspect',async()=>{const key=JSON.stringify([$('sourceType').value,$('directory').value]);const source=await api($('sourceType').value==='api'?'/api/remote-source':'/api/source?directory='+encodeURIComponent($('directory').value));if(key!==JSON.stringify([$('sourceType').value,$('directory').value])){notice('Datenquelle geändert. Teams erneut laden.');return;}groups=source.groups;checkedTeams.clear();renderTeams();notice(`${groups.length} Teams gefunden. Gewünschte Teams auswählen.`);});
+action('import',async()=>{if(!checkedTeams.size)throw Error('Mindestens ein Team auswählen.');if(!canReplace())return;notice('Import einschließlich historischer Basis läuft …');const r=await api($('sourceType').value==='api'?'/api/remote-import':'/api/import','POST',{...($('sourceType').value==='directory'?{directory:$('directory').value}:{}),period_start:$('start').value,period_end:$('end').value,team_ids:[...checkedTeams],timezone:$('timezone').value,history_plan:$('historyPlan').value,existing_plan_mode:$('existingPlanMode').value,history_start:$('historyStart').value||null,history_end:$('historyEnd').value||null});load(r.snapshot);});
+action('save',save);action('saveDraft',save);
+action('restore',async()=>{if(canReplace())load(await api('/api/snapshots/'+encodeURIComponent($('saved').value)),true);});
+action('refreshJobs',savedJobs);
+action('restoreJob',async()=>{
+ if(!canReplace())return;const id=$('savedJobs').value;if(!id)throw Error('Zuerst eine Berechnung auswählen.');
+ const original=await api('/api/jobs/'+encodeURIComponent(id)+'/snapshot');
+ original.id=projectId();original.revision='0';original.metadata={...original.metadata,restored_from_job:id};
+ load(original);jobId=id;updateJobButtons();await poll();
+});
+action('solve',solve);
+action('cancel',async()=>{await api('/api/jobs/'+encodeURIComponent(jobId)+'/cancel','POST');await poll();});
+action('validate',async()=>{
+ const version=changeVersion;$('validationDetails').open=true;const report=await api('/api/validate','POST',{snapshot,assignments});
+ if(version!==changeVersion){notice('Daten während der Prüfung geändert. Aktuellen Entwurf erneut prüfen.');return;}
+ $('validation').textContent=JSON.stringify(report,null,2);
+ notice(report.valid?(report.complete?'Entwurf ist vollständig und geprüft.':'Teilplan geprüft. Offene Stellen im Prüfbericht beachten.'):'Entwurf enthält Regelverletzungen. Prüfbericht beachten.',!report.valid);
+});
+action('recompute',async()=>{previous=structuredClone(assignments);await solve();});
+action('refreshJson',()=>{if(jsonDirty&&!window.confirm('Nicht übernommene JSON-Änderungen verwerfen?'))return;jsonDirty=false;$('json').value=JSON.stringify(currentSnapshot(),null,2);updateSaveStatus();});
+action('applyJson',async()=>{const checked=await readProject($('json').value);load(checked);});
+$('json').oninput=()=>{jsonDirty=true;updateSaveStatus();};
+$('file').onchange=()=>runAction($('file'),async()=>{
+ try{const file=$('file').files[0];if(!file)return;if(file.size>16*1024*1024)throw Error('Projektdatei überschreitet die Grenze von 16 MiB.');const checked=await readProject(await file.text());if(canReplace())load(checked);}
+ finally{$('file').value='';}
+});
+function download(content,name){const url=URL.createObjectURL(content),a=el('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+action('backup',()=>{
+ if(jsonDirty)throw Error('JSON-Änderungen zuerst übernehmen oder verwerfen, damit die Projektsicherung den angezeigten Stand enthält.');
+ download(new Blob([JSON.stringify(currentSnapshot(),null,2)],{type:'application/json'}),`projekt-${snapshot.period_start}-${snapshot.period_end}.json`);notice('Vollständiges Projekt mit Regeln und aktuellem Entwurf heruntergeladen.');
+});
+document.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>runAction(b,async()=>{
+ if(jsonDirty)throw Error('JSON-Änderungen zuerst übernehmen oder verwerfen.');
+ const f=b.dataset.export,r=await fetch('/api/export/'+f,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({snapshot,assignments})});
+ if(!r.ok)throw await responseError(r);if(r.redirected)throw Error('Anmeldung abgelaufen. Projekt sichern und erneut anmelden.');download(await r.blob(),'plan.'+f);
+}));
+$('saved').onchange=updateJobButtons;$('savedJobs').onchange=updateJobButtons;
+saved().catch(e=>notice(e.message,true));savedJobs().catch(e=>notice(e.message,true));
 
+$('directory').oninput=()=>{if(groups.length||checkedTeams.size){groups=[];checkedTeams.clear();renderTeams();notice('Verzeichnis geändert. Teams erneut laden.');}};
 $('sourceType').onchange=()=>{$('directoryLabel').hidden=$('sourceType').value==='api';groups=[];checkedTeams.clear();renderTeams();notice('Datenquelle geändert. Teams erneut laden.');};
 
 function renderTeams(){

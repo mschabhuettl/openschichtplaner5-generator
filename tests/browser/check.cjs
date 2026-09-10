@@ -16,7 +16,7 @@ let output = '';
 for (const stream of [server.stdout, server.stderr]) stream.on('data', data => { output = (output + data).slice(-8000); });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 (async () => {
-  let browser;
+  let browser, failed=false;
   try {
     let ready = false;
     for (let i=0;i<100;i++) {
@@ -25,16 +25,24 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       await delay(100);
     }
     assert(ready, 'Web service starts');
-    browser = await chromium.launch({headless:true, args:['--no-sandbox']});
+    browser = await chromium.launch({headless:true, args:['--no-sandbox'], ...(process.env.WEB_TEST_CHROMIUM?{executablePath:process.env.WEB_TEST_CHROMIUM}:{})});
     const page = await browser.newPage();
+    async function uploadProject(file){
+      await page.waitForFunction(()=>!document.querySelector('#file').disabled);
+      const checked=page.waitForResponse(r=>r.url().endsWith('/api/snapshots/check')&&r.request().method()==='POST');
+      await page.setInputFiles('#file',file);await checked;
+      await page.waitForFunction(()=>document.querySelector('#file').dataset.busy!=='true');
+    }
     const errors = [];
+    let acceptDiscard=true;
+    page.on('dialog', dialog => acceptDiscard ? dialog.accept() : dialog.dismiss());
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => {
       const url = new URL(route.request().url());
       return url.hostname === '127.0.0.1' ? route.continue() : route.abort();
     });
     await page.goto(base);
-    await page.waitForFunction(()=>document.querySelector('#version').textContent==='Version 0.6.0');
+    await page.waitForFunction(()=>/^Version [0-9]+\.[0-9]+\.[0-9]+/.test(document.querySelector('#version').textContent));
     await page.selectOption('#sourceType', 'api');
     await page.click('#inspect');
     await page.waitForSelector('[data-team-id="3"]');
@@ -77,7 +85,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     // Removing the visible period must retain approvals before and after it.
     const dated = structuredClone(snapshot); dated.id += ":dated";
     dated.employees[0].approvals = [{function_id:'sp5:service:201',workplace_id:'*',valid_from:'2026-01-01',valid_until:'2026-03-31',supervised:true}];
-    await page.setInputFiles('#file', {name:'synthetic-dated.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(dated))});
+    await uploadProject( {name:'synthetic-dated.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(dated))});
     await page.waitForFunction(() => [...document.querySelectorAll('.matrix-cell')].some(b=>b.textContent.includes('Betreut')));
     await page.click(selector);
     const datedSave = page.waitForResponse(r=>r.url().endsWith('/api/snapshots') && r.request().method()==='PUT');
@@ -89,7 +97,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     // Extending a partial supervised grant must not turn it into unsupervised work.
     const partial = structuredClone(snapshot); partial.id += ":partial";
     partial.employees[0].approvals = [{function_id:'sp5:service:201',workplace_id:'sp5:workplace:301',valid_from:'2026-02-02',valid_until:'2026-02-03',supervised:true}];
-    await page.setInputFiles('#file', {name:'synthetic-partial.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(partial))});
+    await uploadProject( {name:'synthetic-partial.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(partial))});
     await page.waitForFunction(() => document.querySelector('.matrix-cell[data-employee-id="sp5:employee:101"][data-function-id="sp5:service:201"]').getAttribute('aria-pressed')==='false');
     assert.match(await page.locator(selector).innerText(), /Einzelne Arbeitsplätze/);
     await page.click(selector);
@@ -102,7 +110,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     // Imported calendar groups by native service, not shared physical workplace.
     const calendarSnapshot=structuredClone(snapshot);
     calendarSnapshot.assignments=calendarSnapshot.demands.map(d=>({employee_id:calendarSnapshot.employees[0].id,demand_id:d.id,fixed:false,segments:[]}));
-    await page.setInputFiles('#file',{name:'synthetic-services.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(calendarSnapshot))});
+    await uploadProject({name:'synthetic-services.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(calendarSnapshot))});
     await page.selectOption('#planView','positions');
     await page.waitForFunction(()=>document.querySelector('#calendar thead').textContent.includes('Dienst'));
     assert.equal(await page.locator('#calendar tbody tr').count(),3);
@@ -123,9 +131,17 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     if(process.env.WEB_TEST_SCREENSHOT_DIR) await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,'monthly.png'),fullPage:true});
     await page.locator('#assignmentDetails summary').click();
     await page.locator('#plan tbody input[type="checkbox"]').first().check();
+    // A failing history list must not prevent polling the newly submitted job.
+    let failedHistoryCalls=0;
+    await page.route('**/api/jobs',async route=>{
+      if(route.request().method()==='GET'){failedHistoryCalls++;await route.fulfill({status:503,contentType:'application/json',body:'{"detail":"Liste vorübergehend nicht verfügbar"}'});}
+      else await route.continue();
+    });
     const recomputeResponse = page.waitForResponse(r=>r.url().endsWith('/api/jobs') && r.request().method()==='POST');
     await page.click('#recompute');
     const newJob = await (await recomputeResponse).json();
+    assert.equal(typeof newJob.id,'string');
+    assert(await page.locator('#matrix').evaluate(e=>e.inert),'Editors locked while a calculation is active');
     let computed;
     for(let i=0;i<200;i++) {
       computed = await (await fetch(base+'/api/jobs/'+newJob.id)).json();
@@ -136,7 +152,70 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert(computed.result.validation.valid && computed.result.assignments.some(a=>a.fixed));
     await page.waitForFunction(() => document.querySelector('#job').textContent.includes('Berechnung beendet'), null, {timeout:30000});
     assert(await page.locator('#plan tbody input[type="checkbox"]').first().isChecked());
+    assert(failedHistoryCalls>0);
+    assert.equal(await page.locator('#matrix').evaluate(e=>e.inert),false);
+    await page.unroute('**/api/jobs');
     assert.match(await page.locator('#validation').textContent(), /"valid": true/);
+    // A completed draft survives reload through the persistent job history.
+    const solvedAssignments=await page.locator('#plan tbody tr').count();
+    await page.addInitScript(()=>{Object.defineProperty(crypto,'randomUUID',{value:undefined,configurable:true});});
+    await page.reload();
+    await page.waitForSelector(`#savedJobs option[value="${newJob.id}"]`,{state:'attached'});
+    await page.selectOption('#savedJobs',newJob.id);
+    await page.click('#restoreJob');
+    await page.waitForFunction(()=>document.querySelector('#result').textContent.includes('Vollständig'));
+    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    assert.match(await page.locator('#saveStatus').innerText(),/Ungespeicherte/);
+    // Project backup includes all rules and the latest fixed assignments and reopens.
+    const backupDownload=page.waitForEvent('download');
+    await page.click('#backup');
+    const backup=await backupDownload;
+    const backupPath=await backup.path();
+    const backedUp=JSON.parse(fs.readFileSync(backupPath,'utf8'));
+    assert.equal(backedUp.assignments.length,solvedAssignments);
+    assert(backedUp.assignments.some(a=>a.fixed));
+    assert(backedUp.employees.length>0 && backedUp.profiles.length>0);
+    // Loading a project excludes both user and programmatic solve submissions.
+    let releaseUpload,signalUpload;
+    const uploadStarted=new Promise(resolve=>{signalUpload=resolve;});
+    const uploadReleased=new Promise(resolve=>{releaseUpload=resolve;});
+    await page.route('**/api/snapshots/check',async route=>{signalUpload();await uploadReleased;await route.continue();});
+    const loading=uploadProject({name:'project-backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backedUp))});
+    await uploadStarted;
+    assert(await page.locator('#solve').isDisabled());
+    assert(await page.locator('#recompute').isDisabled());
+    let overlappingJobs=0;const countJob=request=>{if(request.url().endsWith('/api/jobs')&&request.method()==='POST')overlappingJobs++;};
+    page.on('request',countJob);
+    await page.locator('#solve').evaluate(button=>button.onclick());
+    assert.equal(overlappingJobs,0);
+    releaseUpload();await loading;
+    page.off('request',countJob);await page.unroute('**/api/snapshots/check');
+    await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('Daten geladen'));
+    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    // Invalid projects never replace the in-memory draft or leave the UI broken.
+    await uploadProject({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from('{"employees":[]}')});
+    await page.waitForFunction(()=>document.querySelector('#notice').classList.contains('error'));
+    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    assert.match(await page.locator('#notice').innerText(),/Felder/);
+    const invalidZone=structuredClone(backedUp);invalidZone.timezone='Invalid/Nowhere';
+    const rejectedZone=page.waitForResponse(r=>r.url().endsWith('/api/snapshots/check')&&r.request().method()==='POST');
+    await uploadProject({name:'invalid-timezone.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(invalidZone))});
+    assert.equal((await rejectedZone).status(),422);
+    await page.waitForFunction(()=>document.querySelector('#file').disabled===false);
+    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    acceptDiscard=false;
+    await page.click('#demo');
+    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    acceptDiscard=true;
+    // Saving advances the recovered project without overwriting the original job input.
+    const recoveredSave=page.waitForResponse(r=>r.url().endsWith('/api/snapshots')&&r.request().method()==='PUT');
+    await page.click('#save');
+    const recovered=await(await recoveredSave).json();
+    assert.notEqual(recovered.id,newJob.snapshot_id);
+    assert.equal(recovered.assignments.length,solvedAssignments);
+    assert.equal(recovered.metadata.restored_from_job,newJob.id);
+    const original=await(await fetch(base+'/api/jobs/'+newJob.id+'/snapshot')).json();
+    assert.equal(original.id,newJob.snapshot_id);
     // Every profile field is editable without JSON, with persisted nullable caps.
     const profile = page.locator('#profiles details').first();
     await profile.locator('summary').click();
@@ -179,7 +258,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       {start:'2026-01-04T20:00:00Z',end:'2026-01-05T11:00:00Z'}
     ];
     demo.assignments = [{employee_id:demo.employees[0].id,demand_id:demand.id,fixed:true,segments:[]}];
-    await page.setInputFiles('#file', {name:'synthetic-calendar.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(demo))});
+    await uploadProject( {name:'synthetic-calendar.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(demo))});
     await page.waitForFunction(() => document.querySelector('#source').textContent.includes('Pacific/Auckland'));
     await page.selectOption('#planView','employees');
     assert.equal(await page.locator('#calendar td[data-date="2026-01-05"] .shift-badge').count(),1);
@@ -187,6 +266,27 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     if(process.env.WEB_TEST_SCREENSHOT_DIR) await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,'mobile.png'),fullPage:true});
+    // Unsaved removal of an input fixation must fail independent validation and export.
+    await page.locator('#assignmentDetails').evaluate(details=>{details.open=true;});
+    assert(await page.locator('#plan tbody input[type="checkbox"]').first().isChecked());
+    await page.locator('#plan tbody tr').first().getByRole('button',{name:'Entfernen',exact:true}).click();
+    const missingFixed=page.waitForResponse(r=>r.url().endsWith('/api/validate')&&r.request().method()==='POST');
+    await page.click('#validate');
+    const fixedReport=await(await missingFixed).json();
+    assert.equal(fixedReport.valid,false);
+    assert(fixedReport.diagnostics.some(d=>d.code==='fixed'&&d.demand_id===demand.id),'Original fixed assignment remains the validation baseline');
+    const rejectedExport=page.waitForResponse(r=>r.url().endsWith('/api/export/json')&&r.request().method()==='POST');
+    await page.click('[data-export="json"]');
+    assert.equal((await rejectedExport).status(),422);
+    await page.waitForFunction(()=>document.querySelector('[data-export="json"]').dataset.busy!=='true');
+    // Explicit save establishes a new input baseline for subsequent checks.
+    const savedBaseline=page.waitForResponse(r=>r.url().endsWith('/api/snapshots')&&r.request().method()==='PUT');
+    await page.click('#saveDraft');
+    assert.equal((await savedBaseline).status(),200);
+    const checkedBaseline=page.waitForResponse(r=>r.url().endsWith('/api/validate')&&r.request().method()==='POST');
+    await page.click('#validate');
+    assert(!(await(await checkedBaseline).json()).diagnostics.some(d=>d.code==='fixed'));
+    await page.waitForFunction(()=>document.querySelector('#validate').dataset.busy!=='true');
     // Failed non-JSON responses remain actionable and duplicate submits are ignored.
     let validationCalls=0;
     await page.route('**/api/validate',async route=>{validationCalls++;await delay(250);await route.fulfill({status:503,contentType:'text/html',body:'Temporarily unavailable'});});
@@ -196,12 +296,20 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(validationCalls,1);
     assert(await page.locator('#validate').isEnabled());
     assert.deepEqual(errors, []);
-    console.log('Passed: exact team selection, automatic history, matrix edit/transpose/save, local solver, both monthly views, fix/recompute, local midnight, desktop/mobile.');
+    console.log('Passed: exact team selection, history, matrix, solver, job recovery, project backup roundtrip, rejected invalid files, unsaved-work guard, profile persistence, calendar/timezones, fixed-input validation/export, desktop/mobile, actionable errors.');
+  } catch(error) {
+    failed=true;
+    if(browser){const pages=browser.contexts().flatMap(context=>context.pages());if(pages[0]){
+      console.error('Browser state:',await pages[0].locator('#notice, #job, #saveStatus').allTextContents());
+      if(process.env.WEB_TEST_SCREENSHOT_DIR)await pages[0].screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,'failure.png'),fullPage:true});
+    }}
+    throw error;
   } finally {
     if(browser) await browser.close();
     server.kill('SIGTERM');
     await Promise.race([new Promise(resolve=>server.once('exit',resolve)),delay(5000)]);
     if(server.exitCode===null) server.kill('SIGKILL');
-    fs.rmSync(state,{recursive:true,force:true});
+    if(failed && process.env.WEB_TEST_KEEP_STATE)console.error('Preserved browser state:',state);
+    else fs.rmSync(state,{recursive:true,force:true});
   }
-})().catch(error => {console.error(error.message);console.error(output);process.exitCode=1;});
+})().catch(error => {console.error(error.stack??error.message);console.error(output);process.exitCode=1;});

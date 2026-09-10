@@ -360,3 +360,97 @@ def test_special_detail_matches_only_identical_nominal_time(end):
     assert bool(snapshot.assignments) == (end == "13:00")
     assert snapshot.metadata["context_schedule"][0]["startend"]
     assert any(text.startswith("Sonderdienst") for text in snapshot.unresolved) == (end != "13:00")
+
+
+def test_unused_native_time_slot_is_not_imported_as_a_full_day():
+    class Source(SyntheticDatabase):
+        def get_shifts(self, **kw):
+            return [{**shift, "STARTEND7": "08:00-12:00 00:00-00:00"}
+                    for shift in super().get_shifts(**kw)]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.shifts[0].segments) == 1
+    assert snapshot.shifts[0].segments[0].start.hour == 8
+    assert snapshot.shifts[0].segments[0].end.hour == 12
+
+
+@pytest.mark.parametrize("start,end", [(-1, 60), (1500, 1600), (None, 60), (30, 1441), (10.5, 60)])
+def test_invalid_native_absence_does_not_change_day_or_truncate_minutes(start, end):
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            return [{**row, "start_time": start, "end_time": end}
+                    for row in super().get_schedule(year, month, **kw)]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.employees[0].unavailable
+    assert any("ungültiges Intervall" in issue for issue in snapshot.unresolved)
+
+
+def test_context_records_for_different_workplaces_have_distinct_ids():
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (2026, 1):
+                return []
+            return [{"employee_id": 101, "date": "2026-01-05", "kind": "shift",
+                     "shift_id": 201, "workplace_id": workplace}
+                    for workplace in (0, 301, 302)]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.assignments) == 3
+    assert len({assignment.demand_id for assignment in snapshot.assignments}) == 3
+    assert len({demand.id for demand in snapshot.demands}) == len(snapshot.demands)
+    context_positions = [p for p in snapshot.positions if p.id.startswith("sp5:context-position:")]
+    assert {p.workplace_id for p in context_positions} == {
+        "sp5:workplace:0", "sp5:workplace:301", "sp5:workplace:302"}
+
+
+def test_context_uses_explicit_group_for_multi_group_member():
+    class Source(SyntheticDatabase):
+        def get_groups(self):
+            return [{"ID": 1}, {"ID": 2}]
+        def get_employee_groups(self, employee):
+            return [1, 2]
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (2026, 1):
+                return []
+            return [{"employee_id": 101, "date": "2026-01-05", "kind": "shift",
+                     "shift_id": 201, "workplace_id": 301, "group_id": 2}]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), timezone="UTC", team_ids=["1", "2"])
+    context = next(shift for shift in snapshot.shifts if shift.source == "sp5:existing")
+    assert context.team_id == "sp5:group:2"
+    assert snapshot.metadata["provenance"][context.id]["team_confirmed"] is True
+
+
+def test_identical_context_nominal_and_special_entries_count_once():
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (2026, 1):
+                return []
+            return [{"employee_id": 101, "date": "2026-01-05", "kind": kind,
+                     "shift_id": 201, "workplace_id": 301, "spshi_type": 0,
+                     "startend": "08:00-10:00 11:00-13:00", "duration": 4}
+                    for kind in ("shift", "special_shift")]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.assignments) == 1
+    assert len([demand for demand in snapshot.demands if demand.source == "sp5:existing"]) == 1
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "not-a-number"])
+def test_invalid_native_duration_is_a_controlled_import_error(value):
+    from sp5generator.sp5_adapter import _minutes
+    with pytest.raises(ValueError, match="Stundenangabe"):
+        _minutes(value)
+
+
+@pytest.mark.parametrize("entrypoint", ["snapshot", "directory", "api"])
+@pytest.mark.parametrize("days", [-1, 366])
+def test_import_period_limits_are_checked_before_source_access(entrypoint, days):
+    from datetime import timedelta
+    from sp5generator.sp5_adapter import import_directory
+    from sp5generator.api_adapter import import_api
+    start = date(2026, 1, 1)
+    end = start + timedelta(days=days)
+    with pytest.raises(ValueError, match="1 bis 366 Kalendertage"):
+        if entrypoint == "snapshot":
+            import_snapshot(None, start, end, "1", "UTC")
+        elif entrypoint == "directory":
+            import_directory("source-must-not-be-opened", start, end, "1", "UTC")
+        else:
+            import_api(start, end, "1", "UTC")

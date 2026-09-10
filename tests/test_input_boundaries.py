@@ -66,3 +66,11 @@ def test_external_assignment_budget():
 
 def test_120_person_31_day_benchmark_fits_preflight_budgets():
     assert input_diagnostics(make_demo(employees=120, days=31)) == []
+
+
+def test_staffing_slot_budget_prevents_unbounded_candidate_expansion():
+    snapshot = make_demo()
+    snapshot.demands[0].minimum = snapshot.demands[0].maximum = 2**31 - 1
+    result = solve(snapshot, time_limit=0.1)
+    assert result.solver_status == "MODEL_INVALID"
+    assert result.validation.diagnostics[0].code == "size_limit"

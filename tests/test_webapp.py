@@ -130,3 +130,75 @@ def test_integrated_login_respects_browser_boundary(tmp_path, monkeypatch):
         assert c.get('/api/demo').status_code == 200
         c.post('/logout')
         assert c.get('/api/demo').status_code == 401
+
+
+def test_project_check_does_not_change_saved_revision(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
+        snapshot = c.put('/api/snapshots', json=c.get('/api/demo').json()).json()
+        imported = dict(snapshot, revision='portable-copy')
+        checked = c.post('/api/snapshots/check', json=imported)
+        assert checked.status_code == 200
+        assert checked.json()['revision'] == 'portable-copy'
+        invalid = c.post('/api/snapshots/check', json={'id': snapshot['id']})
+        assert invalid.status_code == 422
+        assert c.get('/api/snapshots/' + snapshot['id']).json() == snapshot
+
+
+def test_job_history_recovers_exact_input_and_rejects_stale_submission(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
+        snapshot = c.put('/api/snapshots', json=c.get('/api/demo').json()).json()
+        job = c.post('/api/jobs', json={'snapshot_id': snapshot['id'],
+                     'snapshot_revision': snapshot['revision'], 'time_limit': 1}).json()
+        changed = dict(snapshot)
+        changed['metadata'] = {**snapshot['metadata'], 'project_note': 'Synthetic revision'}
+        current = c.put('/api/snapshots', json=changed).json()
+        assert current['revision'] != snapshot['revision']
+        assert c.get('/api/jobs/' + job['id'] + '/snapshot').json() == snapshot
+        assert c.post('/api/jobs', json={'snapshot_id': snapshot['id'],
+                      'snapshot_revision': snapshot['revision']}).status_code == 409
+        history = c.get('/api/jobs', params={'snapshot_id': snapshot['id']}).json()
+        assert len(history) == 1 and history[0]['id'] == job['id']
+        assert 'payload' not in history[0] and 'owner' not in history[0]
+        assert c.get('/api/jobs', params={'snapshot_id': 'missing'}).json() == []
+        assert c.get('/api/jobs', params={'limit': 101}).status_code == 422
+        assert c.get('/api/jobs/missing/snapshot').status_code == 404
+        assert c.get('/api/snapshots').json()[0]['period_start'] == snapshot['period_start']
+
+
+def test_json_export_reports_recomputed_vacancies(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
+        snapshot = c.get('/api/demo').json()
+        response = c.post('/api/export/json', json={
+            'snapshot': snapshot, 'assignments': snapshot['assignments'],
+        })
+        assert response.status_code == 200
+        result = response.json()
+        assert result['validation']['valid'] and not result['validation']['complete']
+        assert sum(result['vacancies'].values()) > 0
+        assert result['solver_status'] == 'UNKNOWN'
+
+
+@pytest.mark.parametrize('case', ['timezone', 'period', 'segments'])
+def test_unsafe_project_structure_does_not_replace_saved_work(tmp_path, case):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
+        snapshot = c.put('/api/snapshots', json=c.get('/api/demo').json()).json()
+        import copy
+        invalid = copy.deepcopy(snapshot)
+        if case == 'timezone':
+            invalid['timezone'] = 'Missing/SyntheticZone'
+        elif case == 'period':
+            invalid['period_end'] = '2025-01-01'
+        else:
+            invalid['shifts'][0]['segments'] = []
+        assert c.post('/api/snapshots/check', json=invalid).status_code == 422
+        assert c.put('/api/snapshots', json=invalid).status_code == 422
+        assert c.get('/api/snapshots/' + snapshot['id']).json() == snapshot
+
+
+def test_unconfirmed_rules_remain_editable_projects(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
+        snapshot = c.get('/api/demo').json()
+        snapshot['profiles'][0]['confirmed'] = False
+        snapshot['unresolved'] = ['Synthetic source rule requires confirmation']
+        assert c.post('/api/snapshots/check', json=snapshot).status_code == 200
+        assert c.put('/api/snapshots', json=snapshot).status_code == 200

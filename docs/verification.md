@@ -1,106 +1,155 @@
-# Nachprüfbarer Prüfstand
+# Prüfungen und Freigabeumfang
 
-Geprüft unter Linux x86_64, CPython 3.12.14, OR-Tools 9.15.6755. Ausschließlich neu erzeugte synthetische Eingaben. Keine Originalpersonalbestände oder unbekannten Testdaten wurden für diese Prüfungen verwendet.
+Die Releaseprüfung verwendet ausschließlich neu erzeugte synthetische Daten.
+Referenzplattform ist Linux x86_64 mit Python 3.12 und den Paketständen in
+`requirements.lock` bzw. `requirements-web.lock`. Native SP5-Rückübernahme und
+produktive Personalbestände gehören nicht zu dieser Prüfung.
 
-## Automatisierte Prüfungen
+## Reproduzierbarer Prüflauf
+
+Im Checkout:
 
 ```sh
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install -c requirements-web.lock '.[dev,web,sp5]'
+python -m pip check
 python -m pytest -q
-python tools/benchmark.py --employees 120 --days 31 --time-limit 45
+python -m build
+python tools/check_distribution.py
 ```
 
-Der Generator-Testlauf bestand mit 74 Tests. Abgedeckt sind unter anderem Freigaben, Qualifikation/RESTR, Betreuungskapazität, Teilplanung, harte Dienstartgrenzen versus Wünsche, Ruhegrenzen, rollierende und Kalenderwochenruhe, Randkontext, Profilwechsel, mehrteilige Dienste, Zeitumstellung, korrumpierte Ergebnisse und ein vollständig enumerierter kleiner Referenzfall. Jobtests prüfen Revisionen, Benutzerisolation, tatsächlichen Workerprozess, Abbruch, Wiederanlauf, konkurrierende idempotente Übernahme und Rückabwicklung bei injiziertem Auditfehler.
+Für den Browserablauf zusätzlich:
 
-Der Adapter ist sowohl gegen neue synthetische Fassadenstrukturen als auch über frisch erzeugte minimale dBASE-Dateien mit `sp5lib`-Schreib-/Lesefunktionen geprüft. Die minimalen Testtabellen sind keine Behauptung vollständiger Originalformatparität. Ungeklärte Originalsemantik bleibt gesondert blockierend dokumentiert.
+```sh
+npm ci --prefix tests/browser
+cd tests/browser
+npx playwright install --with-deps chromium
+cd ../..
+npm test --prefix tests/browser
+```
 
-`tests/test_offline.py` installiert unter Linux einen seccomp-Filter, der Netzwerk-Systemaufrufe im Testprozess auf Kernel-Ebene mit EPERM abweist. Nach nachgewiesenem fehlgeschlagenem Socket-Aufruf funktionieren Demo, Berechnung, unabhängige Prüfung und CSV/XLSX-Export. Der Test verwendet keine externe Quelle und keinen externen Berechnungsdienst.
+Der Workflow **Container** führt diese Prüfungen vor dem Image-Build aus.
+Prüfergebnis, Commit und tatsächliche Testanzahl stehen im jeweiligen
+[Workflow-Lauf](https://github.com/mschabhuettl/openschichtplaner5-generator/actions/workflows/container.yml).
+Die Befehle hier beschreiben den Prüfweg; sie behaupten keinen erfolgreichen
+Lauf für einen beliebigen späteren Commit.
+
+## Lokaler Prüfstand für 0.7.0
+
+Vor dem Release-Push wurden unter Linux x86_64 mit Python 3.12.14 und OR-Tools
+9.15.6755 insgesamt **213 Python-Tests** erfolgreich ausgeführt. Zwei Warnungen
+betreffen veraltete Aufrufe einer Abhängigkeit. Ruff über Anwendung, Tools und
+Tests sowie `git diff --check` waren ohne Befund. Die saubere Paketprüfung
+einschließlich installiertem Webserver und echtem Worker bestand mit lokal
+zwischengespeicherten Paketarchiven ohne Zugriff auf einen Paketindex.
+
+Die vollständige lokale Browserprüfung bestand mit Chromium 152 auf Desktop
+und bei 390 Pixel Breite. Sie umfasst Berechnung und Neuberechnung, gespeicherte
+Ergebnisse, Projektsicherung und Wiederimport, ungültige Dateien und Zeitzonen,
+gleichzeitige Bedienaktionen, unterbrochene Listenabfragen, Fixierungsschutz
+bei Prüfung und Export sowie die UUID-Erzeugung ohne `crypto.randomUUID`,
+wie sie für unverschlüsselten HTTP-Zugriff im LAN benötigt wird.
+
+Bei der Prüfung wurde ein nativer Absturz von OR-Tools 9.15.6755 mit vier
+CP-SAT-Suchworkern reproduziert, auch mit dem exportierten Modell ohne
+Anwendungscode. Der Release verwendet deshalb einen Suchworker. Zehn frische
+Anwendungsprozesse und vier reine Modellwiederholungen bestanden mit dieser
+Einstellung. Drei Prozessregressionen mit der vollständigen 14-Tage-Demo sind
+Bestandteil des Testlaufs; Regeln und Zielfunktion bleiben identisch.
+
+Diese lokalen Ergebnisse ersetzen den Container- und Browserlauf des
+zugehörigen GitHub-Workflows nicht. Der Workflow prüft den tatsächlich gepushten
+Commit erneut, bevor er dessen Image veröffentlicht.
+
+## Fachlicher Kern und Adapter
+
+Python-Tests prüfen unter anderem Freigaben, Qualifikationen,
+Betreuungskapazität, Teilplanung, harte Dienstartgrenzen, Wünsche,
+Ruhegrenzen, rollierende und Kalenderwochenruhe, Randkontext, Profilwechsel,
+mehrteilige Dienste, Zeitumstellung und korrumpierte Ergebnisse. Kleine
+Referenzfälle prüfen die Lösung gegen unabhängig bestimmte Erwartungen.
+
+Adapterprüfungen verwenden synthetische Fassadenstrukturen, frisch erzeugte
+minimale dBASE-Dateien sowie lokale synthetische HTTP-Antworten. Sie prüfen
+Teamhierarchie, Mehrfachmitgliedschaften, historische Matrixvorschläge,
+Freigaben, getrennte Dienst- und Arbeitsplatzidentitäten, Quelländerungen,
+Weiterleitungen und den Ausschluss von Zugangsdaten aus Snapshots. Sie belegen
+keine vollständige Parität aller historischen SP5-Datenformate.
+
+Jobtests prüfen Revisionen, Isolation, echte Workerprozesse, Abbruch,
+Wiederanlauf, gespeicherte Ergebnisse und die synthetische Testübernahme.
+Webtests prüfen HTTP-Grenzen, Anmeldung, Sitzungen, Entwurfsbearbeitung und
+Export. Die Browserprüfung verwendet die enthaltene Oberfläche und echte
+HTTP-Endpunkte mit einem separaten Worker und synthetischen Quellen.
 
 ## Saubere Paketinstallation
 
-Wheel und Quellarchiv wurden mit `python -m build` erzeugt. In einer frischen virtuellen Umgebung wurde ausschließlich das Kernwheel mit hinterlegten Abhängigkeiten installiert; `sp5lib` und `sp5api` waren nachweislich nicht importierbar. Aus einem Verzeichnis außerhalb des Checkouts wurden 14-Tage-Demo, Berechnung, unabhängige Validierung und XLSX-Export erfolgreich ausgeführt. Der optionale Library-Stand 1.32.3 ist separat über den Paketindex installierbar.
+`tools/check_distribution.py` arbeitet in einem temporären Verzeichnis
+außerhalb des Checkouts. Der Ablauf:
 
-## Integration und Oberfläche
+1. Wheel-Metadaten, Versionsnummer und alle drei enthaltenen Webressourcen prüfen.
+2. Quellarchiv in einer isolierten Buildumgebung erneut zum Wheel bauen und die
+   enthaltenen Anwendungsdateien mit dem ursprünglichen Wheel vergleichen.
+3. Kernwheel in eine neue virtuelle Umgebung mit den Kernconstraints
+   installieren und `pip check` ausführen. SP5-Library und FastAPI dürfen hier
+   nicht importierbar sein.
+4. Versionsanzeige, synthetische Zweitagesdemo, Berechnung, unabhängige
+   Validierung, CSV/XLSX-Export und beide JSON-Schemata außerhalb des Checkouts ausführen.
+5. Web- und SP5-Extras mit den Webconstraints ergänzen und erneut `pip check`
+   ausführen. Den installierten HTTP-Server einschließlich echtem Worker starten,
+   Healthcheck und statische Ressourcen laden, einen Snapshot speichern,
+   berechnen, unabhängig prüfen und alle drei Exportformate abrufen.
 
-Elf neue API-Tests wurden isoliert von fremden Fixtures ausgeführt:
+Die Installation benötigt den Paketindex oder einen entsprechend gefüllten
+lokalen Cache. Die eigentlichen Berechnungen benötigen keine externe Quelle.
+Die Paketprüfung übernimmt keine konfigurierten SP5-Adressen oder Zugangsdaten
+aus der aufrufenden Umgebung. Sie verwendet nur eine lokale HTTP-Verbindung
+zur gerade gestarteten Testanwendung.
 
-```sh
-python -m pytest tests/generator --confcutdir=tests/generator -q
-```
+## Container und Betrieb ohne Netzwerk
 
-Sie prüfen unter anderem Rollen/Dienstschreibrecht, Read-only, Impersonation, Eigentümerisolation, Versionskonflikt und nachträglich widerrufene Sichtbarkeit.
+Nach der Paket- und Browserprüfung baut CI das Linux-amd64-Image. Im Container
+laufen Demo, Berechnung und unabhängige Validierung mit `--network none`.
+Ein separater HTTP-Start prüft die Oberfläche. Anschließend veröffentlicht der
+Workflow auf `main` die getesteten GHCR-Tags und stellt das Image samt Prüfsumme
+als Workflow-Artefakt bereit. Die lokale Entwicklungsumgebung benötigt dafür
+keine Dockerlaufzeit; ein GitHub-Workflow muss diesen Teil erfolgreich abschließen.
 
-Im Frontend wurden `npm run build`, gezielte Typ-/Lintprüfung und drei neue Komponententests erfolgreich ausgeführt. Chromium durchlief die tatsächlichen Generator-HTTP-Endpunkte mit separat laufendem Worker: Demo laden, speichern, berechnen, 56 Einteilungen unabhängig bestätigen, synthetisch übernehmen, fixieren und neu berechnen. Die Fixierung blieb erhalten. Desktop und 390-Pixel-Ansicht wurden visuell geöffnet; keine Browserfehler und kein horizontaler Seitenüberlauf. Externe Browserzugriffe waren gesperrt.
-
-Diese Browserprüfung verwendete eine isolierte synthetische Testanmeldung und neutrale Antworten für übrige Anwendungsbereiche. Zusätzlich wurde der mitgelieferte separate Demo-Server einschließlich seines anonymen Loginformulars durch dieselbe Browserkette geprüft. Der reguläre Loginflow gegen Originaldaten, der vollständige Anwendungs-Lifecycle und native SP5-Schreibvorgänge sind damit nicht geprüft. Die ursprünglichen Schwesterprojekt-Testbestände wurden wegen nicht bestätigter Datenherkunft nicht pauschal ausgeführt. Die Library blieb unverändert.
-
-Die eigenständige Weboberfläche wurde zusätzlich mit Chromium auf Desktop und 390-Pixel-Breite geprüft: Demo bearbeiten, speichern, berechnen, unabhängig prüfen, fixieren und neu berechnen; außerdem frisch synthetisiertes DBF-Stammverzeichnis prüfen, Team wählen, importieren, historischen Freigabevorschlag ausdrücklich bestätigen und speichern. Keine JavaScript-Fehler oder horizontalen Seitenüberläufe. Drei zusätzliche Webtests und vier Verzeichnisimporttests bestehen.
-
-## Container und eigenständiges Paket
-
-Version 0.1.1 wurde als Wheel und Quellarchiv gebaut und deren Dateiinhalte geprüft. Eine frische Wheel-Installation mit den Extras `web,sp5` startete die enthaltene Oberfläche und einen echten Worker außerhalb des Checkouts; die Demo ergab 56 vollständige, unabhängig gültige Einteilungen.
-
-Der [Containerlauf für Commit 352b1b3](https://github.com/mschabhuettl/openschichtplaner5-generator/actions/runs/34527690138) hat das Linux-amd64-Image gebaut, die CLI-Berechnung und unabhängige Validierung mit `--network none` sowie den HTTP-Webstart erfolgreich geprüft. Das Image wird als herunterladbares Workflow-Artefakt mit Prüfsumme bereitgestellt, nicht in einer Containerregistry veröffentlicht.
-
-## HTTP-Quelle
-
-Zwei weitere synthetische Tests bestätigen die explizite Dev-Anbindung ohne Token-Datei und die Ablehnung einer API, die ihren Dev-Modus nicht bestätigt.
-
-Die API-Anbindung ist gegen den Quellcode der bestehenden Leseendpunkte und synthetische HTTP-Antworten geprüft. Fünf Transporttests prüfen unter anderem Berechtigungsfehler, ausgeblendete Abwesenheiten, Quelländerungen, verweigerte Weiterleitungen und den Ausschluss von Zugangsdaten aus Snapshots. Ein zusätzlicher Webtest prüft die serverseitige Anbindung. Chromium durchlief außerdem einen echten lokalen HTTP-Testserver: API wählen, Team laden, importieren, historische Matrix anzeigen und speichern; Desktop und 390-Pixel-Ansicht ohne JavaScript-Fehler oder Seitenüberlauf. Keine produktive API wurde kontaktiert.
+`tests/test_offline.py` installiert unter Linux einen seccomp-Filter, der
+Netzwerk-Systemaufrufe im Testprozess mit EPERM abweist. Nach dem belegten
+fehlgeschlagenen Socket-Aufruf laufen Demo, Berechnung, unabhängige Prüfung und
+CSV/XLSX-Export. Fehlt libseccomp, wird dieser Test ausdrücklich übersprungen;
+die CI-Containerprüfung ohne Netzwerk bleibt davon getrennt.
 
 ## Benchmark
 
-Der synthetische Lauf mit 120 Personen über 31 Tage umfasst 62 Schichten,
-124 Bedarfsgruppen und 1.240 zwingende Einteilungen. Auf Linux x86_64 mit
-Intel Core i7-10700T und 12 sichtbaren logischen CPUs, CPython 3.12.14 und OR-Tools 9.15.6755 (vier Solverthreads)
-ergab ein konfiguriertes Limit von 45 Sekunden:
+```sh
+python tools/benchmark.py --employees 120 --days 31 --time-limit 45
+```
 
-- Laufzeit: 39,876 Sekunden
-- Status: `FEASIBLE`; 1.240 Einteilungen, unabhängig gültig und vollständig
-- Bewertungswert: 848.640; keine globale Schranke und kein Optimalitätsabstand verfügbar
-- Ein allgemeiner konstruktiver Startplan wurde zuerst unabhängig geprüft und
-  anschließend von CP-SAT mit fixierten Einteilungsvariablen bestätigt. Das
-  eingeschränkte Zertifikat meldete `OPTIMAL`; dies ist ausdrücklich **kein**
-  Optimalitätsbeweis für das freie Planungsproblem, dessen Ergebnis `FEASIBLE` bleibt.
+Dieser synthetische Fall umfasst 62 Schichten, 124 Bedarfsgruppen und 1.240
+zwingende Einteilungen. Das Tool gibt den tatsächlich erreichten Solverstatus,
+Laufzeit und die unabhängige Validierung aus. Ein Zeitlimit ohne Lösung ist
+`UNKNOWN`, keine bewiesene Unlösbarkeit. Ein konstruktiver Startplan und seine
+Bestätigung unter fixierten Variablen beweisen keine globale Optimalität des
+freien Problems. Der Benchmark ist kein universelles Laufzeitversprechen.
 
-Frühere Versuche ohne diesen Startplan fanden bei 30, 60 und 120 Sekunden noch
-keine Lösung. Ein Zeitlimit ohne gefundene Lösung wurde korrekt als `UNKNOWN`
-behandelt. Der Benchmark ist kein universelles Laufzeitversprechen.
+Der lokale Lauf für 0.7.0 fand bei 45 Sekunden Limit nach **34,969 Sekunden**
+eine `FEASIBLE`-Lösung mit 1.240 Einteilungen, unabhängig gültig und vollständig.
+Der Zielfunktionswert war 848.640; eine globale Schranke war nicht verfügbar.
+Umgebung: Linux x86_64, Python 3.12.14, OR-Tools 9.15.6755, neun sichtbare logische
+CPUs, ein Solverworker, Seed 0. Die zusätzliche Bestätigung des konstruktiven
+Startplans meldete unter fixierten Einteilungen `OPTIMAL`; dies ist kein
+Optimalitätsbeweis für das freie Planungsproblem.
 
-## Tatsächliche Grenzen
+## Nicht durch diese Prüfungen zugesichert
 
-- Lokal ist keine Containerlaufzeit verfügbar; die Containerprüfung erfolgt auf GitHub Actions.
-- Native SP5-Gesamtübernahme nicht implementiert; Zusatzregeln und bestehende Writer haben noch keine gemeinsame Transaktionsgrenze.
-- Bedarfskombinationen und Sonderwerte aus SP5 benötigen belegte fachliche Klärung. Ungeklärte Imports sind nicht freigabefähig.
-- Erweiterte UI-Regeln teilweise als strukturierter JSON-Editor, Detailtexte derzeit deutsch.
-- Keine vollständige Abnahme aller beschriebenen Integrationsanforderungen; Testerfolge ersetzen die ausdrücklich genannten fehlenden Funktionen nicht.
+- Fachliche Richtigkeit ungeklärter importierter Originalsemantik.
+- Native transaktionale Rückübernahme in originale SP5-Dienstpläne.
+- Rechtskonformität eines frei konfigurierten Regelprofils.
+- Öffentlicher Mehrbenutzerbetrieb oder native Windows-Unterstützung.
+- Vollständige Abnahme des getrennten Schwesterprojekt-Frontends und dessen
+  regulären Anmeldeablaufs gegen Originaldaten.
 
-## Teamhierarchie
-
-Fünf synthetische Hierarchietests und ein HTTP-Regressionstest prüfen `SUPERID`, verschachtelte Unterteams, Elternteams ohne direkte Mitglieder, Mehrfachmitgliedschaften, bedarfsspezifische Gruppenzuordnung, unvervielfachte Historie und fehlerhafte Zyklen. Chromium importierte über einen lokalen synthetischen HTTP-Server einen Elternknoten mit zwei Unterteam-Ebenen: eine Person mit zwei Mitgliedschaften erscheint einmal, ihre Teams sind sichtbar. Desktop und schmale Ansicht ohne JavaScript-Fehler oder Seitenüberlauf.
-
-## Mehrfachauswahl und Tabellenoberfläche
-
-Exakte Teamlisten, Legacy-Einzelauswahl und historische Funktionen ohne zusätzlichen Bedarf sind mit synthetischen Regressionen geprüft. Der automatisierte Chromium-Ablauf prüft ausgeblendete Unterteams, mehrfach zugeordnete Personen, historische Vorschläge, Achsentausch, Speichern, zeitlich begrenzte und betreute Freigaben, beide Monatsansichten sowie Fixierung und Neuberechnung mit echtem Worker. Die Prüfungen laufen vor der Image-Veröffentlichung im Container-Workflow. Anleitung: [Matrix und Monatsplan](matrix-and-monthly-plan.md).
-
-## Dienstbezogene Matrix (0.3.0)
-
-78 Python-Tests prüfen zusätzlich getrennte Dienst- und Arbeitsplatzidentitäten,
-arbeitsplatzübergreifende Dienstfreigaben, fortgeltende Qualifikations- und
-Betreuungspflichten sowie historische Einteilungen ohne Arbeitsplatzangabe.
-Der Browserablauf prüft mehrere Dienste am selben Arbeitsplatz, Dienste ohne
-Historie, Achsentausch, Dienst-Monatsansicht, Fehleranzeigen und doppelte Klicks.
-Alle Referenzdaten sind neu erzeugt und synthetisch.
-
-## Webbetrieb und Eingabegrenzen (0.4.0)
-
-Die erweiterte Prüfung umfasst Anmeldung, Sitzungsablauf, Abmelden,
-fehlgeschlagene Anmeldung, Browser-Origin-Schutz, begrenzte Request-Größen,
-Datensatzbudgets und ungültige Zeit-/Zahlenangaben. Der Browser prüft das
-Speichern aller Ruheprofilfelder und das Verwerfen veralteter Prüfanzeigen.
-
-Erneuter synthetischer Benchmark: 120 Personen, 31 Tage, 124 Bedarfe,
-1.240 Einteilungen. Bei 45 Sekunden Solverlimit: FEASIBLE nach 42,222 Sekunden,
-vollständig und unabhängig gültig; Zielwert 848640, keine globale Schranke
-oder bewiesene Optimalität. Umgebung: Linux x86_64, 12 sichtbare logische CPUs,
-Python 3.12.14, OR-Tools 9.15.6755, vier Solverthreads. Der dokumentierte
-Benchmarkbefehl und die konstruktive Startlösung bleiben unverändert.
+Siehe [Release 0.7.0](release-0.7.0.md) für Lieferumfang und Aktualisierung.

@@ -38,6 +38,12 @@ def test_malformed_tree_rejected(groups):
         group_tree(groups)
 
 
+@pytest.mark.parametrize("group_id", [0, -1, 1.5, True, "1.0", None])
+def test_invalid_or_reserved_group_ids_are_rejected(group_id):
+    with pytest.raises(ValueError, match="ungültige ID"):
+        group_tree([{"ID": group_id}])
+
+
 def test_parent_import_includes_children_preserves_demand_teams_and_deduplicates():
     pytest.importorskip("sp5lib")
     from test_sp5_adapter import SyntheticDatabase
