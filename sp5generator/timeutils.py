@@ -18,7 +18,10 @@ def localize(day: date, clock: str, zone: str, fold: int | None = None) -> datet
     if clock == "24:00":
         day += timedelta(days=1)
         clock = "00:00"
-    naive = datetime.combine(day, time.fromisoformat(clock))
+    parsed = time.fromisoformat(clock)
+    if parsed.tzinfo is not None or parsed.second or parsed.microsecond:
+        raise ValueError("Lokale Uhrzeit muss ohne UTC-Offset und auf ganze Minuten angegeben werden.")
+    naive = datetime.combine(day, parsed)
     tz = ZoneInfo(zone)
     candidates = []
     for f in (0, 1):

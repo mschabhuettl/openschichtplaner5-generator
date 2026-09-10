@@ -64,9 +64,12 @@ jobs:
         env:
           IMAGE: ghcr.io/mschabhuettl/openschichtplaner5-generator
         run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          docker tag openschichtplaner5-generator:local "$IMAGE:$VERSION"
           docker tag openschichtplaner5-generator:local "$IMAGE:latest"
           docker tag openschichtplaner5-generator:local "$IMAGE:sha-$GITHUB_SHA"
           docker push "$IMAGE:sha-$GITHUB_SHA"
+          docker push "$IMAGE:$VERSION"
           docker push "$IMAGE:latest"
           docker pull "$IMAGE:sha-$GITHUB_SHA"
           docker run --rm --network none "$IMAGE:sha-$GITHUB_SHA" --help > /dev/null

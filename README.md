@@ -8,6 +8,10 @@ Der allgemeine Python-Kern liest versionierte JSON-Snapshots, erzeugt vollständ
 
 **Native SP5-Übernahme ist gesperrt.** Der lesende Adapter bewahrt ungeklärte Originalsemantik als blockierende Diagnosen. Eine transaktionale Übernahme ist ausschließlich für den ausdrücklich aktivierten, isolierten synthetischen Testbestand implementiert. Dieser Weg schreibt keine originalen Dienstpläne. Die SP5-Integration ist damit noch nicht vollständig abnahmefähig.
 
+## Webbetrieb und Updates
+
+Die Weboberfläche enthält eine Dienstmatrix, Monatsansichten und vollständige Ruheprofil-Formulare. Optionaler Passwortschutz, Docker-Healthcheck und versionierte Images unterstützen den lokalen Betrieb. Siehe [Betriebsanleitung](docs/web-operation.md).
+
 ## Eigenständig starten
 
 Python 3.12 oder neuer, empfohlen 3.12. Die Engine benötigt weder ein SP5-System noch einen laufenden Webserver.

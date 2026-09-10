@@ -6,6 +6,7 @@ from itertools import combinations
 from zoneinfo import ZoneInfo
 from .models import Diagnostic, Validation
 from .domain import (
+    MAX_ASSIGNMENTS,
     input_diagnostics,
     eligibility,
     pair_conflict,
@@ -107,6 +108,10 @@ def weekly_windows(snapshot, profile, spans, employee=None):
 
 
 def validate(snapshot, assignments):
+    if len(assignments) > MAX_ASSIGNMENTS:
+        return Validation(valid=False, complete=False, diagnostics=[Diagnostic(
+            code="size_limit", message="Höchstens 5000 Einteilungen pro Prüfung sind unterstützt."
+        )])
     errors = input_diagnostics(snapshot)
     if errors:
         return Validation(valid=False, complete=False, diagnostics=errors)

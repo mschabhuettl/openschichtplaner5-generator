@@ -90,3 +90,17 @@ Betreuungspflichten sowie historische Einteilungen ohne Arbeitsplatzangabe.
 Der Browserablauf prüft mehrere Dienste am selben Arbeitsplatz, Dienste ohne
 Historie, Achsentausch, Dienst-Monatsansicht, Fehleranzeigen und doppelte Klicks.
 Alle Referenzdaten sind neu erzeugt und synthetisch.
+
+## Webbetrieb und Eingabegrenzen (0.4.0)
+
+Die erweiterte Prüfung umfasst Anmeldung, Sitzungsablauf, Abmelden,
+fehlgeschlagene Anmeldung, Browser-Origin-Schutz, begrenzte Request-Größen,
+Datensatzbudgets und ungültige Zeit-/Zahlenangaben. Der Browser prüft das
+Speichern aller Ruheprofilfelder und das Verwerfen veralteter Prüfanzeigen.
+
+Erneuter synthetischer Benchmark: 120 Personen, 31 Tage, 124 Bedarfe,
+1.240 Einteilungen. Bei 45 Sekunden Solverlimit: FEASIBLE nach 42,222 Sekunden,
+vollständig und unabhängig gültig; Zielwert 848640, keine globale Schranke
+oder bewiesene Optimalität. Umgebung: Linux x86_64, 12 sichtbare logische CPUs,
+Python 3.12.14, OR-Tools 9.15.6755, vier Solverthreads. Der dokumentierte
+Benchmarkbefehl und die konstruktive Startlösung bleiben unverändert.

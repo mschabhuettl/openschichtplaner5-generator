@@ -10,7 +10,7 @@ def test_local_web_persist_solve_and_export(tmp_path):
     with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
         assert c.get('/').status_code == 200
         from sp5generator import __version__
-        assert c.get('/api/version').json() == {'version': __version__}
+        assert c.get('/api/version').json() == {'version': __version__, 'auth_enabled': False}
         assert 'OpenSchichtplaner5 Generator' in c.get('/').text
         assert c.get('/static/app.js').status_code == 200
         assert c.get('/static/app.js').headers['Cache-Control'] == 'no-store'
@@ -83,3 +83,50 @@ def test_remote_source_and_import_stay_server_configured(tmp_path, monkeypatch):
         assert response.status_code == 200
         assert seen[0]['history_plan'] == 'ist'
         assert 'directory' not in seen[0]
+
+
+def test_health_and_invalid_input_do_not_echo_submitted_values(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
+        assert c.get('/healthz').json() == {'status': 'ok'}
+        response = c.post('/api/jobs', json={'snapshot_id': 'synthetic', 'time_limit': 'synthetic-invalid-marker'})
+        assert response.status_code == 422
+        assert 'synthetic-invalid-marker' not in response.text
+        assert response.json()['fields'][0]['location'] == ['body', 'time_limit']
+
+
+def test_request_body_limit_covers_chunked_input():
+    import asyncio
+    from sp5generator.request_limits import RequestSizeLimit
+    called = []
+    async def inner(scope, receive, send):
+        called.append(True)
+    async def run():
+        sent = []
+        chunks = iter([{'type': 'http.request', 'body': b'123', 'more_body': True},
+                       {'type': 'http.request', 'body': b'456', 'more_body': False}])
+        async def receive():
+            return next(chunks)
+        async def send(message):
+            sent.append(message)
+        await RequestSizeLimit(inner, limit=5)({'type': 'http', 'method': 'POST'}, receive, send)
+        assert sent[0]['status'] == 413
+        assert not called
+    asyncio.run(run())
+
+
+def test_integrated_login_respects_browser_boundary(tmp_path, monkeypatch):
+    password_file = tmp_path / 'password'
+    password_file.write_text('synthetic-login-only')
+    monkeypatch.setenv('SP5_WEB_PASSWORD_FILE', str(password_file))
+    with TestClient(create_app(str(tmp_path / 'state'), start_worker=False)) as c:
+        assert c.get('/healthz').status_code == 200
+        assert c.get('/api/demo').status_code == 401
+        assert c.get('/').url.path == '/login'
+        assert c.post('/login', data={'password': 'synthetic-login-only'}, headers={'Origin': 'http://other.invalid'}).status_code == 403
+        response = c.post('/login', data={'password': 'synthetic-login-only'}, follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers['Cache-Control'] == 'no-store'
+        assert c.get('/api/version').json()['auth_enabled']
+        assert c.get('/api/demo').status_code == 200
+        c.post('/logout')
+        assert c.get('/api/demo').status_code == 401

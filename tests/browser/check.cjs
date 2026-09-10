@@ -34,7 +34,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       return url.hostname === '127.0.0.1' ? route.continue() : route.abort();
     });
     await page.goto(base);
-    await page.waitForFunction(()=>document.querySelector('#version').textContent==='Version 0.3.0');
+    await page.waitForFunction(()=>document.querySelector('#version').textContent==='Version 0.4.0');
     await page.selectOption('#sourceType', 'api');
     await page.click('#inspect');
     await page.waitForSelector('[data-team-id="3"]');
@@ -137,6 +137,39 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.waitForFunction(() => document.querySelector('#job').textContent.includes('Berechnung beendet'), null, {timeout:30000});
     assert(await page.locator('#plan tbody input[type="checkbox"]').first().isChecked());
     assert.match(await page.locator('#validation').textContent(), /"valid": true/);
+    // Every profile field is editable without JSON, with persisted nullable caps.
+    const profile = page.locator('#profiles details').first();
+    await profile.locator('summary').click();
+    const expected = {
+      version:'browser-synthetic',source:'synthetic',valid_from:'2026-01-01',valid_until:'2026-01-31',
+      min_rest_minutes:600,after_night_rest_minutes:720,after_night_block_rest_minutes:1440,
+      night_block_gap_days:2,weekly_rest_minutes:1800,weekly_rest_window_days:9,
+      max_consecutive_work_days:5,max_consecutive_nights:3,max_daily_minutes:720,
+      max_weekly_minutes:2400,max_period_minutes:4800,max_work_days:8,max_nights:4,max_weekends:1
+    };
+    for(const [key,value] of Object.entries(expected)) {
+      await profile.locator(`[data-profile-field="${key}"]`).fill(String(value));
+      await profile.locator(`[data-profile-field="${key}"]`).blur();
+    }
+    await profile.locator('[data-profile-field="weekly_rest_frame"]').selectOption('rolling_local');
+    await profile.locator('[data-profile-field="weekly_rest_add_daily"]').check();
+    await profile.locator('[data-profile-field="confirmed"]').check();
+    assert.match(await page.locator('#validation').textContent(), /nicht aktuell/);
+    assert(!await page.locator('#result').innerText().then(t=>t.includes('Vollständig')));
+    const profileSave=page.waitForResponse(r=>r.url().endsWith('/api/snapshots')&&r.request().method()==='PUT');
+    await page.click('#save');
+    const profileResponse=await profileSave;
+    assert.equal(profileResponse.status(),200);
+    const storedProfile=(await profileResponse.json()).profiles[0];
+    for(const [key,value] of Object.entries({...expected,weekly_rest_frame:'rolling_local',weekly_rest_add_daily:true,confirmed:true}))assert.equal(storedProfile[key],value,key);
+    await page.click('#restore');
+    await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('Daten geladen'));
+    await profile.locator('summary').click();
+    assert.equal(await profile.locator('[data-profile-field="max_period_minutes"]').inputValue(),'4800');
+    await profile.locator('[data-profile-field="max_period_minutes"]').fill('');
+    const clearedSave=page.waitForResponse(r=>r.url().endsWith('/api/snapshots')&&r.request().method()==='PUT');
+    await page.click('#save');
+    assert.equal((await (await clearedSave).json()).profiles[0].max_period_minutes,null);
     // The calendar renders local dates and end-exclusive midnight, not UTC slices.
     const demo = await (await fetch(base+'/api/demo')).json();
     const demand = demo.demands[0];

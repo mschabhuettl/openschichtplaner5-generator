@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 from .models import Diagnostic
 from .timeutils import (
@@ -16,6 +16,21 @@ from .timeutils import (
     overlap,
     day_minutes,
 )
+
+# Standalone execution budgets, independent of HTTP body limits. The 120-person,
+# 31-day benchmark fits comfortably. Import-history ranges are a separate concern.
+MAX_PLANNING_DAYS = 366
+MAX_CONTEXT_DAYS = 1096
+MAX_RECORDS = 50000  # Includes nested approvals, intervals and availability.
+MAX_ASSIGNMENTS = 5000
+MAX_CANDIDATE_PAIRS = 2_000_000  # Employee x demand model construction.
+MAX_LOCAL_REST_WINDOWS = 10_000_000  # Minute anchors across employee profiles.
+MAX_CALENDAR_CHECKS = 5_000_000  # Profile scans and availability-day expansion.
+COLLECTION_LIMITS = {
+    "employees": 1000, "positions": 1000, "shifts": 10000,
+    "demands": 20000, "profiles": 1000, "assignments": MAX_ASSIGNMENTS,
+    "restrictions": 20000, "wishes": 20000,
+}
 
 
 def snapshot_hash(snapshot):
@@ -147,8 +162,77 @@ def input_diagnostics(snapshot):
     def issue(code, message):
         errors.append(Diagnostic(code=code, message=message))
 
+    planning_days = (snapshot.period_end - snapshot.period_start).days + 1
+    context_days = (snapshot.context_end - snapshot.context_start).days + 1
+    if not (1 <= planning_days <= MAX_PLANNING_DAYS
+            and 1 <= context_days <= MAX_CONTEXT_DAYS):
+        issue("size_limit", "Planung ist auf 366 Tage und Kontext auf 1096 Tage begrenzt.")
+        return errors
+    if (any(len(getattr(snapshot, key)) > limit
+            for key, limit in COLLECTION_LIMITS.items())
+            or len(snapshot.employees) * len(snapshot.demands) > MAX_CANDIDATE_PAIRS):
+        issue("size_limit", "Datensatz überschreitet die unterstützte Planungsgröße.")
+        return errors
+
+    payload = snapshot.model_dump(exclude={"metadata"})
+    def record_count(value):
+        if isinstance(value, dict):
+            return 1 + sum(record_count(v) for v in value.values())
+        if isinstance(value, list):
+            return len(value) + sum(record_count(v) for v in value)
+        return 0
+
+    if record_count(payload) > MAX_RECORDS:
+        issue("size_limit", "Zu viele verschachtelte Planungsdatensätze.")
+        return errors
+    calendar_checks = len(snapshot.employees) * planning_days * len(snapshot.profiles)
+    calendar_checks += sum(max(0, (
+        min(v.valid_until, snapshot.context_end)
+        - max(v.valid_from, snapshot.context_start)
+    ).days + 1) for e in snapshot.employees for v in e.availability)
+    if calendar_checks > MAX_CALENDAR_CHECKS:
+        issue("size_limit", "Zu viele Profil- und Verfügbarkeitsprüfungen; Planung aufteilen.")
+        return errors
+    local_profiles = {p.id: p for p in snapshot.profiles
+                      if p.weekly_rest_minutes and p.weekly_rest_frame == "rolling_local"}
+    local_windows = sum(
+        (planning_days + local_profiles[pid].weekly_rest_window_days) * 1440
+        for employee in snapshot.employees for pid in employee.profile_ids
+        if pid in local_profiles
+    )
+    if local_windows > MAX_LOCAL_REST_WINDOWS:
+        issue("size_limit", "Zu viele minutengenaue lokale Wochenruhefenster; Planung aufteilen.")
+        return errors
+
+    # CP-SAT accepts bounded machine integers, whereas the JSON contract uses
+    # Python integers. Reject unsupported values before constructing expressions.
+    def numeric_bounds(value):
+        if isinstance(value, dict):
+            return all(numeric_bounds(v) for k, v in value.items() if k != "metadata")
+        if isinstance(value, list):
+            return all(numeric_bounds(v) for v in value)
+        return not isinstance(value, int) or abs(value) <= 2**31 - 1
+
+    if not numeric_bounds(payload):
+        issue("numeric_range", "Numerische Planungswerte überschreiten den unterstützten Bereich.")
+        return errors
+
     try:
         ZoneInfo(snapshot.timezone)
+        # All temporal checks need at least the next local midnight, and rest
+        # checks inspect a rule-dependent margin on both sides of the period.
+        horizon = max([1] + [max(
+            (max(p.min_rest_minutes, p.after_night_rest_minutes,
+                 p.after_night_block_rest_minutes) + 1439) // 1440,
+            p.max_consecutive_work_days or 0, p.max_consecutive_nights or 0,
+            p.weekly_rest_window_days if p.weekly_rest_minutes else 0,
+            7 if p.max_weekly_minutes is not None else 0,
+        ) for p in snapshot.profiles])
+        if (snapshot.context_start == date.min or snapshot.context_end == date.max
+                or (snapshot.period_start - date.min).days < horizon
+                or (date.max - snapshot.period_end).days <= horizon):
+            issue("date_range", "Planungszeitraum und Regelkontext liegen außerhalb des unterstützten Datumsbereichs.")
+            return errors
         if (
             not snapshot.context_start
             <= snapshot.period_start
@@ -224,8 +308,8 @@ def input_diagnostics(snapshot):
                     min(v.valid_until, snapshot.context_end),
                 ):
                     if day.weekday() in v.weekdays:
-                        localize(day, v.start_time, snapshot.timezone)
-                        localize(day, v.end_time, snapshot.timezone)
+                        minute(localize(day, v.start_time, snapshot.timezone))
+                        minute(localize(day, v.end_time, snapshot.timezone))
             for i in e.unavailable:
                 if minute(i.start) >= minute(i.end):
                     issue("absence", "Ungültige Abwesenheit: " + e.id)
@@ -237,6 +321,8 @@ def input_diagnostics(snapshot):
                 issue("reference", "Unbekannte Personen- oder Dienstreferenz.")
         for item in snapshot.unresolved:
             issue("unresolved", item)
+    except OverflowError:
+        issue("date_range", "Datum oder Zeitspanne liegt außerhalb des unterstützten Bereichs.")
     except (ValueError, KeyError) as exc:
         issue("input", str(exc))
     return errors

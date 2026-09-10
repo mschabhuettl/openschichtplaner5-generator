@@ -10,6 +10,7 @@ import tempfile
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -42,7 +43,7 @@ class JobRequest(BaseModel):
 
 class PlanRequest(BaseModel):
     snapshot: Snapshot
-    assignments: list[Assignment]
+    assignments: list[Assignment] = Field(max_length=5000)
 
 
 def create_app(state_dir: str = './generator-state', start_worker: bool = True):
@@ -72,6 +73,10 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
 
     app = FastAPI(title='OpenSchichtplaner5 Generator', lifespan=lifespan)
     app.state.store = store
+    from .web_auth import install_web_auth
+    install_web_auth(app)
+    from .request_limits import RequestSizeLimit
+    app.add_middleware(RequestSizeLimit)
     allowed_hosts = ['localhost', '127.0.0.1', '[::1]']
     if not start_worker:
         allowed_hosts.append('testserver')
@@ -86,12 +91,23 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
             return JSONResponse({'detail': 'Cross-origin requests are not permitted'}, status_code=403)
         if request.headers.get('sec-fetch-site') == 'cross-site':
             return JSONResponse({'detail': 'Cross-site requests are not permitted'}, status_code=403)
+        if request.method in {'POST', 'PUT', 'PATCH'}:
+            try:
+                content_length = int(request.headers.get('content-length', '0'))
+            except ValueError:
+                return JSONResponse({'detail': 'Invalid Content-Length'}, status_code=400)
+            if content_length > 16 * 1024 * 1024:
+                return JSONResponse({'detail': 'Request exceeds 16 MiB limit'}, status_code=413)
         response = await call_next(request)
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
         return response
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request, exc):
+        return JSONResponse({'detail': 'Ungültige Eingabe. Feldtypen und Pflichtangaben anhand des Eingabeschemas prüfen.', 'fields': [{'location': list(e['loc']), 'type': e['type']} for e in exc.errors()]}, status_code=422)
 
     @app.exception_handler(Conflict)
     async def conflict(request, exc):
@@ -105,10 +121,21 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     async def invalid(request, exc):
         return JSONResponse({'detail': str(exc)}, status_code=422)
 
+    @app.get('/healthz')
+    def health():
+        worker = getattr(app.state, 'worker', None)
+        healthy = not start_worker or (worker is not None and worker.is_alive())
+        try:
+            with store.connect() as connection:
+                connection.execute('SELECT 1').fetchone()
+        except Exception:
+            healthy = False
+        return JSONResponse({'status': 'ok' if healthy else 'unavailable'}, status_code=200 if healthy else 503)
+
     @app.get('/api/version')
     def version():
         from . import __version__
-        return {'version': __version__}
+        return {'version': __version__, 'auth_enabled': app.state.web_auth_enabled}
 
     @app.get('/api/demo')
     def demo():
