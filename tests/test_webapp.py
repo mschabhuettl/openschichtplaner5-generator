@@ -62,3 +62,20 @@ def test_source_import_only_explicit_path(tmp_path, monkeypatch):
         assert response.status_code==200
         assert response.json()['matrix_suggestions']
         assert seen[0]['directory']=='synthetic'
+
+
+def test_remote_source_and_import_stay_server_configured(tmp_path, monkeypatch):
+    from sp5generator import api_adapter
+    from sp5generator.demo import make_demo
+    seen = []
+    monkeypatch.setattr(api_adapter, 'inspect_api', lambda: {'groups': [{'id': '1', 'name': 'Team A'}]})
+    def importer(**kwargs):
+        seen.append(kwargs)
+        return make_demo()
+    monkeypatch.setattr(api_adapter, 'import_api', importer)
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
+        assert c.get('/api/remote-source').json()['groups'][0]['id'] == '1'
+        response = c.post('/api/remote-import', json={'period_start': '2026-01-05', 'period_end': '2026-01-18', 'team_id': '1', 'timezone': 'UTC'})
+        assert response.status_code == 200
+        assert seen[0]['history_plan'] == 'ist'
+        assert 'directory' not in seen[0]

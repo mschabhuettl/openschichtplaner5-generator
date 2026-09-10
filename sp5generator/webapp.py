@@ -19,8 +19,7 @@ from .jobs import Store, Conflict, run_worker
 from .models import Snapshot, Assignment, Result
 
 
-class ImportRequest(BaseModel):
-    directory: str
+class ApiImportRequest(BaseModel):
     period_start: date
     period_end: date
     team_id: str
@@ -28,6 +27,10 @@ class ImportRequest(BaseModel):
     history_plan: Literal['ist', 'soll', 'both'] = 'ist'
     history_start: date | None = None
     history_end: date | None = None
+
+
+class ImportRequest(ApiImportRequest):
+    directory: str
 
 
 class JobRequest(BaseModel):
@@ -122,6 +125,17 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
             snapshot = import_directory(**data.model_dump())
         except (OSError, ImportError) as exc:
             raise HTTPException(400, 'Import nicht möglich: Verzeichnis und SP5-Erweiterung prüfen') from exc
+        return {'snapshot': snapshot, 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
+
+    @app.get('/api/remote-source')
+    def remote_source():
+        from .api_adapter import inspect_api
+        return inspect_api()
+
+    @app.post('/api/remote-import')
+    def remote_import(data: ApiImportRequest):
+        from .api_adapter import import_api
+        snapshot = import_api(**data.model_dump())
         return {'snapshot': snapshot, 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
 
     @app.put('/api/snapshots')

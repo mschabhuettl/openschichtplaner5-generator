@@ -11,13 +11,17 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 
 Im Browser `http://127.0.0.1:8080` öffnen. Der lokale Dienst ist für eine Person auf einem kontrollierten Rechner vorgesehen; er startet seinen Hintergrundworker selbst. Er ist kein öffentlich erreichbarer Mehrbenutzerdienst mit Anmeldung. Keine Originalverzeichnisse in das Zustandsverzeichnis legen.
 
+## API laden
+
+Alternativ **Konfigurierte SP5-API** wählen. Die Adresse und das Sitzungstoken werden lokal am Server konfiguriert. **Teams laden** und **Daten importieren** verwenden dann die HTTP-Quelle; Matrix und weitere Bearbeitung bleiben gleich. [Konfiguration und lokale Prüfung](api-source.md).
+
 ## Stammverzeichnis laden
 
 Im Feld **SP5-Verzeichnis** den Pfad eingeben, der für den Dienst lesbar ist. Im normalen lokalen Betrieb ist dies ein Pfad auf demselben Rechner. Im Container ist es der schreibgeschützt eingebundene Containerpfad, beispielsweise `/source`.
 
 Das Stammverzeichnis darf direkt die DBF-Dateien oder genau ein passendes direktes Unterverzeichnis enthalten. Die Erkennung benötigt die Tabellen `5EMPL`, `5GROUP`, `5GRASG`, `5SHIFT` und `5WOPL`; Groß-/Kleinschreibung wird berücksichtigt. Bei mehreren Datenbeständen muss das konkrete Verzeichnis ausgewählt werden. Verknüpfte Quelldateien und Pfade außerhalb eines ausdrücklich gesetzten `SP5_SOURCE_ROOT` werden abgelehnt.
 
-Nach **Quelle prüfen** das Team, den neuen Planungszeitraum, die ausdrücklich gewählte Zeitzone und den historischen Bezugszeitraum auswählen. Als Historienbasis stehen Ist, Soll oder beide zur Auswahl; Standard ist Ist. Die Historie muss vor dem neuen Planungszeitraum liegen. Der Import schreibt keine Originaltabellen. Fingerprints vor und nach dem Lesen erkennen zwischenzeitliche Änderungen; sie behaupten keine atomare Datenbanktransaktion. Fehlende Tabellen und ungeklärte Originalsemantik bleiben sichtbar.
+Nach **Teams laden** das Team, den neuen Planungszeitraum, die ausdrücklich gewählte Zeitzone und den historischen Bezugszeitraum auswählen. Als Historienbasis stehen Ist, Soll oder beide zur Auswahl; Standard ist Ist. Die Historie muss vor dem neuen Planungszeitraum liegen. Der Import schreibt keine Originaltabellen. Fingerprints vor und nach dem Lesen erkennen zwischenzeitliche Änderungen; sie behaupten keine atomare Datenbanktransaktion. Fehlende Tabellen und ungeklärte Originalsemantik bleiben sichtbar.
 
 Ein Browser kann den freien Zugriff auf lokale Verzeichnisse nicht stellvertretend für einen entfernten Server gewähren. Deshalb wird der Quellpfad am Rechner des Dienstes bzw. als Docker-Bind-Mount bereitgestellt; es gibt keine Übertragung an einen externen Dienst.
 

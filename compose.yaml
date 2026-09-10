@@ -1,9 +1,11 @@
 services:
   generator:
-    build: .
-    image: openschichtplaner5-generator:local
+    image: ghcr.io/mschabhuettl/openschichtplaner5-generator:latest
     ports:
       - "127.0.0.1:8080:8080"
+    environment:
+      SP5_API_URL: ${SP5_API_URL:-}
+      SP5_API_TOKEN_FILE: ${SP5_API_TOKEN_FILE:-}
     volumes:
       - generator-state:/state
     restart: unless-stopped

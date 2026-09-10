@@ -7,3 +7,7 @@ build/
 dist/
 *.egg-info/
 *.sqlite*
+.env
+compose.override.yaml
+secrets/
+generator-state/

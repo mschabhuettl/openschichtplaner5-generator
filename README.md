@@ -4,7 +4,7 @@ Experimenteller, branchenneutraler Dienstplangenerator mit lokaler mathematische
 
 ## Stand
 
-Der allgemeine Python-Kern liest versionierte JSON-Snapshots, erzeugt vollständige oder ausdrücklich gekennzeichnete Teilpläne, prüft Regeln und exportiert JSON, CSV und XLSX. Konfigurierbar sind Funktionen, Arbeitsplätze, Freigaben, Qualifikationen, Verfügbarkeiten, wechselnde Wochenmodelle, Abwesenheiten, Fixierungen, Ruheprofile und Optimierungsgewichte. Eine optionale Integration ergänzt Hintergrundjobs und eine Generatoransicht im Schwesterprojekt.
+Der allgemeine Python-Kern liest versionierte JSON-Snapshots, erzeugt vollständige oder ausdrücklich gekennzeichnete Teilpläne, prüft Regeln und exportiert JSON, CSV und XLSX. Konfigurierbar sind Funktionen, Arbeitsplätze, Freigaben, Qualifikationen, Verfügbarkeiten, wechselnde Wochenmodelle, Abwesenheiten, Fixierungen, Ruheprofile und Optimierungsgewichte. Eine eigene Weboberfläche mit Hintergrundworker ist enthalten; eine optionale Integration ergänzt die Generatoransicht im Schwesterprojekt.
 
 **Native SP5-Übernahme ist gesperrt.** Der lesende Adapter bewahrt ungeklärte Originalsemantik als blockierende Diagnosen. Eine transaktionale Übernahme ist ausschließlich für den ausdrücklich aktivierten, isolierten synthetischen Testbestand implementiert. Dieser Weg schreibt keine originalen Dienstpläne. Die SP5-Integration ist damit noch nicht vollständig abnahmefähig.
 
@@ -43,7 +43,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
 Browser: `http://127.0.0.1:8080`. Kein separates Frontend oder SP5-API-Projekt nötig.
-SP5-Stammverzeichnis laden, Team/Zeitraum auswählen und aus bisherigen Einteilungen
+SP5-Stammverzeichnis oder konfigurierte SP5-API laden, Team/Zeitraum auswählen und aus bisherigen Einteilungen
 unbestätigte Matrixvorschläge erzeugen. Freigaben, Verfügbarkeiten, Profile und
 Dienstarten bleiben bearbeitbar; Historie ersetzt keine Qualifikationsnachweise.
 Originaldateien werden nur gelesen. [Bedienung und Import](docs/standalone-web.md).
@@ -51,14 +51,16 @@ Originaldateien werden nur gelesen. [Bedienung und Import](docs/standalone-web.m
 ## Docker
 
 ```sh
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 ```
 
 Die Weboberfläche ist über `http://127.0.0.1:8080` erreichbar. Ein SP5-Verzeichnis
 wird ausdrücklich schreibgeschützt nach `/source` eingebunden, nicht ins Image
 kopiert. [Start mit Quellverzeichnis, Download und Laden des Images](docs/container.md).
-Der Workflow **Container** baut und prüft das Image und stellt einen tatsächlichen
-Docker-Image-Export als herunterladbares Artefakt bereit.
+Der Workflow **Container** baut und prüft das Image auf `main` und veröffentlicht
+`ghcr.io/mschabhuettl/openschichtplaner5-generator:latest`. Compose verwendet dieses
+Image ohne lokalen Build. [API-Anbindung und lokaler Datentest](docs/api-source.md).
 
 ## Optionale Integration
 

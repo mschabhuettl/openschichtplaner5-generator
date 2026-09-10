@@ -9,10 +9,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t openschichtplaner5-generator:local .
+        run: docker build --label org.opencontainers.image.source=https://github.com/mschabhuettl/openschichtplaner5-generator --label org.opencontainers.image.revision="$GITHUB_SHA" -t openschichtplaner5-generator:local .
       - name: Offline calculation and validation
         run: |
           docker run --rm --network none --entrypoint sh openschichtplaner5-generator:local -ec '
@@ -32,6 +35,22 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Log in to GitHub Container Registry
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish tested image
+        if: github.ref == 'refs/heads/main'
+        env:
+          IMAGE: ghcr.io/mschabhuettl/openschichtplaner5-generator
+        run: |
+          docker tag openschichtplaner5-generator:local "$IMAGE:latest"
+          docker tag openschichtplaner5-generator:local "$IMAGE:sha-$GITHUB_SHA"
+          docker push "$IMAGE:sha-$GITHUB_SHA"
+          docker push "$IMAGE:latest"
       - name: Save Docker image
         run: |
           docker save openschichtplaner5-generator:local | gzip > openschichtplaner5-generator-linux-amd64.tar.gz
