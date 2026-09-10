@@ -6,6 +6,8 @@ from hashlib import sha256
 import json
 from zoneinfo import ZoneInfo
 
+from .hierarchy import group_tree, selected_group_ids
+
 from .models import (
     Employee,
     Interval,
@@ -17,6 +19,25 @@ from .models import (
     Snapshot,
     Assignment,
 )
+
+
+def _unique_rows(rows):
+    seen = set()
+    result = []
+    for row in rows:
+        key = json.dumps(row, sort_keys=True, default=str)
+        if key not in seen:
+            seen.add(key)
+            result.append(row)
+    return result
+
+
+def _scope_schedule(db, scope, year, month, **kwargs):
+    return _unique_rows(
+        row
+        for gid in scope
+        for row in db.get_schedule(year, month, group_id=gid, **kwargs)
+    )
 
 
 def _minutes(hours):
@@ -52,7 +73,8 @@ def import_snapshot(
         raise ValueError("Ungültiger Zeitraum")
     zone = ZoneInfo(timezone)
     native_team = int(team_id.removeprefix("sp5:group:"))
-    team = f"sp5:group:{native_team}"
+    groups = db.get_groups() if hasattr(db, "get_groups") else [{"ID": native_team}]
+    scope = selected_group_ids(groups, native_team)
     context_start, context_end = (
         period_start - timedelta(days=31),
         period_end + timedelta(days=31),
@@ -67,16 +89,27 @@ def import_snapshot(
         "provenance": {},
         "unresolved_native": {},
         "context_schedule": [],
+        "selected_team_id": str(native_team),
+        "selected_group_ids": scope,
+        "group_tree": group_tree(groups),
     }
     source_employees = db.get_employees(include_hidden=True)
-    members = set(db.get_group_members(native_team))
-    source_employees = [e for e in source_employees if e["ID"] in members]
+    members = {eid for gid in scope for eid in db.get_group_members(gid)}
+    source_employees = list(
+        {e["ID"]: e for e in source_employees if e["ID"] in members}.values()
+    )
     holidays = calc.holiday_calendar(db.get_holidays())
     native_shifts = {s["ID"]: s for s in db.get_shifts(include_hidden=True)}
     native_workplaces = {w["ID"]: w for w in db.get_workplaces(include_hidden=True)}
     requirements = db.get_staffing_requirements()
-    specials = db.get_special_staffing(group_id=native_team)
-    daily = requirements.get("daily_requirements", [])
+    specials = _unique_rows(
+        row for gid in scope for row in db.get_special_staffing(group_id=gid)
+    )
+    daily = [
+        r
+        for r in requirements.get("daily_requirements", [])
+        if r.get("group_id") in (*scope, 0, None)
+    ]
     if daily:
         unresolved.append(
             "DADEM: Verhältnis zum Schichtbedarf und Zeitfenster noch zu klären."
@@ -120,7 +153,7 @@ def import_snapshot(
     rows = requirements.get("shift_requirements", [])
     for row in rows:
         gid = row.get("group_id")
-        if gid not in (native_team, 0, None):
+        if gid not in (*scope, 0, None):
             continue
         if (
             gid in (0, None)
@@ -154,7 +187,9 @@ def import_snapshot(
         while d <= period_end:
             idx = calc.day_index(d, holidays)
             if idx == row.get("weekday"):
-                shift_id = f"sp5:shift:{sid}:{d.isoformat()}"
+                shift_id = f"sp5:shift:{sid}:{d.isoformat()}" + (
+                    f":group:{gid}" if len(scope) > 1 else ""
+                )
                 native = native_shifts[sid]
                 try:
                     windows = calc.parse_startend(
@@ -173,7 +208,7 @@ def import_snapshot(
                         id=shift_id,
                         name=native.get("NAME", ""),
                         kind="unconfirmed",
-                        team_id=team,
+                        team_id=f"sp5:group:{gid}",
                         segments=segments,
                         paid_minutes=_minutes(native.get(f"DURATION{idx}")),
                         holiday=d in holidays,
@@ -199,9 +234,10 @@ def import_snapshot(
             continue
         for sid, shift in shifts.items():
             d = shift.segments[0].start.date()
-            if sid == f"sp5:shift:{row['shift_id']}:{d}" and row.get(
-                "weekday"
-            ) == calc.day_index(d, holidays):
+            if (
+                sid == f"sp5:shift:{row['shift_id']}:{d}"
+                or sid.startswith(f"sp5:shift:{row['shift_id']}:{d}:group:")
+            ) and row.get("weekday") == calc.day_index(d, holidays):
                 grade = row.get("restrict")
                 if grade not in (0, 1, 2):
                     unresolved.append(f"RESTR {row.get('id')}: unbekannte Stufe.")
@@ -213,7 +249,7 @@ def import_snapshot(
                     )
     month = context_start.replace(day=1)
     while month <= context_end:
-        for row in db.get_schedule(month.year, month.month, group_id=native_team):
+        for row in _scope_schedule(db, scope, month.year, month.month):
             d = calc.to_date(row.get("date"))
             eid = f"sp5:employee:{row.get('employee_id')}"
             if (
@@ -284,11 +320,31 @@ def import_snapshot(
                         workplace_id=f"sp5:workplace:{row.get('workplace_id') or 'unresolved'}",
                         qualifications_required=True,
                     )
+                    member_teams = [
+                        g
+                        for g in employee_map[eid].team_ids
+                        if g in {f"sp5:group:{v}" for v in scope}
+                    ]
+                    if len(member_teams) != 1:
+                        unresolved.append(
+                            f"Bestehender Dienst {eid} {d}: konkrete Gruppe bei mehrfacher oder fehlender Mitgliedschaft bestätigen."
+                        )
+                    metadata["provenance"][sid] = {
+                        "team_source": "employee_membership",
+                        "team_confirmed": len(member_teams) == 1,
+                    }
                     shifts[sid] = Shift(
                         id=sid,
                         name=native.get("NAME", ""),
                         kind="unconfirmed",
-                        team_id=team,
+                        team_id=next(
+                            (
+                                g
+                                for g in employee_map[eid].team_ids
+                                if g in {f"sp5:group:{v}" for v in scope}
+                            ),
+                            f"sp5:group:{native_team}",
+                        ),
                         segments=segments,
                         paid_minutes=_minutes(native.get(f"DURATION{idx}")),
                         holiday=d in holidays,
@@ -431,9 +487,7 @@ def inspect_directory(directory):
     db, files = _source_database(directory)
     return {
         "directory": db.db_path,
-        "groups": [
-            {"id": str(g["ID"]), "name": g.get("NAME", "")} for g in db.get_groups()
-        ],
+        "groups": group_tree(db.get_groups()),
         "files": sorted(files),
         "source_read_only": True,
     }
@@ -467,8 +521,12 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
     month = history_start.replace(day=1)
     seen = set()
     while month <= history_end:
-        for row in db.get_schedule(
-            month.year, month.month, group_id=team, plan=history_plan
+        for row in _scope_schedule(
+            db,
+            snapshot.metadata.get("selected_group_ids", [team]),
+            month.year,
+            month.month,
+            plan=history_plan,
         ):
             day = calc.to_date(row.get("date"))
             eid = f"sp5:employee:{row.get('employee_id')}"

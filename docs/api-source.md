@@ -27,3 +27,7 @@ In der Oberfläche **Konfigurierte SP5-API** wählen, **Teams laden** drücken, 
 Die Snapshot-Konsistenz wird durch wiederholtes Lesen geprüft, nicht durch eine Transaktion über die entfernte API garantiert. Eingeschränkte Abwesenheitssicht, fehlende Schnittstellen und nicht eindeutig übertragbare Zusatzregeln dürfen nicht stillschweigend als uneingeschränkte Verfügbarkeit gelten. Entsprechende Hindernisse bleiben Fehler beziehungsweise offene Angaben.
 
 Originaldaten, Screenshots mit Personalbezug, Exporte und Zugangstoken verbleiben beim Betreiber. Für reproduzierbare Fehlermeldungen ausschließlich einen neu konstruierten synthetischen Fall verwenden. Die Entwicklung und automatisierten Prüfungen dieser Anbindung verwenden synthetische Antworten, keine produktive Netzwerkquelle.
+
+## Übergeordnete Teams
+
+Die Auswahl eines Teams umfasst dessen gesamten Unterbaum anhand der SP5-Zuordnung `SUPERID`. Die Teamauswahl zeigt Unterteams eingerückt. Direkte Mitgliedschaften bleiben in der Personenmatrix sichtbar; dieselbe Person erscheint auch bei mehrfacher Mitgliedschaft nur einmal. Historische Dienste werden über die einbezogenen Teams zusammengeführt und identische Einträge nicht mehrfach gezählt. Bedarfe behalten ihre ursprüngliche Teamzuordnung; sie werden nicht auf Elternteams umgebucht. Ungültige Zyklen in der Hierarchie werden als Eingabefehler gemeldet.

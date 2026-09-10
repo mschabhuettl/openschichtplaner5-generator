@@ -34,3 +34,7 @@ Die daraus vorgeschlagenen Einsatzfreigaben sind zunächst **unbestätigt**. His
 Entwürfe und individuelle Ergänzungen werden im separaten Zustandsverzeichnis gespeichert, nicht in den Original-DBF-Dateien. Nach dem Speichern kann ein Vorschlag berechnet, unabhängig geprüft, verändert, fixiert und neu berechnet werden. Die Exporte enthalten den aktuellen Snapshot bzw. Plan.
 
 Die native Gesamtübernahme zurück in einen Originalbestand bleibt derzeit gesperrt. Ungeklärte Bedarfskombinationen sind weiterhin keine automatisch bestätigten Planungsgrundlagen.
+
+## Übergeordnete Teams
+
+Die Auswahl eines Teams umfasst dessen gesamten Unterbaum anhand der SP5-Zuordnung `SUPERID`. Die Teamauswahl zeigt Unterteams eingerückt. Direkte Mitgliedschaften bleiben in der Personenmatrix sichtbar; dieselbe Person erscheint auch bei mehrfacher Mitgliedschaft nur einmal. Historische Dienste werden über die einbezogenen Teams zusammengeführt und identische Einträge nicht mehrfach gezählt. Bedarfe behalten ihre ursprüngliche Teamzuordnung; sie werden nicht auf Elternteams umgebucht. Ungültige Zyklen in der Hierarchie werden als Eingabefehler gemeldet.

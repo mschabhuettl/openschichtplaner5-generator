@@ -11,6 +11,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 from uuid import uuid4
 
 from .sp5_adapter import historical_matrix, import_snapshot
+from .hierarchy import selected_group_ids, group_tree
 
 
 class APIImportError(ValueError):
@@ -122,8 +123,8 @@ class _Database:
         return [r["ID"] for r in self.rows(f"/api/groups/{group}/members")]
 
     def get_employee_groups(self, employee):
-        # Only this selected membership was actually read and verified.
-        return [self.team]
+        return [g for g in selected_group_ids(self.get_groups(), self.team)
+                if employee in self.get_group_members(g)]
 
     def get_holidays(self):
         return self.rows("/api/holidays")
@@ -135,7 +136,7 @@ class _Database:
         return self.rows("/api/workplaces", include_hidden="true")
 
     def get_staffing_requirements(self):
-        data = self.client.get("/api/staffing-requirements", group_id=self.team)
+        data = self.client.get("/api/staffing-requirements")
         if not isinstance(data, dict) or not all(
             isinstance(data.get(k), list)
             for k in ("shift_requirements", "daily_requirements")
@@ -144,7 +145,7 @@ class _Database:
         return data
 
     def get_special_staffing(self, **kw):
-        return self.rows("/api/staffing-requirements/special", group_id=self.team)
+        return self.rows("/api/staffing-requirements/special", group_id=kw.get("group_id", self.team))
 
     def get_restrictions(self):
         return self.rows("/api/restrictions")
@@ -154,7 +155,7 @@ class _Database:
             "/api/schedule",
             year=year,
             month=month,
-            group_id=self.team,
+            group_id=kw.get("group_id", self.team),
             plan=kw.get("plan", "ist"),
         )
 
@@ -166,7 +167,7 @@ def inspect_api():
     try:
         groups = _Database(client, None).get_groups()
         return {
-            "groups": [{"id": str(g["ID"]), "name": g.get("NAME", "")} for g in groups],
+            "groups": group_tree(groups),
             "source_read_only": True,
             "source": "sp5-api",
         }
@@ -203,7 +204,7 @@ def import_api(
         db = _Database(client, team)
         if team not in {g["ID"] for g in db.get_groups()}:
             raise APIImportError("Ausgewählte Gruppe ist nicht zugänglich.")
-        members = set(db.get_group_members(team))
+        members = {eid for gid in selected_group_ids(db.get_groups(), team) for eid in db.get_group_members(gid)}
         if not members <= {e["ID"] for e in db.get_employees()}:
             raise APIImportError(
                 "API-Personensicht ist für die ausgewählte Gruppe unvollständig."
@@ -237,7 +238,7 @@ def import_api(
         [
             "API-Zusatzdaten für Verfügbarkeit, Skills und Arbeitszeitregeln sind noch nicht kanonisch zugeordnet; bestehende Regeln lokal prüfen und ergänzen.",
             "API-Sichtbarkeit, Cache-Aktualität und Vollständigkeit einschließlich angrenzender Dienste lokal bestätigen; wiederholte Antworten ersetzen keine Quelltransaktion.",
-            "Nur die ausgewählte Gruppenmitgliedschaft wurde übernommen; weitere Zuordnungen gegebenenfalls ergänzen.",
+            "Mitgliedschaften im ausgewählten Team und seinen Unterteams wurden übernommen; Zuordnungen außerhalb dieses Teilbaums gegebenenfalls ergänzen.",
         ]
     )
     snapshot.id = "sp5:api-import:" + str(uuid4())
