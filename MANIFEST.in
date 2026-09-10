@@ -6,3 +6,5 @@ recursive-include tests *.py
 
 recursive-include sp5generator/static *.html *.css *.js
 include compose.yaml requirements-web.lock
+
+include compose.portainer-dev.yaml

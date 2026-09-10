@@ -9,7 +9,7 @@ python -m pytest -q
 python tools/benchmark.py --employees 120 --days 31 --time-limit 45
 ```
 
-Der Generator-Testlauf bestand mit 63 Tests. Abgedeckt sind unter anderem Freigaben, Qualifikation/RESTR, Betreuungskapazität, Teilplanung, harte Dienstartgrenzen versus Wünsche, Ruhegrenzen, rollierende und Kalenderwochenruhe, Randkontext, Profilwechsel, mehrteilige Dienste, Zeitumstellung, korrumpierte Ergebnisse und ein vollständig enumerierter kleiner Referenzfall. Jobtests prüfen Revisionen, Benutzerisolation, tatsächlichen Workerprozess, Abbruch, Wiederanlauf, konkurrierende idempotente Übernahme und Rückabwicklung bei injiziertem Auditfehler.
+Der Generator-Testlauf bestand mit 65 Tests. Abgedeckt sind unter anderem Freigaben, Qualifikation/RESTR, Betreuungskapazität, Teilplanung, harte Dienstartgrenzen versus Wünsche, Ruhegrenzen, rollierende und Kalenderwochenruhe, Randkontext, Profilwechsel, mehrteilige Dienste, Zeitumstellung, korrumpierte Ergebnisse und ein vollständig enumerierter kleiner Referenzfall. Jobtests prüfen Revisionen, Benutzerisolation, tatsächlichen Workerprozess, Abbruch, Wiederanlauf, konkurrierende idempotente Übernahme und Rückabwicklung bei injiziertem Auditfehler.
 
 Der Adapter ist sowohl gegen neue synthetische Fassadenstrukturen als auch über frisch erzeugte minimale dBASE-Dateien mit `sp5lib`-Schreib-/Lesefunktionen geprüft. Die minimalen Testtabellen sind keine Behauptung vollständiger Originalformatparität. Ungeklärte Originalsemantik bleibt gesondert blockierend dokumentiert.
 
@@ -42,6 +42,8 @@ Version 0.1.1 wurde als Wheel und Quellarchiv gebaut und deren Dateiinhalte gepr
 Der [Containerlauf für Commit 352b1b3](https://github.com/mschabhuettl/openschichtplaner5-generator/actions/runs/34527690138) hat das Linux-amd64-Image gebaut, die CLI-Berechnung und unabhängige Validierung mit `--network none` sowie den HTTP-Webstart erfolgreich geprüft. Das Image wird als herunterladbares Workflow-Artefakt mit Prüfsumme bereitgestellt, nicht in einer Containerregistry veröffentlicht.
 
 ## HTTP-Quelle
+
+Zwei weitere synthetische Tests bestätigen die explizite Dev-Anbindung ohne Token-Datei und die Ablehnung einer API, die ihren Dev-Modus nicht bestätigt.
 
 Die API-Anbindung ist gegen den Quellcode der bestehenden Leseendpunkte und synthetische HTTP-Antworten geprüft. Fünf Transporttests prüfen unter anderem Berechtigungsfehler, ausgeblendete Abwesenheiten, Quelländerungen, verweigerte Weiterleitungen und den Ausschluss von Zugangsdaten aus Snapshots. Ein zusätzlicher Webtest prüft die serverseitige Anbindung. Chromium durchlief außerdem einen echten lokalen HTTP-Testserver: API wählen, Team laden, importieren, historische Matrix anzeigen und speichern; Desktop und 390-Pixel-Ansicht ohne JavaScript-Fehler oder Seitenüberlauf. Keine produktive API wurde kontaktiert.
 

@@ -139,3 +139,42 @@ def test_configuration_is_only_server_owned(transport, monkeypatch):
     monkeypatch.setenv("SP5_API_URL", "https://user:password@source.test")
     with pytest.raises(APIImportError, match="ohne Zugangsdaten"):
         APIClient()
+
+
+def test_explicit_dev_mode_without_token_file(monkeypatch):
+    monkeypatch.setenv('SP5_API_URL', 'http://source.test')
+    monkeypatch.setenv('SP5_API_DEV_MODE', 'true')
+    monkeypatch.delenv('SP5_API_TOKEN_FILE', raising=False)
+    calls = []
+    class DevTransport:
+        def open(self, request, timeout):
+            path = urlsplit(request.full_url).path
+            calls.append(path)
+            assert request.get_method() == 'GET'
+            if path == '/api/dev/mode':
+                assert request.get_header('Authorization') is None
+                result = {'dev_mode': True}
+            else:
+                assert request.get_header('Authorization') == 'Bearer __dev_mode__'
+                result = {'showabs_mode': 0} if path == '/api/auth/me' else [{'ID': 1, 'NAME': 'Team A'}]
+            return BytesIO(json.dumps(result).encode())
+    monkeypatch.setattr('sp5generator.api_adapter.build_opener', lambda *a: DevTransport())
+    assert inspect_api()['groups'] == [{'id': '1', 'name': 'Team A'}]
+    assert calls[0] == '/api/dev/mode'
+
+
+def test_dev_mode_never_falls_back_for_regular_api(monkeypatch):
+    monkeypatch.setenv('SP5_API_URL', 'http://source.test')
+    monkeypatch.setenv('SP5_API_DEV_MODE', 'true')
+    class NormalTransport:
+        def open(self, request, timeout):
+            assert request.get_header('Authorization') is None
+            assert request.full_url.endswith('/api/dev/mode')
+            return BytesIO(b'{"dev_mode":false}')
+    monkeypatch.setattr('sp5generator.api_adapter.build_opener', lambda *a: NormalTransport())
+    with pytest.raises(APIImportError, match='keinen aktiven Dev-Modus'):
+        inspect_api()
+    monkeypatch.setenv('SP5_API_DEV_MODE', 'false')
+    monkeypatch.delenv('SP5_API_TOKEN_FILE', raising=False)
+    with pytest.raises(APIImportError, match='TOKEN_FILE'):
+        APIClient()

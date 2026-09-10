@@ -38,21 +38,27 @@ class APIClient:
                 "SP5_API_URL muss eine HTTP(S)-Adresse ohne Zugangsdaten sein."
             )
         self.base = base[:-4] if base.endswith("/api") else base
-        token_file = os.environ.get("SP5_API_TOKEN_FILE")
-        if not token_file:
-            raise APIImportError("SP5_API_TOKEN_FILE ist nicht konfiguriert.")
-        try:
-            token = Path(token_file).read_text().strip()
-        except (OSError, UnicodeError):
-            raise APIImportError("API-Token-Datei kann nicht gelesen werden.") from None
-        if not token or len(token) > 16384 or any(c.isspace() for c in token):
-            raise APIImportError("API-Token-Datei enthält kein gültiges Sitzungstoken.")
-        self.headers = {
-            "Authorization": "Bearer " + token,
-            "Accept": "application/json",
-        }
         self.opener = build_opener(ProxyHandler({}), _NoRedirect())
         self.cache = {}
+        self.headers = {"Accept": "application/json"}
+        dev = os.environ.get("SP5_API_DEV_MODE", "").lower() in ("1", "true", "yes")
+        if dev:
+            status = self._read("/api/dev/mode")
+            if not isinstance(status, dict) or status.get("dev_mode") is not True:
+                raise APIImportError("Die konfigurierte API bestätigt keinen aktiven Dev-Modus.")
+            # Public protocol marker accepted only by explicitly enabled SP5 dev mode.
+            self.headers["Authorization"] = "Bearer __dev_mode__"
+        else:
+            token_file = os.environ.get("SP5_API_TOKEN_FILE")
+            if not token_file:
+                raise APIImportError("SP5_API_TOKEN_FILE ist nicht konfiguriert; für eine Dev-API SP5_API_DEV_MODE explizit aktivieren.")
+            try:
+                token = Path(token_file).read_text().strip()
+            except (OSError, UnicodeError):
+                raise APIImportError("API-Token-Datei kann nicht gelesen werden.") from None
+            if not token or len(token) > 16384 or any(c.isspace() for c in token):
+                raise APIImportError("API-Token-Datei enthält kein gültiges Sitzungstoken.")
+            self.headers["Authorization"] = "Bearer " + token
 
     def _read(self, path):
         try:

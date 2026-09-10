@@ -25,6 +25,10 @@ docker login ghcr.io --username mschabhuettl --password-stdin < /pfad/zur/lokale
 
 Alternativ kann der Eigentümer in den [Paketeinstellungen](https://github.com/users/mschabhuettl/packages/container/openschichtplaner5-generator/settings) die Sichtbarkeit auf Public setzen; dann ist kein Registry-Login nötig. Dies ist von den Einstellungen des Quellrepositories getrennt. Siehe [GitHub-Dokumentation zur Paketsichtbarkeit](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
 
+## API im Dev-Modus ohne Token-Datei
+
+Für eine ausdrücklich im Dev-Modus betriebene API gibt es einen [separaten Portainer-Stack](../compose.portainer-dev.yaml). Er setzt `SP5_API_DEV_MODE=true`; lediglich `API_IP` und `GENERATOR_IP` in Portainer ausfüllen. Ein Token-Mount entfällt. Der Generator prüft den Dev-Modus der entfernten API vor der Verwendung.
+
 ## Interne SP5-API verbinden
 
 Die API muss aus dem Container erreichbar sein. `localhost` im Container bezeichnet den Container selbst, nicht den Docker-Host. Verwende die tatsächlich konfigurierte interne Adresse; es ist kein öffentlicher API-Endpunkt erforderlich.

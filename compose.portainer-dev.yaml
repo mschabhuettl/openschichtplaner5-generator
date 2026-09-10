@@ -1,0 +1,14 @@
+services:
+  generator:
+    image: ghcr.io/mschabhuettl/openschichtplaner5-generator:latest
+    ports:
+      - "5006:8080"
+    environment:
+      SP5_API_URL: "http://${API_IP}:5005"
+      SP5_API_DEV_MODE: "true"
+      SP5_WEB_ALLOWED_HOSTS: "${GENERATOR_IP}"
+    volumes:
+      - generator_state:/state
+    restart: unless-stopped
+volumes:
+  generator_state:

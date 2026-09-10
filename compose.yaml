@@ -4,6 +4,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
+      SP5_API_DEV_MODE: ${SP5_API_DEV_MODE:-false}
       SP5_API_URL: ${SP5_API_URL:-}
       SP5_API_TOKEN_FILE: ${SP5_API_TOKEN_FILE:-}
     volumes:

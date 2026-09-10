@@ -2,7 +2,13 @@
 
 Die eigenständige Weboberfläche kann eine bereits betriebene `openschichtplaner5-api` im internen Netz lesen. Die API benötigt dafür weder das optionale Generatorpaket noch einen Generatorrouter. Sie bleibt für Anmeldung, Sichtrechte und Datenzugriff zuständig. Der Generator schreibt keine Dienste oder Regeln an diese API zurück.
 
-## Konfiguration
+## API im Dev-Modus
+
+Bei einer API mit aktivem `SP5_DEV_MODE=true` ist keine Sitzungstoken-Datei erforderlich. Im Generator `SP5_API_DEV_MODE=true` und `SP5_API_URL` setzen. Der Generator prüft zuerst `/api/dev/mode` und verwendet nur nach ausdrücklicher Bestätigung die vom bestehenden API-Protokoll vorgesehene Dev-Kennung. Eine reguläre API wird nicht automatisch auf diesen Modus umgestellt; eine fehlgeschlagene Anmeldung löst keinen Dev-Fallback aus.
+
+[Separater Portainer-Stack](../compose.portainer-dev.yaml): `API_IP` und `GENERATOR_IP` als Stack-Variablen setzen. Keine Quellverzeichnis- oder Token-Mounts erforderlich. Die Generatoroberfläche liegt auf Port 5006 und hat keine eigene Anmeldung; dieser Stack ist für das kontrollierte interne Testnetz vorgesehen.
+
+## Konfiguration mit Anmeldung
 
 `SP5_API_URL` ist die Basisadresse der bestehenden API. `SP5_API_TOKEN_FILE` zeigt auf eine lokale Datei mit einem gültigen Bearer-Sitzungstoken dieser API. Adresse und Token werden ausschließlich vom Server gelesen; sie gehören nicht in Snapshot, Export oder Browserformular. Die Datei wird schreibgeschützt in den Container eingebunden; siehe [Compose-Konfiguration](container.md#interne-sp5-api-verbinden).
 
