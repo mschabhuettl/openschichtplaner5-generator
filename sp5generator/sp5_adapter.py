@@ -90,6 +90,7 @@ def import_snapshot(
         "provenance": {},
         "unresolved_native": {},
         "context_schedule": [],
+        "service_matrix_version": 1,
         "selected_team_id": str(native_team),
         "selected_group_ids": scope,
         "group_tree": group_tree(groups),
@@ -101,7 +102,15 @@ def import_snapshot(
     )
     holidays = calc.holiday_calendar(db.get_holidays())
     native_shifts = {s["ID"]: s for s in db.get_shifts(include_hidden=True)}
+    metadata["services"] = [
+        {"function_id": f"sp5:service:{sid}", "name": service.get("NAME", "")}
+        for sid, service in native_shifts.items()
+    ]
     native_workplaces = {w["ID"]: w for w in db.get_workplaces(include_hidden=True)}
+    metadata["workplaces"] = [
+        {"id": f"sp5:workplace:{wid}", "name": workplace.get("NAME", "")}
+        for wid, workplace in native_workplaces.items()
+    ]
     requirements = db.get_staffing_requirements()
     specials = _unique_rows(
         row for gid in scope for row in db.get_special_staffing(group_id=gid)
@@ -176,11 +185,11 @@ def import_snapshot(
         if row["max"] < row["min"]:
             unresolved.append(f"SHDEM {row.get('id')}: MAX kleiner als MIN.")
             continue
-        position_id = f"sp5:position:{wid}"
+        position_id = f"sp5:position:{sid}:{wid}"
         positions[position_id] = Position(
             id=position_id,
-            name=native_workplaces[wid].get("NAME", ""),
-            function_id=f"sp5:function:{wid}",
+            name=native_shifts[sid].get("NAME", ""),
+            function_id=f"sp5:service:{sid}",
             workplace_id=f"sp5:workplace:{wid}",
             qualifications_required=True,
         )
@@ -313,11 +322,11 @@ def import_snapshot(
                         for a, b in windows
                     ]
                     sid = f"sp5:context:{row['employee_id']}:{d}:{row['shift_id']}"
-                    pid = f"sp5:context-position:{row.get('workplace_id') or 'unresolved'}"
+                    pid = f"sp5:context-position:{row['shift_id']}:{row.get('workplace_id') or 'unresolved'}"
                     positions[pid] = Position(
                         id=pid,
-                        name=native_workplaces.get(row.get("workplace_id"), {}).get("NAME") or "Arbeitsplatz ungeklärt",
-                        function_id=f"sp5:function:{row['workplace_id']}" if row.get("workplace_id") in native_workplaces else pid,
+                        name=native.get("NAME", ""),
+                        function_id=f"sp5:service:{row['shift_id']}",
                         workplace_id=f"sp5:workplace:{row.get('workplace_id') or 'unresolved'}",
                         qualifications_required=True,
                     )
@@ -507,7 +516,6 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
         raise ValueError("Historische Plansicht muss ist, soll oder both sein.")
     employees = {e.id: e for e in snapshot.employees}
     shifts = {str(s["ID"]): s for s in db.get_shifts(include_hidden=True)}
-    workplaces = {str(w["ID"]): w for w in db.get_workplaces(include_hidden=True)}
     position_ids = {p.id for p in snapshot.positions}
     by_employee = {
         eid: {
@@ -572,19 +580,20 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
             observation["count"] += 1
             observation["first_date"] = min(observation["first_date"], str(day))
             observation["last_date"] = max(observation["last_date"], str(day))
-            if wid not in (None, 0, "0", ""):
-                item["approvals"][str(wid)] += 1
-                pid = f"sp5:position:{wid}"
-                if pid not in position_ids:
-                    snapshot.positions.append(Position(
-                        id=pid,
-                        name=workplaces.get(str(wid), {}).get("NAME") or f"Arbeitsplatz {wid}",
-                        function_id=f"sp5:function:{wid}",
-                        workplace_id=f"sp5:workplace:{wid}",
-                        qualifications_required=True,
-                    ))
-                    position_ids.add(pid)
-                    snapshot.metadata.setdefault("historical_only_position_ids", []).append(pid)
+            item["approvals"][sid] += 1
+            # History is service evidence, not physical permission or demand.
+            workplace = str(wid) if wid not in (None, 0, "0", "") else "unresolved"
+            pid = f"sp5:position:{sid}:{workplace}"
+            if pid not in position_ids:
+                snapshot.positions.append(Position(
+                    id=pid,
+                    name=shifts[sid].get("NAME", ""),
+                    function_id=f"sp5:service:{sid}",
+                    workplace_id=f"sp5:workplace:{workplace}",
+                    qualifications_required=True,
+                ))
+                position_ids.add(pid)
+                snapshot.metadata.setdefault("historical_only_position_ids", []).append(pid)
         month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
     output = []
     for item in by_employee.values():
@@ -595,13 +604,13 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
                 "observed_shifts": list(item["observed_shifts"].values()),
                 "suggested_approvals": [
                     {
-                        "function_id": f"sp5:function:{wid}",
-                        "workplace_id": f"sp5:workplace:{wid}",
+                        "function_id": f"sp5:service:{sid}",
+                        "workplace_id": "*",
                         "evidence_count": count,
                         "confirmed": False,
                         "source": "historical",
                     }
-                    for wid, count in sorted(item["approvals"].items())
+                    for sid, count in sorted(item["approvals"].items())
                 ],
                 "first_date": min(item["dates"]) if item["dates"] else None,
                 "last_date": max(item["dates"]) if item["dates"] else None,

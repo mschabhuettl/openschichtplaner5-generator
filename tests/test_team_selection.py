@@ -54,7 +54,7 @@ def test_exact_import_shared_person_and_history_without_demand():
     history = historical_matrix(db, snapshot, date(2026, 1, 1), date(2026, 1, 5))
     assert history[0]["observed_assignment_count"] == 1
     assert history[0]["suggested_approvals"][0]["confirmed"] is False
-    assert any(p.function_id == "sp5:function:301" for p in snapshot.positions)
+    assert any(p.function_id == "sp5:service:201" for p in snapshot.positions)
     assert not snapshot.employees[0].approvals
     assert not [d for d in snapshot.demands if d.source == "sp5:SHDEM"]
     assert snapshot.demands == original_demands

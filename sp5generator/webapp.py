@@ -88,6 +88,8 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
             return JSONResponse({'detail': 'Cross-site requests are not permitted'}, status_code=403)
         response = await call_next(request)
         response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
         return response
 
@@ -102,6 +104,11 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     @app.exception_handler(ValueError)
     async def invalid(request, exc):
         return JSONResponse({'detail': str(exc)}, status_code=422)
+
+    @app.get('/api/version')
+    def version():
+        from . import __version__
+        return {'version': __version__}
 
     @app.get('/api/demo')
     def demo():

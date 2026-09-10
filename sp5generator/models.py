@@ -18,7 +18,7 @@ class Qualification(Model):
 
 class Approval(Model):
     function_id: str
-    workplace_id: str
+    workplace_id: str = Field(description="Exact workplace ID, or * for an explicitly confirmed service-wide approval")
     valid_from: date
     valid_until: date
     supervised: bool = False

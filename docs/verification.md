@@ -81,3 +81,12 @@ Fünf synthetische Hierarchietests und ein HTTP-Regressionstest prüfen `SUPERID
 ## Mehrfachauswahl und Tabellenoberfläche
 
 Exakte Teamlisten, Legacy-Einzelauswahl und historische Funktionen ohne zusätzlichen Bedarf sind mit synthetischen Regressionen geprüft. Der automatisierte Chromium-Ablauf prüft ausgeblendete Unterteams, mehrfach zugeordnete Personen, historische Vorschläge, Achsentausch, Speichern, zeitlich begrenzte und betreute Freigaben, beide Monatsansichten sowie Fixierung und Neuberechnung mit echtem Worker. Die Prüfungen laufen vor der Image-Veröffentlichung im Container-Workflow. Anleitung: [Matrix und Monatsplan](matrix-and-monthly-plan.md).
+
+## Dienstbezogene Matrix (0.3.0)
+
+78 Python-Tests prüfen zusätzlich getrennte Dienst- und Arbeitsplatzidentitäten,
+arbeitsplatzübergreifende Dienstfreigaben, fortgeltende Qualifikations- und
+Betreuungspflichten sowie historische Einteilungen ohne Arbeitsplatzangabe.
+Der Browserablauf prüft mehrere Dienste am selben Arbeitsplatz, Dienste ohne
+Historie, Achsentausch, Dienst-Monatsansicht, Fehleranzeigen und doppelte Klicks.
+Alle Referenzdaten sind neu erzeugt und synthetisch.

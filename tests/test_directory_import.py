@@ -59,7 +59,8 @@ def test_history_is_an_editable_proposal_not_qualification():
     assert matrix[0]["observed_shifts"][0]["last_date"] == "2026-01-03"
     suggestion = matrix[0]["suggested_approvals"][0]
     assert suggestion["evidence_count"] == 2 and suggestion["confirmed"] is False
-    assert suggestion["workplace_id"] == "sp5:workplace:301"
+    assert suggestion["function_id"] == "sp5:service:201"
+    assert suggestion["workplace_id"] == "*"
     assert snapshot.employees[0].approvals == []
     assert snapshot.employees[0].qualifications == []
 
@@ -130,3 +131,35 @@ def test_import_detects_concurrent_change_and_keeps_source_readonly(
             date(2026, 1, 1),
             date(2026, 1, 5),
         )
+
+
+def test_history_groups_by_service_even_without_workplace():
+    class Source(HistorySource):
+        def get_shifts(self, **kw):
+            shift = super().get_shifts()[0]
+            return [shift, {**shift, "ID": 202, "NAME": "History Service B"}]
+
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (2026, 1):
+                return []
+            return [
+                {"employee_id": 101, "date": "2026-01-02", "kind": "shift", "shift_id": 201, "workplace_id": 301},
+                {"employee_id": 101, "date": "2026-01-03", "kind": "shift", "shift_id": 201, "workplace_id": 302},
+                {"employee_id": 101, "date": "2026-01-04", "kind": "shift", "shift_id": 202, "workplace_id": None},
+            ]
+
+    db = Source()
+    snapshot = adapter.import_snapshot(db, date(2026, 2, 6), date(2026, 2, 6), "1", "UTC")
+    demands = list(snapshot.demands)
+    matrix = adapter.historical_matrix(db, snapshot, date(2026, 1, 1), date(2026, 1, 5))
+    proposals = {p["function_id"]: p for p in matrix[0]["suggested_approvals"]}
+    assert set(proposals) == {"sp5:service:201", "sp5:service:202"}
+    assert proposals["sp5:service:201"]["evidence_count"] == 2
+    assert proposals["sp5:service:202"]["evidence_count"] == 1
+    assert all(p["workplace_id"] == "*" and not p["confirmed"] for p in proposals.values())
+    history_position = next(p for p in snapshot.positions if p.function_id == "sp5:service:202")
+    assert history_position.name == "History Service B"
+    assert history_position.workplace_id == "sp5:workplace:unresolved"
+    assert snapshot.demands == demands
+    assert not snapshot.employees[0].approvals
+    assert not snapshot.employees[0].qualifications

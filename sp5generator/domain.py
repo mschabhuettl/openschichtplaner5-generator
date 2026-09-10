@@ -56,7 +56,7 @@ def eligibility(snapshot, employee, demand):
         p
         for p in employee.approvals
         if p.function_id == position.function_id
-        and p.workplace_id == position.workplace_id
+        and p.workplace_id in ("*", position.workplace_id)
         and p.valid_from <= first
         and last <= p.valid_until
     ]
@@ -134,7 +134,7 @@ def supervised(snapshot, employee, demand):
         a
         for a in employee.approvals
         if a.function_id == position.function_id
-        and a.workplace_id == position.workplace_id
+        and a.workplace_id in ("*", position.workplace_id)
         and a.valid_from <= first
         and last <= a.valid_until
     ]

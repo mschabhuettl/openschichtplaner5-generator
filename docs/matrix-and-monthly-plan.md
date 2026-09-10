@@ -11,7 +11,7 @@ Die Teamauswahl ersetzt keine Einsatzfreigabe. Gruppen außerhalb der Auswahl we
 
 ## Excel-artige Matrix
 
-Standardmäßig stehen die Personen in den Zeilen und Funktionen beziehungsweise Arbeitsplätze in den Spalten. **Achsen tauschen** dreht die Ansicht um; es werden dieselben Freigaben bearbeitet, keine zweite Matrix. Mehrere Bedarfspositionen mit derselben Kombination aus Funktion und Arbeitsplatz teilen sich eine Freigabezelle.
+Bei SP5-Importen stehen Personen in den Zeilen und Dienste aus den Schichtstammdaten in den Spalten. Physische Arbeitsplätze sind keine Dienstspalten. **Achsen tauschen** dreht die Ansicht um; es werden dieselben Freigaben bearbeitet, keine zweite Matrix. Derselbe Dienst an mehreren Arbeitsplätzen erhält eine gemeinsame Dienstspalte. Die ausdrücklich bestätigte Dienstfreigabe gilt arbeitsplatzübergreifend; zusätzliche Qualifikationsanforderungen bleiben wirksam. Allgemeine JSON-Snapshots können weiterhin gesonderte Funktions-/Arbeitsplatzfreigaben verwenden.
 
 - **Vorschlag**: Ein früherer Einsatz wurde beobachtet, ist aber noch keine bestätigte Freigabe.
 - **Frei**: Eine ausdrückliche Freigabe deckt den angezeigten Planungszeitraum.
@@ -30,7 +30,7 @@ Historische Vorschläge lassen sich einzeln oder nach ausdrücklicher Bestätigu
 Das Ergebnis wird nach dem Darstellungsprinzip des Hauptprojekts als Tagesraster angezeigt: feste erste Spalte, Wochentage, Wochenendmarkierung und Dienstblöcke mit Zeitangaben.
 
 - **Personenansicht**: Personen in den Zeilen, Kalendertage in den Spalten.
-- **Funktionsansicht**: Funktionen/Arbeitsplätze in den Zeilen, eingeteilte Personen in den Tageszellen.
+- **Dienstansicht bei SP5-Importen**: Dienste in den Zeilen, eingeteilte Personen in den Tageszellen.
 
 Mehrere Einteilungen pro Tag und mehrteilige Dienste bleiben sichtbar. Die Datumszuordnung verwendet die Zeitzone des Snapshots; Dienste über Mitternacht erscheinen an den betroffenen Tagen, ein Ende genau um Mitternacht belegt nicht den Folgetag. Fixierte Dienste sind gekennzeichnet. Bei längeren Zeiträumen kann zwischen Monaten gewechselt werden.
 
@@ -49,3 +49,7 @@ WEB_TEST_PYTHON=python npm test --prefix tests/browser
 ```
 
 Der Test startet selbst einen lokalen Webdienst samt Worker und eine ausschließlich synthetische HTTP-Quelle. Er prüft Teilauswahl, Historienmatrix, Achsentausch, zeitliche Freigaben, Speichern, Berechnung, Monatsansichten, Fixierung, Mitternachtsgrenzen sowie breite und schmale Ansichten. Andere Browser-Netzwerkziele werden gesperrt. Es wird keine konfigurierte produktive API verwendet.
+
+## Bestehende Importe
+
+Snapshots mit der früheren arbeitsplatzbasierten Matrix werden nicht automatisch umgedeutet. Daten erneut importieren und die dienstbezogenen Vorschläge prüfen. Die neuen Dienst-IDs verwenden einen eigenen Namensraum, sodass alte Freigaben nicht versehentlich als Dienstfreigaben gelten.

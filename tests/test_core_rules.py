@@ -449,3 +449,27 @@ def test_future_profile_limit_checks_context_series():
     s.assignments = [Assignment(employee_id="e0", demand_id="b", fixed=True)]
     assert not validate(s, [assignment(d="a"), assignment(d="b")]).valid
     assert solve(s, 2).solver_status == "INFEASIBLE"
+
+
+def test_service_wide_approval_preserves_service_boundary_and_qualification():
+    s = case(n=1)
+    s.employees[0].approvals[0].workplace_id = '*'
+    s.positions[0].workplace_id = 'another-physical-place'
+    result = solve(s, time_limit=5)
+    assert result.validation.complete
+    assert validate(s, result.assignments).complete
+    s.positions[0].function_id = 'other-service'
+    assert not validate(s, result.assignments).valid
+    assert not solve(s, time_limit=5).validation.complete
+    s.positions[0].function_id = 'f'
+    s.positions[0].qualifications_required = True
+    s.positions[0].qualification_ids = ['qualification-a']
+    assert not validate(s, result.assignments).valid
+
+
+def test_service_wide_supervised_approval_still_needs_mentor():
+    s = case(n=1)
+    s.employees[0].approvals[0].workplace_id = '*'
+    s.employees[0].approvals[0].supervised = True
+    assert not solve(s, time_limit=5).validation.complete
+    assert not validate(s, [Assignment(employee_id='e0', demand_id=s.demands[0].id)]).valid

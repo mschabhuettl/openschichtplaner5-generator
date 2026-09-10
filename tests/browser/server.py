@@ -24,14 +24,14 @@ responses = {
     '/api/groups/2/members': [people[0], people[2]],
     '/api/groups/3/members': [people[1], people[2]],
     '/api/employees': people,
-    '/api/shifts': [{'ID': 201, 'NAME': 'Schicht A',
+    '/api/shifts': [{'ID': sid, 'NAME': name,
                      **{f'STARTEND{i}': '08:00-16:00' for i in range(8)},
-                     **{f'DURATION{i}': 8 for i in range(8)}}],
+                     **{f'DURATION{i}': 8 for i in range(8)}} for sid, name in [(201, 'Dienst A'), (202, 'Dienst B'), (203, 'Dienst C')]],
     '/api/workplaces': [{'ID': 301, 'NAME': 'Arbeitsplatz 1'}, {'ID': 302, 'NAME': 'Arbeitsplatz 2'}],
     '/api/holidays': [],
     '/api/staffing-requirements': {'shift_requirements': [
-        {'id': 400 + gid, 'group_id': gid, 'weekday': 0, 'shift_id': 201,
-         'workplace_id': 301, 'min': 1, 'max': 2} for gid in (2, 3)], 'daily_requirements': []},
+        {'id': 400 + gid * 10 + sid, 'group_id': gid, 'weekday': 0, 'shift_id': sid,
+         'workplace_id': 301, 'min': 1, 'max': 2} for gid in (2, 3) for sid in (201, 202)], 'daily_requirements': []},
     '/api/staffing-requirements/special': [],
     '/api/restrictions': [],
 }

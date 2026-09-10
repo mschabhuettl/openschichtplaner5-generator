@@ -9,8 +9,12 @@ from sp5generator.solver import solve
 def test_local_web_persist_solve_and_export(tmp_path):
     with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
         assert c.get('/').status_code == 200
+        from sp5generator import __version__
+        assert c.get('/api/version').json() == {'version': __version__}
         assert 'OpenSchichtplaner5 Generator' in c.get('/').text
         assert c.get('/static/app.js').status_code == 200
+        assert c.get('/static/app.js').headers['Cache-Control'] == 'no-store'
+        assert c.get('/api/demo').headers['Cache-Control'] == 'no-store'
         snapshot = c.get('/api/demo').json()
         snapshot['employees'][0]['preferred_kind'] = 'night'
         saved = c.put('/api/snapshots', json=snapshot).json()

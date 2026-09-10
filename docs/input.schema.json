@@ -8,6 +8,7 @@
           "type": "string"
         },
         "workplace_id": {
+          "description": "Exact workplace ID, or * for an explicitly confirmed service-wide approval",
           "title": "Workplace Id",
           "type": "string"
         },
