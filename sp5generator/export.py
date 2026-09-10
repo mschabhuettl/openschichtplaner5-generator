@@ -1,0 +1,116 @@
+"""Portable tabular exports with spreadsheet formula protection."""
+
+import csv
+from pathlib import Path
+from .models import Snapshot, Result
+
+
+def safe_cell(value):
+    if isinstance(value, str) and value.lstrip().startswith(
+        ("=", "+", "-", "@", "\t", "\r", "\n")
+    ):
+        return "'" + value
+    return value
+
+
+def rows(snapshot: Snapshot, result: Result):
+    yield ["Zeitraum", str(snapshot.period_start), str(snapshot.period_end)]
+    yield [
+        "Status",
+        result.solver_status,
+        "Vollständig" if result.validation.complete else "Nicht vollständig",
+    ]
+    yield [
+        "Person-ID",
+        "Person",
+        "Bedarf",
+        "Funktion",
+        "Arbeitsplatz",
+        "Dienst",
+        "Beginn",
+        "Ende",
+        "Gutschrift Minuten",
+        "Fixiert",
+    ]
+    people = {e.id: e for e in snapshot.employees}
+    demands = {d.id: d for d in snapshot.demands}
+    shifts = {s.id: s for s in snapshot.shifts}
+    positions = {p.id: p for p in snapshot.positions}
+    worked = {e.id: 0 for e in snapshot.employees}
+    for a in result.assignments:
+        d = demands[a.demand_id]
+        s, p = shifts[d.shift_id], positions[d.position_id]
+        from .timeutils import bounds, local_day
+
+        day = local_day(bounds(s)[0], snapshot.timezone)
+        if snapshot.period_start <= day <= snapshot.period_end:
+            worked[a.employee_id] += s.paid_minutes
+        for i, interval in enumerate(s.segments):
+            yield [
+                a.employee_id,
+                people[a.employee_id].name,
+                d.id,
+                p.function_id,
+                p.workplace_id,
+                s.name,
+                interval.start.isoformat(),
+                interval.end.isoformat(),
+                s.paid_minutes if i == 0 else "",
+                a.fixed,
+            ]
+    yield []
+    yield [
+        "Person-ID",
+        "Soll Minuten",
+        "Ist einschließlich Gutschrift Minuten",
+        "Saldo Minuten",
+    ]
+    for e in snapshot.employees:
+        actual = worked[e.id] + e.credit_minutes
+        yield [
+            e.id,
+            e.target_minutes,
+            actual,
+            actual + e.balance_minutes - e.target_minutes,
+        ]
+    yield []
+    yield ["Offener Bedarf", "Anzahl", "Dienst", "Funktion", "Arbeitsplatz"]
+    for did, n in result.vacancies.items():
+        if n:
+            d = demands[did]
+            p = positions[d.position_id]
+            yield [did, n, shifts[d.shift_id].name, p.function_id, p.workplace_id]
+
+
+def export_table(snapshot: Snapshot, result: Result, path: str | Path):
+    from .domain import snapshot_hash
+    from .validator import validate
+
+    if result.snapshot_hash != snapshot_hash(snapshot):
+        raise ValueError("Result does not reference this snapshot")
+    result = result.model_copy(
+        update={"validation": validate(snapshot, result.assignments)}
+    )
+    path = Path(path)
+    if path.suffix.lower() == ".xlsx":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Dienstplan"
+        for row in rows(snapshot, result):
+            sheet.append([safe_cell(v) for v in row])
+        sheet.freeze_panes = "C4"
+        for cell in sheet[3]:
+            cell.font = Font(bold=True)
+        for col in "ABCDEFGHIJ":
+            sheet.column_dimensions[col].width = 24
+        workbook.save(path)
+    elif path.suffix.lower() == ".csv":
+        with path.open("w", encoding="utf-8-sig", newline="") as output:
+            writer = csv.writer(output)
+            for row in rows(snapshot, result):
+                writer.writerow([safe_cell(v) for v in row])
+    else:
+        raise ValueError("Export requires .csv or .xlsx")

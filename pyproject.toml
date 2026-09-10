@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openschichtplaner5-generator"
+version = "0.1.0"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+description = "Configurable local mathematical shift planning and independent validation"
+requires-python = ">=3.12"
+dependencies = ["ortools>=9.14,<10", "pydantic>=2.11,<3", "tzdata>=2025.2", "openpyxl>=3.1,<4"]
+
+[project.optional-dependencies]
+sp5 = ["libopenschichtplaner5>=1.32.3"]
+dev = ["pytest>=8,<10", "build>=1.2", "ruff>=0.15,<0.16", "httpx>=0.28"]
+
+[project.scripts]
+sp5-generator = "sp5generator.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sp5generator*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

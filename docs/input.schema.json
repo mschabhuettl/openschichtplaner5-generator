@@ -1,0 +1,957 @@
+{
+  "$defs": {
+    "Approval": {
+      "additionalProperties": false,
+      "properties": {
+        "function_id": {
+          "title": "Function Id",
+          "type": "string"
+        },
+        "workplace_id": {
+          "title": "Workplace Id",
+          "type": "string"
+        },
+        "valid_from": {
+          "format": "date",
+          "title": "Valid From",
+          "type": "string"
+        },
+        "valid_until": {
+          "format": "date",
+          "title": "Valid Until",
+          "type": "string"
+        },
+        "supervised": {
+          "default": false,
+          "title": "Supervised",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "function_id",
+        "workplace_id",
+        "valid_from",
+        "valid_until"
+      ],
+      "title": "Approval",
+      "type": "object"
+    },
+    "Assignment": {
+      "additionalProperties": false,
+      "properties": {
+        "employee_id": {
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "demand_id": {
+          "title": "Demand Id",
+          "type": "string"
+        },
+        "fixed": {
+          "default": false,
+          "title": "Fixed",
+          "type": "boolean"
+        },
+        "segments": {
+          "items": {
+            "$ref": "#/$defs/Interval"
+          },
+          "title": "Segments",
+          "type": "array"
+        }
+      },
+      "required": [
+        "employee_id",
+        "demand_id"
+      ],
+      "title": "Assignment",
+      "type": "object"
+    },
+    "Availability": {
+      "additionalProperties": false,
+      "properties": {
+        "valid_from": {
+          "format": "date",
+          "title": "Valid From",
+          "type": "string"
+        },
+        "valid_until": {
+          "format": "date",
+          "title": "Valid Until",
+          "type": "string"
+        },
+        "weekdays": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Weekdays",
+          "type": "array"
+        },
+        "start_time": {
+          "default": "00:00",
+          "title": "Start Time",
+          "type": "string"
+        },
+        "end_time": {
+          "default": "24:00",
+          "title": "End Time",
+          "type": "string"
+        },
+        "cycle_anchor": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle Anchor"
+        },
+        "cycle_weeks": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Cycle Weeks",
+          "type": "integer"
+        },
+        "cycle_phase": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cycle Phase",
+          "type": "integer"
+        },
+        "source": {
+          "default": "additional",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "valid_from",
+        "valid_until"
+      ],
+      "title": "Availability",
+      "type": "object"
+    },
+    "Demand": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "shift_id": {
+          "title": "Shift Id",
+          "type": "string"
+        },
+        "position_id": {
+          "title": "Position Id",
+          "type": "string"
+        },
+        "minimum": {
+          "minimum": 0,
+          "title": "Minimum",
+          "type": "integer"
+        },
+        "maximum": {
+          "minimum": 0,
+          "title": "Maximum",
+          "type": "integer"
+        },
+        "source": {
+          "default": "additional",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "shift_id",
+        "position_id",
+        "minimum",
+        "maximum"
+      ],
+      "title": "Demand",
+      "type": "object"
+    },
+    "Employee": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "team_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Team Ids",
+          "type": "array"
+        },
+        "employment_start": {
+          "format": "date",
+          "title": "Employment Start",
+          "type": "string"
+        },
+        "employment_end": {
+          "format": "date",
+          "title": "Employment End",
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "$ref": "#/$defs/Approval"
+          },
+          "title": "Approvals",
+          "type": "array"
+        },
+        "qualifications": {
+          "items": {
+            "$ref": "#/$defs/Qualification"
+          },
+          "title": "Qualifications",
+          "type": "array"
+        },
+        "availability": {
+          "items": {
+            "$ref": "#/$defs/Availability"
+          },
+          "title": "Availability",
+          "type": "array"
+        },
+        "unavailable": {
+          "items": {
+            "$ref": "#/$defs/Interval"
+          },
+          "title": "Unavailable",
+          "type": "array"
+        },
+        "allowed_kinds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Kinds",
+          "type": "array"
+        },
+        "preferred_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preferred Kind"
+        },
+        "preferred_functions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Preferred Functions",
+          "type": "array"
+        },
+        "allow_weekends": {
+          "default": true,
+          "title": "Allow Weekends",
+          "type": "boolean"
+        },
+        "allow_holidays": {
+          "default": true,
+          "title": "Allow Holidays",
+          "type": "boolean"
+        },
+        "profile_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Profile Ids",
+          "type": "array"
+        },
+        "target_minutes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Target Minutes",
+          "type": "integer"
+        },
+        "balance_minutes": {
+          "default": 0,
+          "title": "Balance Minutes",
+          "type": "integer"
+        },
+        "credit_minutes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Credit Minutes",
+          "type": "integer"
+        },
+        "employment_fraction": {
+          "default": 100,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Employment Fraction",
+          "type": "integer"
+        },
+        "historical_nights": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Historical Nights",
+          "type": "integer"
+        },
+        "historical_weekends": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Historical Weekends",
+          "type": "integer"
+        },
+        "historical_holidays": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Historical Holidays",
+          "type": "integer"
+        },
+        "mentor_capacity": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Mentor Capacity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "team_ids",
+        "employment_start",
+        "employment_end",
+        "profile_ids"
+      ],
+      "title": "Employee",
+      "type": "object"
+    },
+    "Interval": {
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        },
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Interval",
+      "type": "object"
+    },
+    "Objectives": {
+      "additionalProperties": false,
+      "properties": {
+        "hours": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Hours",
+          "type": "integer"
+        },
+        "nights": {
+          "default": 10,
+          "minimum": 0,
+          "title": "Nights",
+          "type": "integer"
+        },
+        "weekends": {
+          "default": 10,
+          "minimum": 0,
+          "title": "Weekends",
+          "type": "integer"
+        },
+        "holidays": {
+          "default": 10,
+          "minimum": 0,
+          "title": "Holidays",
+          "type": "integer"
+        },
+        "wishes": {
+          "default": 100,
+          "minimum": 0,
+          "title": "Wishes",
+          "type": "integer"
+        },
+        "changes": {
+          "default": 100,
+          "minimum": 0,
+          "title": "Changes",
+          "type": "integer"
+        }
+      },
+      "title": "Objectives",
+      "type": "object"
+    },
+    "Position": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "function_id": {
+          "title": "Function Id",
+          "type": "string"
+        },
+        "workplace_id": {
+          "title": "Workplace Id",
+          "type": "string"
+        },
+        "qualification_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Qualification Ids",
+          "type": "array"
+        },
+        "qualification_level": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Qualification Level",
+          "type": "integer"
+        },
+        "qualifications_required": {
+          "title": "Qualifications Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "function_id",
+        "workplace_id",
+        "qualifications_required"
+      ],
+      "title": "Position",
+      "type": "object"
+    },
+    "Qualification": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "valid_from": {
+          "format": "date",
+          "title": "Valid From",
+          "type": "string"
+        },
+        "valid_until": {
+          "format": "date",
+          "title": "Valid Until",
+          "type": "string"
+        },
+        "level": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Level",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "valid_from",
+        "valid_until"
+      ],
+      "title": "Qualification",
+      "type": "object"
+    },
+    "Restriction": {
+      "additionalProperties": false,
+      "properties": {
+        "employee_id": {
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "shift_id": {
+          "title": "Shift Id",
+          "type": "string"
+        },
+        "level": {
+          "enum": [
+            0,
+            1,
+            2
+          ],
+          "title": "Level",
+          "type": "integer"
+        },
+        "approved": {
+          "default": false,
+          "title": "Approved",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "employee_id",
+        "shift_id",
+        "level"
+      ],
+      "title": "Restriction",
+      "type": "object"
+    },
+    "RuleProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "default": "1",
+          "title": "Version",
+          "type": "string"
+        },
+        "valid_from": {
+          "format": "date",
+          "title": "Valid From",
+          "type": "string"
+        },
+        "valid_until": {
+          "format": "date",
+          "title": "Valid Until",
+          "type": "string"
+        },
+        "min_rest_minutes": {
+          "minimum": 0,
+          "title": "Min Rest Minutes",
+          "type": "integer"
+        },
+        "after_night_rest_minutes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "After Night Rest Minutes",
+          "type": "integer"
+        },
+        "after_night_block_rest_minutes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "After Night Block Rest Minutes",
+          "type": "integer"
+        },
+        "night_block_gap_days": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Night Block Gap Days",
+          "type": "integer"
+        },
+        "max_consecutive_work_days": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Consecutive Work Days"
+        },
+        "max_consecutive_nights": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Consecutive Nights"
+        },
+        "max_daily_minutes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Daily Minutes"
+        },
+        "max_weekly_minutes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Weekly Minutes"
+        },
+        "max_period_minutes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Period Minutes"
+        },
+        "max_work_days": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Work Days"
+        },
+        "max_nights": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Nights"
+        },
+        "max_weekends": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Weekends"
+        },
+        "weekly_rest_minutes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Weekly Rest Minutes",
+          "type": "integer"
+        },
+        "weekly_rest_frame": {
+          "default": "calendar_week",
+          "enum": [
+            "calendar_week",
+            "rolling_elapsed",
+            "rolling_local"
+          ],
+          "title": "Weekly Rest Frame",
+          "type": "string"
+        },
+        "weekly_rest_window_days": {
+          "default": 7,
+          "minimum": 1,
+          "title": "Weekly Rest Window Days",
+          "type": "integer"
+        },
+        "weekly_rest_add_daily": {
+          "default": false,
+          "title": "Weekly Rest Add Daily",
+          "type": "boolean"
+        },
+        "confirmed": {
+          "default": false,
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "source": {
+          "default": "additional",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "valid_from",
+        "valid_until",
+        "min_rest_minutes"
+      ],
+      "title": "RuleProfile",
+      "type": "object"
+    },
+    "Shift": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "team_id": {
+          "title": "Team Id",
+          "type": "string"
+        },
+        "segments": {
+          "items": {
+            "$ref": "#/$defs/Interval"
+          },
+          "title": "Segments",
+          "type": "array"
+        },
+        "paid_minutes": {
+          "minimum": 0,
+          "title": "Paid Minutes",
+          "type": "integer"
+        },
+        "holiday": {
+          "default": false,
+          "title": "Holiday",
+          "type": "boolean"
+        },
+        "source": {
+          "default": "additional",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "team_id",
+        "segments",
+        "paid_minutes"
+      ],
+      "title": "Shift",
+      "type": "object"
+    },
+    "Wish": {
+      "additionalProperties": false,
+      "properties": {
+        "employee_id": {
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "shift_id": {
+          "title": "Shift Id",
+          "type": "string"
+        },
+        "want": {
+          "title": "Want",
+          "type": "boolean"
+        },
+        "priority": {
+          "default": 1,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Priority",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "employee_id",
+        "shift_id",
+        "want"
+      ],
+      "title": "Wish",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "revision": {
+      "title": "Revision",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "timezone": {
+      "title": "Timezone",
+      "type": "string"
+    },
+    "period_start": {
+      "format": "date",
+      "title": "Period Start",
+      "type": "string"
+    },
+    "period_end": {
+      "format": "date",
+      "title": "Period End",
+      "type": "string"
+    },
+    "context_start": {
+      "format": "date",
+      "title": "Context Start",
+      "type": "string"
+    },
+    "context_end": {
+      "format": "date",
+      "title": "Context End",
+      "type": "string"
+    },
+    "context_complete": {
+      "default": false,
+      "title": "Context Complete",
+      "type": "boolean"
+    },
+    "rule_version": {
+      "title": "Rule Version",
+      "type": "string"
+    },
+    "software_versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Software Versions",
+      "type": "object"
+    },
+    "source": {
+      "enum": [
+        "synthetic",
+        "sp5",
+        "json"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
+    "employees": {
+      "items": {
+        "$ref": "#/$defs/Employee"
+      },
+      "title": "Employees",
+      "type": "array"
+    },
+    "positions": {
+      "items": {
+        "$ref": "#/$defs/Position"
+      },
+      "title": "Positions",
+      "type": "array"
+    },
+    "shifts": {
+      "items": {
+        "$ref": "#/$defs/Shift"
+      },
+      "title": "Shifts",
+      "type": "array"
+    },
+    "demands": {
+      "items": {
+        "$ref": "#/$defs/Demand"
+      },
+      "title": "Demands",
+      "type": "array"
+    },
+    "profiles": {
+      "items": {
+        "$ref": "#/$defs/RuleProfile"
+      },
+      "title": "Profiles",
+      "type": "array"
+    },
+    "assignments": {
+      "items": {
+        "$ref": "#/$defs/Assignment"
+      },
+      "title": "Assignments",
+      "type": "array"
+    },
+    "restrictions": {
+      "items": {
+        "$ref": "#/$defs/Restriction"
+      },
+      "title": "Restrictions",
+      "type": "array"
+    },
+    "wishes": {
+      "items": {
+        "$ref": "#/$defs/Wish"
+      },
+      "title": "Wishes",
+      "type": "array"
+    },
+    "objectives": {
+      "$ref": "#/$defs/Objectives"
+    },
+    "unresolved": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved",
+      "type": "array"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "revision",
+    "created_at",
+    "timezone",
+    "period_start",
+    "period_end",
+    "context_start",
+    "context_end",
+    "rule_version",
+    "source",
+    "employees",
+    "positions",
+    "shifts",
+    "demands",
+    "profiles"
+  ],
+  "title": "Snapshot",
+  "type": "object"
+}

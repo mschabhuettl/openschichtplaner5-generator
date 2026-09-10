@@ -1,0 +1,1556 @@
+{
+  "schema_version": "1.0",
+  "id": "synthetic-example",
+  "revision": "1",
+  "created_at": "2026-01-01T00:00:00Z",
+  "timezone": "UTC",
+  "period_start": "2026-01-05",
+  "period_end": "2026-01-18",
+  "context_start": "2025-12-28",
+  "context_end": "2026-01-26",
+  "context_complete": true,
+  "rule_version": "synthetic-1",
+  "software_versions": {},
+  "source": "synthetic",
+  "employees": [
+    {
+      "id": "e000",
+      "name": "Testperson 001",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [
+        {
+          "valid_from": "2026-01-05",
+          "valid_until": "2026-01-18",
+          "weekdays": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "start_time": "08:00",
+          "end_time": "13:00",
+          "cycle_anchor": null,
+          "cycle_weeks": 1,
+          "cycle_phase": 0,
+          "source": "synthetic"
+        }
+      ],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 2400,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 50,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e001",
+      "name": "Testperson 002",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        },
+        {
+          "function_id": "f1",
+          "workplace_id": "w1",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [
+        {
+          "valid_from": "2026-01-05",
+          "valid_until": "2026-01-18",
+          "weekdays": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "start_time": "00:00",
+          "end_time": "24:00",
+          "cycle_anchor": "2026-01-05",
+          "cycle_weeks": 2,
+          "cycle_phase": 0,
+          "source": "additional"
+        },
+        {
+          "valid_from": "2026-01-05",
+          "valid_until": "2026-01-18",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "start_time": "00:00",
+          "end_time": "24:00",
+          "cycle_anchor": "2026-01-05",
+          "cycle_weeks": 2,
+          "cycle_phase": 1,
+          "source": "additional"
+        }
+      ],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 4800,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 100,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e002",
+      "name": "Testperson 003",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        },
+        {
+          "function_id": "f1",
+          "workplace_id": "w1",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": "night",
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 4800,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 100,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e003",
+      "name": "Testperson 004",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [
+        {
+          "start": "2026-01-07T00:00:00Z",
+          "end": "2026-01-08T00:00:00Z"
+        }
+      ],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 4800,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 100,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e004",
+      "name": "Testperson 005",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        },
+        {
+          "function_id": "f1",
+          "workplace_id": "w1",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 2400,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 50,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e005",
+      "name": "Testperson 006",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        },
+        {
+          "function_id": "f1",
+          "workplace_id": "w1",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 4800,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 100,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e006",
+      "name": "Testperson 007",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 4800,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 100,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e007",
+      "name": "Testperson 008",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        },
+        {
+          "function_id": "f1",
+          "workplace_id": "w1",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 4800,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 100,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e008",
+      "name": "Testperson 009",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        },
+        {
+          "function_id": "f1",
+          "workplace_id": "w1",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 2400,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 50,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e009",
+      "name": "Testperson 010",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 4800,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 100,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e010",
+      "name": "Testperson 011",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        },
+        {
+          "function_id": "f1",
+          "workplace_id": "w1",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 4800,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 100,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    },
+    {
+      "id": "e011",
+      "name": "Testperson 012",
+      "team_ids": [
+        "team-a"
+      ],
+      "employment_start": "2025-12-28",
+      "employment_end": "2026-01-26",
+      "approvals": [
+        {
+          "function_id": "f0",
+          "workplace_id": "w0",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        },
+        {
+          "function_id": "f1",
+          "workplace_id": "w1",
+          "valid_from": "2025-12-28",
+          "valid_until": "2026-01-26",
+          "supervised": false
+        }
+      ],
+      "qualifications": [],
+      "availability": [],
+      "unavailable": [],
+      "allowed_kinds": [
+        "day",
+        "night"
+      ],
+      "preferred_kind": null,
+      "preferred_functions": [],
+      "allow_weekends": true,
+      "allow_holidays": true,
+      "profile_ids": [
+        "example"
+      ],
+      "target_minutes": 4800,
+      "balance_minutes": 0,
+      "credit_minutes": 0,
+      "employment_fraction": 100,
+      "historical_nights": 0,
+      "historical_weekends": 0,
+      "historical_holidays": 0,
+      "mentor_capacity": 0
+    }
+  ],
+  "positions": [
+    {
+      "id": "p0",
+      "name": "Funktion A",
+      "function_id": "f0",
+      "workplace_id": "w0",
+      "qualification_ids": [],
+      "qualification_level": 1,
+      "qualifications_required": false
+    },
+    {
+      "id": "p1",
+      "name": "Funktion B",
+      "function_id": "f1",
+      "workplace_id": "w1",
+      "qualification_ids": [],
+      "qualification_level": 1,
+      "qualifications_required": false
+    }
+  ],
+  "shifts": [
+    {
+      "id": "s0-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-05T08:00:00Z",
+          "end": "2026-01-05T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s0-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-05T20:00:00Z",
+          "end": "2026-01-06T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s1-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-06T08:00:00Z",
+          "end": "2026-01-06T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s1-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-06T20:00:00Z",
+          "end": "2026-01-07T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s2-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-07T08:00:00Z",
+          "end": "2026-01-07T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s2-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-07T20:00:00Z",
+          "end": "2026-01-08T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s3-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-08T08:00:00Z",
+          "end": "2026-01-08T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s3-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-08T20:00:00Z",
+          "end": "2026-01-09T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s4-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-09T08:00:00Z",
+          "end": "2026-01-09T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s4-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-09T20:00:00Z",
+          "end": "2026-01-10T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s5-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-10T08:00:00Z",
+          "end": "2026-01-10T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s5-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-10T20:00:00Z",
+          "end": "2026-01-11T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s6-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-11T08:00:00Z",
+          "end": "2026-01-11T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s6-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-11T20:00:00Z",
+          "end": "2026-01-12T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s7-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-12T08:00:00Z",
+          "end": "2026-01-12T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s7-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-12T20:00:00Z",
+          "end": "2026-01-13T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s8-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-13T08:00:00Z",
+          "end": "2026-01-13T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s8-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-13T20:00:00Z",
+          "end": "2026-01-14T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s9-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-14T08:00:00Z",
+          "end": "2026-01-14T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s9-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-14T20:00:00Z",
+          "end": "2026-01-15T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s10-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-15T08:00:00Z",
+          "end": "2026-01-15T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s10-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-15T20:00:00Z",
+          "end": "2026-01-16T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s11-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-16T08:00:00Z",
+          "end": "2026-01-16T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s11-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-16T20:00:00Z",
+          "end": "2026-01-17T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s12-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-17T08:00:00Z",
+          "end": "2026-01-17T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s12-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-17T20:00:00Z",
+          "end": "2026-01-18T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s13-day",
+      "name": "Dienst A",
+      "kind": "day",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-18T08:00:00Z",
+          "end": "2026-01-18T13:00:00Z"
+        }
+      ],
+      "paid_minutes": 300,
+      "holiday": false,
+      "source": "synthetic"
+    },
+    {
+      "id": "s13-night",
+      "name": "Dienst B",
+      "kind": "night",
+      "team_id": "team-a",
+      "segments": [
+        {
+          "start": "2026-01-18T20:00:00Z",
+          "end": "2026-01-19T06:00:00Z"
+        }
+      ],
+      "paid_minutes": 600,
+      "holiday": false,
+      "source": "synthetic"
+    }
+  ],
+  "demands": [
+    {
+      "id": "d0-day-p0",
+      "shift_id": "s0-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d0-day-p1",
+      "shift_id": "s0-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d0-night-p0",
+      "shift_id": "s0-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d0-night-p1",
+      "shift_id": "s0-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d1-day-p0",
+      "shift_id": "s1-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d1-day-p1",
+      "shift_id": "s1-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d1-night-p0",
+      "shift_id": "s1-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d1-night-p1",
+      "shift_id": "s1-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d2-day-p0",
+      "shift_id": "s2-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d2-day-p1",
+      "shift_id": "s2-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d2-night-p0",
+      "shift_id": "s2-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d2-night-p1",
+      "shift_id": "s2-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d3-day-p0",
+      "shift_id": "s3-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d3-day-p1",
+      "shift_id": "s3-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d3-night-p0",
+      "shift_id": "s3-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d3-night-p1",
+      "shift_id": "s3-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d4-day-p0",
+      "shift_id": "s4-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d4-day-p1",
+      "shift_id": "s4-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d4-night-p0",
+      "shift_id": "s4-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d4-night-p1",
+      "shift_id": "s4-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d5-day-p0",
+      "shift_id": "s5-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d5-day-p1",
+      "shift_id": "s5-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d5-night-p0",
+      "shift_id": "s5-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d5-night-p1",
+      "shift_id": "s5-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d6-day-p0",
+      "shift_id": "s6-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d6-day-p1",
+      "shift_id": "s6-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d6-night-p0",
+      "shift_id": "s6-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d6-night-p1",
+      "shift_id": "s6-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d7-day-p0",
+      "shift_id": "s7-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d7-day-p1",
+      "shift_id": "s7-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d7-night-p0",
+      "shift_id": "s7-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d7-night-p1",
+      "shift_id": "s7-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d8-day-p0",
+      "shift_id": "s8-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d8-day-p1",
+      "shift_id": "s8-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d8-night-p0",
+      "shift_id": "s8-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d8-night-p1",
+      "shift_id": "s8-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d9-day-p0",
+      "shift_id": "s9-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d9-day-p1",
+      "shift_id": "s9-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d9-night-p0",
+      "shift_id": "s9-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d9-night-p1",
+      "shift_id": "s9-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d10-day-p0",
+      "shift_id": "s10-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d10-day-p1",
+      "shift_id": "s10-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d10-night-p0",
+      "shift_id": "s10-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d10-night-p1",
+      "shift_id": "s10-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d11-day-p0",
+      "shift_id": "s11-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d11-day-p1",
+      "shift_id": "s11-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d11-night-p0",
+      "shift_id": "s11-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d11-night-p1",
+      "shift_id": "s11-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d12-day-p0",
+      "shift_id": "s12-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d12-day-p1",
+      "shift_id": "s12-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d12-night-p0",
+      "shift_id": "s12-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d12-night-p1",
+      "shift_id": "s12-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d13-day-p0",
+      "shift_id": "s13-day",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d13-day-p1",
+      "shift_id": "s13-day",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d13-night-p0",
+      "shift_id": "s13-night",
+      "position_id": "p0",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    },
+    {
+      "id": "d13-night-p1",
+      "shift_id": "s13-night",
+      "position_id": "p1",
+      "minimum": 1,
+      "maximum": 1,
+      "source": "synthetic"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "example",
+      "version": "1",
+      "valid_from": "2025-12-28",
+      "valid_until": "2026-01-26",
+      "min_rest_minutes": 720,
+      "after_night_rest_minutes": 0,
+      "after_night_block_rest_minutes": 0,
+      "night_block_gap_days": 1,
+      "max_consecutive_work_days": 6,
+      "max_consecutive_nights": 3,
+      "max_daily_minutes": null,
+      "max_weekly_minutes": 2400,
+      "max_period_minutes": null,
+      "max_work_days": null,
+      "max_nights": null,
+      "max_weekends": null,
+      "weekly_rest_minutes": 2160,
+      "weekly_rest_frame": "calendar_week",
+      "weekly_rest_window_days": 7,
+      "weekly_rest_add_daily": false,
+      "confirmed": true,
+      "source": "synthetic"
+    }
+  ],
+  "assignments": [
+    {
+      "employee_id": "e000",
+      "demand_id": "d0-day-p0",
+      "fixed": true,
+      "segments": []
+    }
+  ],
+  "restrictions": [],
+  "wishes": [
+    {
+      "employee_id": "e002",
+      "shift_id": "s1-night",
+      "want": true,
+      "priority": 10
+    }
+  ],
+  "objectives": {
+    "hours": 1,
+    "nights": 10,
+    "weekends": 10,
+    "holidays": 10,
+    "wishes": 100,
+    "changes": 100
+  },
+  "unresolved": [],
+  "metadata": {
+    "description": "Independently constructed synthetic example. Context outside period explicitly empty."
+  }
+}
