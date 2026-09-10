@@ -112,6 +112,8 @@ def import_snapshot(
         for wid, workplace in native_workplaces.items()
     ]
     requirements = db.get_staffing_requirements()
+    if any(r.get("workplace_id") == 0 for r in requirements.get("shift_requirements", [])):
+        metadata["workplaces"].append({"id": "sp5:workplace:0", "name": "Ohne feste Arbeitsplatzbindung"})
     specials = _unique_rows(
         row for gid in scope for row in db.get_special_staffing(group_id=gid)
     )
@@ -167,8 +169,8 @@ def import_snapshot(
             continue
         if (
             gid in (0, None)
-            or not row.get("workplace_id")
-            or row.get("max") in (0, None)
+            or row.get("workplace_id") is None
+            or row.get("max") is None
             or row.get("min") is None
         ):
             unresolved.append(
@@ -179,12 +181,22 @@ def import_snapshot(
             )
             continue
         sid, wid = row.get("shift_id"), row["workplace_id"]
-        if sid not in native_shifts or wid not in native_workplaces:
+        if sid not in native_shifts or (wid != 0 and wid not in native_workplaces):
             unresolved.append(f"SHDEM {row.get('id')}: Stammdatenreferenz fehlt.")
             continue
-        if row["max"] < row["min"]:
-            unresolved.append(f"SHDEM {row.get('id')}: MAX kleiner als MIN.")
+        if row["max"] < -1 or (row["max"] != -1 and row["max"] < row["min"]):
+            unresolved.append(f"SHDEM {row.get('id')}: Ungültiges MAX oder MAX kleiner als MIN.")
+            metadata["unresolved_native"].setdefault("regular_requirements", []).append(row)
             continue
+        if row["max"] in (-1, 0) or wid == 0:
+            interpretation = "Importinterpretation bestätigen: MAX=-1 ohne Obergrenze, MAX=0 keine Besetzung, Arbeitsplatz=0 ohne feste Arbeitsplatzbindung."
+            if interpretation not in unresolved:
+                unresolved.append(interpretation)
+        metadata["provenance"][f"sp5:requirement:{row['id']}"] = {
+            "native_min": row["min"], "native_max": row["max"],
+            "native_workplace_id": wid,
+            "interpretation": "explicit-boundaries-v1",
+        }
         position_id = f"sp5:position:{sid}:{wid}"
         positions[position_id] = Position(
             id=position_id,
@@ -230,7 +242,7 @@ def import_snapshot(
                             shift_id=shift_id,
                             position_id=position_id,
                             minimum=row["min"],
-                            maximum=row["max"],
+                            maximum=None if row["max"] == -1 else row["max"],
                             source="sp5:SHDEM",
                         )
                     )

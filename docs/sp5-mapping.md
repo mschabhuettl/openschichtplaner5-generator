@@ -13,7 +13,7 @@
 
 ## Gezielt ungeklärte Fälle
 
-SPDEM und DADEM werden strukturell in `metadata.unresolved_native` erhalten. Der untersuchte öffentliche Library-Code belegt keine vollständige Vorrang-/Kombinationsregel; diese Bedarfe werden nicht addiert. Gruppe/Arbeitsplatz 0, fehlende Werte und MAX=0 werden ebenfalls ausdrücklich zur Klärung zurückgestellt. Fehlender Bedarf wird nicht in Nullbedarf umgedeutet.
+SPDEM und DADEM werden strukturell in `metadata.unresolved_native` erhalten. Der untersuchte öffentliche Library-Code belegt keine vollständige Vorrang-/Kombinationsregel; diese Bedarfe werden nicht addiert. Gruppe 0 und fehlende Werte werden ausdrücklich zur Klärung zurückgestellt. Die bestätigbare Importinterpretation `explicit-boundaries-v1` übersetzt MAX=-1 zu `maximum: null` (unbegrenzt), MAX=0 zu einer echten Obergrenze null und Arbeitsplatz 0 zu einer Position ohne feste Arbeitsplatzbindung. Originalwerte bleiben als Herkunftsmetadaten erhalten. Diese Interpretation muss vor einer gültigen Planung ausdrücklich bestätigt werden; sie ist noch kein vollständig belegter nativer Formatstandard. Andere negative Höchstwerte bleiben ungültig. Fehlender Bedarf wird nicht in Nullbedarf umgedeutet.
 
 Funktionen, Qualifikationspflicht, explizite Freigaben und Dienstartklassifikation benötigen zusätzliche bestätigte Regeln. Dienste aus SHIFT werden als `sp5:service:<ID>` abgebildet. Eine Bedarfsposition kombiniert Dienst und physischen Arbeitsplatz; diese IDs sind getrennt. Historie schlägt Dienstfreigaben vor, ohne eine Qualifikation zu behaupten. Erst die ausdrückliche Bestätigung erzeugt eine Freigabe mit `workplace_id="*"` für diesen Dienst an allen Arbeitsplätzen. Konkrete Arbeitsplatzfreigaben bleiben im allgemeinen Vertrag möglich. Alte arbeitsplatzbasierte Snapshots müssen neu importiert werden; ihre Freigaben werden nicht automatisch übertragen. Bereits vorhandene Dienste müssen ihrem tatsächlichen Bedarf zugeordnet werden, bevor die zusätzliche Kontextposition freigegeben werden kann. Sonderdienstzeitabweichungen fehlen teilweise im öffentlichen Schedule-Lesemodell und blockieren deshalb eine vollständige Freigabe.
 
@@ -26,3 +26,5 @@ Der Adapter ist ausschließlich lesend. DBF-Schreibsperren der Library sind nich
 ## Prüfung
 
 `tests/test_sp5_adapter.py` erzeugt neue neutrale Python-Strukturen und prüft den Library-Vertrag, Feiertagsbedarf, mehrteilige Dienste, RESTR, Abwesenheitsfenster und erhaltene ungeklärte Werte. Das ist keine Prüfung originaler Produktivdateien und kein DBF-Roundtrip. Betreiber können später lokal eine isolierte Kopie prüfen; es werden keine Personendatensätze oder Screenshots für externe Auswertung benötigt.
+
+Der allgemeine JSON-Vertrag unterscheidet `maximum: null` (keine Obergrenze) von `maximum: 0` (keine Besetzung). Eine Obergrenze ist kein Besetzungsziel. Die Oberfläche zeigt einen leeren Maximalwert als unbegrenzt.

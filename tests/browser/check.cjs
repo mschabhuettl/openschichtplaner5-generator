@@ -34,7 +34,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       return url.hostname === '127.0.0.1' ? route.continue() : route.abort();
     });
     await page.goto(base);
-    await page.waitForFunction(()=>document.querySelector('#version').textContent==='Version 0.4.0');
+    await page.waitForFunction(()=>document.querySelector('#version').textContent==='Version 0.5.0');
     await page.selectOption('#sourceType', 'api');
     await page.click('#inspect');
     await page.waitForSelector('[data-team-id="3"]');

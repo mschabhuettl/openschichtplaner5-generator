@@ -277,7 +277,7 @@ def input_diagnostics(snapshot):
             if (
                 d.shift_id not in shift_ids
                 or d.position_id not in position_ids
-                or d.minimum > d.maximum
+                or (d.maximum is not None and d.minimum > d.maximum)
             ):
                 issue("demand", "Ungültige Bedarfsreferenz oder MIN > MAX: " + d.id)
         for p in snapshot.profiles:

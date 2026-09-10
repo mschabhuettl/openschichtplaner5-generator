@@ -107,7 +107,7 @@ class Demand(Model):
     shift_id: str
     position_id: str
     minimum: int = Field(ge=0)
-    maximum: int = Field(ge=0)
+    maximum: int | None = Field(ge=0, description="Null means no upper staffing limit; zero prohibits staffing")
     source: str = 'additional'
 
 class Assignment(Model):

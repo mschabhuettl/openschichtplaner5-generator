@@ -129,7 +129,8 @@ def solve(snapshot, time_limit=30, partial=False):
     vacancies = []
     for d in snapshot.demands:
         choices = by_demand[d.id]
-        model.add(sum(choices) <= d.maximum)
+        if d.maximum is not None:
+            model.add(sum(choices) <= d.maximum)
         if len(choices) < d.minimum:
             diagnostics.append(
                 Diagnostic(

@@ -168,7 +168,7 @@ def validate(snapshot, assignments):
         count = len(by_demand[d.id])
         if count < d.minimum:
             add("vacancy", f"{d.minimum - count} unbesetzte Stelle(n).", demand=d.id)
-        if count > d.maximum:
+        if d.maximum is not None and count > d.maximum:
             add("maximum", "Höchstbesetzung überschritten.", demand=d.id)
     for e in snapshot.employees:
         entries = by_employee[e.id]

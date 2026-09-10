@@ -473,3 +473,16 @@ def test_service_wide_supervised_approval_still_needs_mentor():
     s.employees[0].approvals[0].supervised = True
     assert not solve(s, time_limit=5).validation.complete
     assert not validate(s, [Assignment(employee_id='e0', demand_id=s.demands[0].id)]).valid
+
+
+def test_unbounded_maximum_is_distinct_from_zero():
+    s = case(n=2)
+    s.demands[0].minimum = 2
+    s.demands[0].maximum = None
+    result = solve(s, time_limit=5)
+    assert result.validation.complete and len(result.assignments) == 2
+    s.demands[0].minimum = 0
+    s.demands[0].maximum = 0
+    assert not validate(s, result.assignments).valid
+    zero = solve(s, time_limit=5)
+    assert zero.validation.complete and zero.assignments == []

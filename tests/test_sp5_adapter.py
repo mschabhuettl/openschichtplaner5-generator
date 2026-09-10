@@ -192,3 +192,18 @@ def test_service_identity_separates_services_and_preserves_workplaces():
         {"id": "sp5:workplace:301", "name": "Arbeitsplatz 1"},
         {"id": "sp5:workplace:302", "name": "Workplace B"},
     ]
+
+
+def test_explicit_zero_and_unbounded_staffing_without_workplace():
+    class Source(SyntheticDatabase):
+        def get_staffing_requirements(self):
+            row = super().get_staffing_requirements()['shift_requirements'][0]
+            return {'shift_requirements': [
+                {**row, 'id': 501, 'workplace_id': 0, 'min': 1, 'max': -1},
+                {**row, 'id': 502, 'workplace_id': 0, 'min': 0, 'max': 0},
+            ]}
+    s = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC')
+    assert [(d.minimum, d.maximum) for d in s.demands] == [(1, None), (0, 0)]
+    assert s.positions[0].workplace_id == 'sp5:workplace:0'
+    assert any('Importinterpretation bestätigen' in message for message in s.unresolved)
+    assert s.metadata['provenance']['sp5:requirement:501']['native_max'] == -1

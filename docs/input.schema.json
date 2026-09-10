@@ -157,9 +157,17 @@
           "type": "integer"
         },
         "maximum": {
-          "minimum": 0,
-          "title": "Maximum",
-          "type": "integer"
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null means no upper staffing limit; zero prohibits staffing",
+          "title": "Maximum"
         },
         "source": {
           "default": "additional",
