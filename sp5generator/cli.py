@@ -46,8 +46,29 @@ def main(argv=None):
     worker = commands.add_parser("worker")
     worker.add_argument("--store", required=True)
     worker.add_argument("--once", action="store_true")
+    serve = commands.add_parser("serve")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8080)
+    serve.add_argument("--state-dir", default="./generator-state")
     args = parser.parse_args(argv)
     try:
+        if args.command == "serve":
+            try:
+                import uvicorn
+                from .webapp import create_app
+            except ImportError:
+                print(
+                    json.dumps(
+                        {
+                            "error": "missing_web_dependencies",
+                            "message": "Install openschichtplaner5-generator[web,sp5]",
+                        }
+                    ),
+                    file=sys.stderr,
+                )
+                return 2
+            uvicorn.run(create_app(args.state_dir), host=args.host, port=args.port, access_log=False)
+            return 0
         if args.command == "demo":
             from .demo import make_demo
 

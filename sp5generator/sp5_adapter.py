@@ -362,3 +362,251 @@ def import_snapshot(
     ).hexdigest()
     payload["id"] = "sp5:import:" + payload["revision"][:16]
     return Snapshot(**payload)
+
+
+def _source_database(directory):
+    """Resolve a selected root or one direct database child, without writing it."""
+    from pathlib import Path
+    import os
+    from sp5lib.database import SP5Database
+
+    root = Path(directory).expanduser().resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("Bitte ein SP5-Stammverzeichnis auswählen.")
+    allowed = os.environ.get("SP5_SOURCE_ROOT")
+    if allowed and not root.is_relative_to(Path(allowed).resolve(strict=True)):
+        raise ValueError(
+            "Verzeichnis liegt außerhalb des freigegebenen Quellenbereichs."
+        )
+    required = {"5EMPL.DBF", "5GROUP.DBF", "5GRASG.DBF", "5SHIFT.DBF", "5WOPL.DBF"}
+    candidates = []
+    for folder in [
+        root,
+        *sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()),
+    ]:
+        files = {
+            p.name.upper(): p
+            for p in folder.iterdir()
+            if p.is_file() and p.suffix.upper() == ".DBF"
+        }
+        if required.issubset(files):
+            if any(
+                p.is_symlink() or not p.resolve().is_relative_to(root)
+                for p in files.values()
+            ):
+                raise ValueError("Verknüpfte Quelldateien werden nicht eingelesen.")
+            if len(files) != sum(
+                1
+                for p in folder.iterdir()
+                if p.is_file() and p.suffix.upper() == ".DBF"
+            ):
+                raise ValueError("Mehrdeutige Tabellennamen im Quellverzeichnis.")
+            candidates.append((folder, files))
+    if len(candidates) != 1:
+        raise ValueError(
+            "Genau ein SP5-Datenverzeichnis mit 5EMPL, 5GROUP, 5GRASG, 5SHIFT und 5WOPL wird benötigt; bitte das konkrete Unterverzeichnis auswählen."
+        )
+    folder, files = candidates[0]
+
+    class SelectedDatabase(SP5Database):
+        def _table(self, name):
+            return str(files.get(f"5{name}.DBF", folder / f"5{name}.DBF"))
+
+    return SelectedDatabase(str(folder)), files
+
+
+def _source_fingerprint(files):
+    """Fingerprint original DBF bytes locally; no data is exported to services."""
+    result = {}
+    for name, path in sorted(files.items()):
+        digest = sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        result[name] = digest.hexdigest()
+    return result
+
+
+def inspect_directory(directory):
+    db, files = _source_database(directory)
+    return {
+        "directory": db.db_path,
+        "groups": [
+            {"id": str(g["ID"]), "name": g.get("NAME", "")} for g in db.get_groups()
+        ],
+        "files": sorted(files),
+        "source_read_only": True,
+    }
+
+
+def historical_matrix(db, snapshot, history_start, history_end, history_plan="ist"):
+    """Past assignments are evidence for editable proposals, never permissions."""
+    from collections import defaultdict
+    from sp5lib import calculations as calc
+
+    if history_end < history_start or (history_end - history_start).days > 1096:
+        raise ValueError(
+            "Historienzeitraum muss gültig und auf höchstens drei Jahre begrenzt sein."
+        )
+    if history_plan not in ("ist", "soll", "both"):
+        raise ValueError("Historische Plansicht muss ist, soll oder both sein.")
+    employees = {e.id: e for e in snapshot.employees}
+    shifts = {str(s["ID"]): s for s in db.get_shifts(include_hidden=True)}
+    by_employee = {
+        eid: {
+            "employee_id": eid,
+            "observed_assignment_count": 0,
+            "observed_shifts": {},
+            "approvals": defaultdict(int),
+            "dates": [],
+        }
+        for eid in employees
+    }
+    primary_team = snapshot.metadata.get("selected_team_id")
+    team = int(primary_team) if primary_team else None
+    month = history_start.replace(day=1)
+    seen = set()
+    while month <= history_end:
+        for row in db.get_schedule(
+            month.year, month.month, group_id=team, plan=history_plan
+        ):
+            day = calc.to_date(row.get("date"))
+            eid = f"sp5:employee:{row.get('employee_id')}"
+            if (
+                eid not in employees
+                or day is None
+                or not history_start <= day <= history_end
+                or row.get("kind") not in ("shift", "special_shift")
+            ):
+                continue
+            sid = str(row.get("shift_id") or "")
+            wid = row.get("workplace_id")
+            if sid not in shifts:
+                continue
+            key = (
+                eid,
+                str(day),
+                sid,
+                wid,
+                row.get("kind"),
+                row.get("start_time"),
+                row.get("end_time"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            item = by_employee[eid]
+            item["observed_assignment_count"] += 1
+            item["dates"].append(str(day))
+            observation = item["observed_shifts"].setdefault(
+                sid,
+                {
+                    "shift_id": sid,
+                    "name": shifts[sid].get("NAME", ""),
+                    "count": 0,
+                    "first_date": str(day),
+                    "last_date": str(day),
+                },
+            )
+            observation["count"] += 1
+            observation["first_date"] = min(observation["first_date"], str(day))
+            observation["last_date"] = max(observation["last_date"], str(day))
+            if wid not in (None, 0, "0", ""):
+                item["approvals"][str(wid)] += 1
+        month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+    output = []
+    for item in by_employee.values():
+        output.append(
+            {
+                "employee_id": item["employee_id"],
+                "observed_assignment_count": item["observed_assignment_count"],
+                "observed_shifts": list(item["observed_shifts"].values()),
+                "suggested_approvals": [
+                    {
+                        "function_id": f"sp5:function:{wid}",
+                        "workplace_id": f"sp5:workplace:{wid}",
+                        "evidence_count": count,
+                        "confirmed": False,
+                        "source": "historical",
+                    }
+                    for wid, count in sorted(item["approvals"].items())
+                ],
+                "first_date": min(item["dates"]) if item["dates"] else None,
+                "last_date": max(item["dates"]) if item["dates"] else None,
+            }
+        )
+    return output
+
+
+def import_directory(
+    directory,
+    period_start,
+    period_end,
+    team_id,
+    timezone,
+    history_start=None,
+    history_end=None,
+    history_plan="ist",
+):
+    """Explicit local directory import with change detection and matrix suggestions."""
+    if (period_end - period_start).days > 366:
+        raise ValueError("Planungszeitraum auf höchstens 366 Tage begrenzen.")
+    db, files = _source_database(directory)
+    before = _source_fingerprint(files)
+    native_team = int(str(team_id).removeprefix("sp5:group:"))
+    if native_team not in {g["ID"] for g in db.get_groups()}:
+        raise ValueError("Die ausgewählte Gruppe existiert nicht in der Quelle.")
+    snapshot = import_snapshot(db, period_start, period_end, str(native_team), timezone)
+    history_end = history_end or period_start - timedelta(days=1)
+    history_start = history_start or history_end - timedelta(days=89)
+    if history_end >= period_start:
+        raise ValueError(
+            "Die historische Basis muss vor dem neuen Planungszeitraum enden."
+        )
+    snapshot.metadata["selected_team_id"] = str(native_team)
+    snapshot.metadata["history_matrix"] = historical_matrix(
+        db, snapshot, history_start, history_end, history_plan
+    )
+    snapshot.metadata["history_plan"] = history_plan
+    snapshot.metadata["history_period"] = {
+        "start": str(history_start),
+        "end": str(history_end),
+    }
+    snapshot.metadata["history_notice"] = (
+        "Bisherige Einsätze sind Vorschläge, keine Qualifikations- oder Einsatzfreigaben. Jede Freigabe muss ausdrücklich bestätigt und befristet werden."
+    )
+    snapshot.metadata["source_fingerprint"] = before
+    snapshot.metadata["source_read_only"] = True
+    if before != _source_fingerprint(files):
+        raise ValueError(
+            "Quelldateien haben sich während des Imports verändert. Import erneut ausführen."
+        )
+    # A before/after comparison detects changes but does not claim a native transaction.
+    snapshot.metadata["source_consistency"] = (
+        "before-after-file-fingerprint; no cross-file transaction"
+    )
+    expected = {
+        "5SHDEM.DBF",
+        "5SPDEM.DBF",
+        "5DADEM.DBF",
+        "5RESTR.DBF",
+        "5MASHI.DBF",
+        "5SPSHI.DBF",
+        "5ABSEN.DBF",
+        "5HOLID.DBF",
+        "5CYCLE.DBF",
+        "5CYENT.DBF",
+        "5CYASS.DBF",
+        "5CYEXC.DBF",
+    }
+    missing = sorted(expected - set(files))
+    if missing:
+        snapshot.unresolved.append(
+            "Quelltabellen fehlen; Vollständigkeit prüfen: " + ", ".join(missing)
+        )
+    from uuid import uuid4
+
+    snapshot.metadata["source_import_id"] = snapshot.id
+    snapshot.id = "sp5:import:" + str(uuid4())
+    snapshot.revision = "1"
+    return snapshot

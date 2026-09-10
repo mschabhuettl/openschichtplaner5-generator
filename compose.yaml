@@ -1,0 +1,11 @@
+services:
+  generator:
+    build: .
+    image: openschichtplaner5-generator:local
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - generator-state:/state
+    restart: unless-stopped
+volumes:
+  generator-state:

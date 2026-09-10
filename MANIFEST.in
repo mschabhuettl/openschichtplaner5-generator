@@ -3,3 +3,6 @@ recursive-include docs *.md *.json
 recursive-include examples *.json
 recursive-include tools *.py
 recursive-include tests *.py
+
+recursive-include sp5generator/static *.html *.css *.js
+include compose.yaml requirements-web.lock

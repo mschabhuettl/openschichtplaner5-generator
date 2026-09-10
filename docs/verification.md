@@ -9,7 +9,7 @@ python -m pytest -q
 python tools/benchmark.py --employees 120 --days 31 --time-limit 45
 ```
 
-Der Generator-Testlauf bestand mit 50 Tests. Abgedeckt sind unter anderem Freigaben, Qualifikation/RESTR, Betreuungskapazität, Teilplanung, harte Dienstartgrenzen versus Wünsche, Ruhegrenzen, rollierende und Kalenderwochenruhe, Randkontext, Profilwechsel, mehrteilige Dienste, Zeitumstellung, korrumpierte Ergebnisse und ein vollständig enumerierter kleiner Referenzfall. Jobtests prüfen Revisionen, Benutzerisolation, tatsächlichen Workerprozess, Abbruch, Wiederanlauf, konkurrierende idempotente Übernahme und Rückabwicklung bei injiziertem Auditfehler.
+Der Generator-Testlauf bestand mit 57 Tests. Abgedeckt sind unter anderem Freigaben, Qualifikation/RESTR, Betreuungskapazität, Teilplanung, harte Dienstartgrenzen versus Wünsche, Ruhegrenzen, rollierende und Kalenderwochenruhe, Randkontext, Profilwechsel, mehrteilige Dienste, Zeitumstellung, korrumpierte Ergebnisse und ein vollständig enumerierter kleiner Referenzfall. Jobtests prüfen Revisionen, Benutzerisolation, tatsächlichen Workerprozess, Abbruch, Wiederanlauf, konkurrierende idempotente Übernahme und Rückabwicklung bei injiziertem Auditfehler.
 
 Der Adapter ist sowohl gegen neue synthetische Fassadenstrukturen als auch über frisch erzeugte minimale dBASE-Dateien mit `sp5lib`-Schreib-/Lesefunktionen geprüft. Die minimalen Testtabellen sind keine Behauptung vollständiger Originalformatparität. Ungeklärte Originalsemantik bleibt gesondert blockierend dokumentiert.
 
@@ -33,6 +33,8 @@ Im Frontend wurden `npm run build`, gezielte Typ-/Lintprüfung und drei neue Kom
 
 Diese Browserprüfung verwendete eine isolierte synthetische Testanmeldung und neutrale Antworten für übrige Anwendungsbereiche. Zusätzlich wurde der mitgelieferte separate Demo-Server einschließlich seines anonymen Loginformulars durch dieselbe Browserkette geprüft. Der reguläre Loginflow gegen Originaldaten, der vollständige Anwendungs-Lifecycle und native SP5-Schreibvorgänge sind damit nicht geprüft. Die ursprünglichen Schwesterprojekt-Testbestände wurden wegen nicht bestätigter Datenherkunft nicht pauschal ausgeführt. Die Library blieb unverändert.
 
+Die eigenständige Weboberfläche wurde zusätzlich mit Chromium auf Desktop und 390-Pixel-Breite geprüft: Demo bearbeiten, speichern, berechnen, unabhängig prüfen, fixieren und neu berechnen; außerdem frisch synthetisiertes DBF-Stammverzeichnis prüfen, Team wählen, importieren, historischen Freigabevorschlag ausdrücklich bestätigen und speichern. Keine JavaScript-Fehler oder horizontalen Seitenüberläufe. Drei zusätzliche Webtests und vier Verzeichnisimporttests bestehen.
+
 ## Benchmark
 
 Der synthetische Lauf mit 120 Personen über 31 Tage umfasst 62 Schichten,
@@ -54,7 +56,7 @@ behandelt. Der Benchmark ist kein universelles Laufzeitversprechen.
 
 ## Tatsächliche Grenzen
 
-- Kein Containerbuild mangels verfügbarer Containerlaufzeit; Dockerfile ist vorbereitet.
+- Der Container wird separat durch den GitHub-Workflow gebaut und geprüft; dessen konkreter Laufstatus ist maßgeblich. Lokal ist keine Containerlaufzeit verfügbar.
 - Native SP5-Gesamtübernahme nicht implementiert; Zusatzregeln und bestehende Writer haben noch keine gemeinsame Transaktionsgrenze.
 - Bedarfskombinationen und Sonderwerte aus SP5 benötigen belegte fachliche Klärung. Ungeklärte Imports sind nicht freigabefähig.
 - Erweiterte UI-Regeln teilweise als strukturierter JSON-Editor, Detailtexte derzeit deutsch.

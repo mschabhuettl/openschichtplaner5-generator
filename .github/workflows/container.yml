@@ -1,0 +1,46 @@
+name: Container
+on:
+  push:
+    branches: [main, "feature/**"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t openschichtplaner5-generator:local .
+      - name: Offline calculation and validation
+        run: |
+          docker run --rm --network none --entrypoint sh openschichtplaner5-generator:local -ec '
+            sp5-generator demo -o /tmp/demo.json
+            sp5-generator solve /tmp/demo.json -o /tmp/result.json
+            sp5-generator validate /tmp/demo.json /tmp/result.json
+          '
+      - name: Web startup
+        run: |
+          docker run -d --name generator-web -p 127.0.0.1:8080:8080 openschichtplaner5-generator:local
+          trap 'docker logs generator-web; docker rm -f generator-web' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/ > /tmp/index.html; then
+              test -s /tmp/index.html
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: Save Docker image
+        run: |
+          docker save openschichtplaner5-generator:local | gzip > openschichtplaner5-generator-linux-amd64.tar.gz
+          sha256sum openschichtplaner5-generator-linux-amd64.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openschichtplaner5-generator-linux-amd64
+          path: |
+            openschichtplaner5-generator-linux-amd64.tar.gz
+            SHA256SUMS
+          compression-level: 0
+          retention-days: 30

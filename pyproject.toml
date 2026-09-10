@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openschichtplaner5-generator"
-version = "0.1.0"
+version = "0.1.1"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -13,6 +13,7 @@ requires-python = ">=3.12"
 dependencies = ["ortools>=9.14,<10", "pydantic>=2.11,<3", "tzdata>=2025.2", "openpyxl>=3.1,<4"]
 
 [project.optional-dependencies]
+web = ["fastapi>=0.115,!=0.136.3,<1", "uvicorn>=0.30,<1"]
 sp5 = ["libopenschichtplaner5>=1.32.3"]
 dev = ["pytest>=8,<10", "build>=1.2", "ruff>=0.15,<0.16", "httpx>=0.28"]
 
@@ -21,6 +22,9 @@ sp5-generator = "sp5generator.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["sp5generator*"]
+
+[tool.setuptools.package-data]
+sp5generator = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

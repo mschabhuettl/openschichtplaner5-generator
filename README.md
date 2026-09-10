@@ -35,14 +35,30 @@ sp5-generator schema result -o /tmp/result.schema.json
 
 Exitcodes: `0` vollständiger geprüfter Plan/erfolgreicher Export; `2` ungültige Eingabe oder Modell; `3` Teilplan bzw. unvollständige/fehlgeschlagene Prüfung; `4` bewiesen unlösbar; `5` noch keine Lösung. `FEASIBLE` bedeutet nicht bewiesene Optimalität. Der konkrete Solverstatus steht immer im Ergebnis. CLI-Fehler sind JSON auf stderr.
 
-## Container
+## Eigenständige Weboberfläche
 
 ```sh
-docker build -t openschichtplaner5-generator:local .
-docker run --rm --network none -v "$PWD/examples:/data" openschichtplaner5-generator:local solve /data/demo.json --time-limit 30 -o /data/result.json
+python -m pip install '.[web,sp5]'
+sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
-Das Ausgabeverzeichnis muss für UID 10001 schreibbar sein. Der Containerweg ist vorbereitet; ein tatsächlicher Containerbuild wurde in der Entwicklungsumgebung mangels Containerlaufzeit nicht geprüft. Die Berechnung wurde separat mit kernelgesperrten Netzwerk-Systemaufrufen getestet.
+Browser: `http://127.0.0.1:8080`. Kein separates Frontend oder SP5-API-Projekt nötig.
+SP5-Stammverzeichnis laden, Team/Zeitraum auswählen und aus bisherigen Einteilungen
+unbestätigte Matrixvorschläge erzeugen. Freigaben, Verfügbarkeiten, Profile und
+Dienstarten bleiben bearbeitbar; Historie ersetzt keine Qualifikationsnachweise.
+Originaldateien werden nur gelesen. [Bedienung und Import](docs/standalone-web.md).
+
+## Docker
+
+```sh
+docker compose up --build -d
+```
+
+Die Weboberfläche ist über `http://127.0.0.1:8080` erreichbar. Ein SP5-Verzeichnis
+wird ausdrücklich schreibgeschützt nach `/source` eingebunden, nicht ins Image
+kopiert. [Start mit Quellverzeichnis, Download und Laden des Images](docs/container.md).
+Der Workflow **Container** baut und prüft das Image und stellt einen tatsächlichen
+Docker-Image-Export als herunterladbares Artefakt bereit.
 
 ## Optionale Integration
 
