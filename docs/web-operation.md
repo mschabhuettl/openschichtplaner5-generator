@@ -31,13 +31,19 @@ einem kontrollierten Reverse-Proxy verwenden. Der Generator ist nicht als
 ## Aktualisieren und zurückwechseln
 
 Neben `latest` und dem Commit-Tag `sha-…` werden neue Images mit der
-Produktversion veröffentlicht, beispielsweise `:0.7.0`. Da Versions-Tags bei
+Produktversion veröffentlicht, beispielsweise `:0.8.0`. Da Versions-Tags bei
 erneuten Builds derselben Version ersetzt werden können, für reproduzierbare
 Installationen den getesteten Commit-Tag oder einen Image-Digest festhalten.
 Vor Updates eines persistenten Betriebs das Zustandsvolume sichern. Beim
 temporären Stack ist keine Wiederherstellung vorgesehen: Importe und Entwürfe
 werden beim Neustart verworfen. Ein Imagewechsel kann diesen Verlust nicht
 rückgängig machen.
+
+Version 0.8.0 ergänzt Spalten in der SQLite-Datenbank. Ein Zurückwechseln auf
+0.7.0 erfordert die Wiederherstellung der vollständigen Datenbanksicherung von
+vor dem Update zusammen mit dem alten Image. Die alte Version kann die
+migrierte Datenbank nicht unverändert weiterverwenden. Vor dem Zurückwechseln
+neuere Entwürfe als Projektdatei sichern; sie fehlen in der älteren Sicherung.
 
 Nach Update Versionsanzeige und Containerzustand prüfen, dann zunächst den
 synthetischen Demoablauf berechnen und validieren. Alte SP5-Importe mit

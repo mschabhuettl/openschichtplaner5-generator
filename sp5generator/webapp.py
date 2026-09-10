@@ -2,17 +2,19 @@
 import argparse
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 import multiprocessing
 import os
 from pathlib import Path
 import tempfile
 from typing import Literal
+from zoneinfo import ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
@@ -46,6 +48,21 @@ class JobRequest(BaseModel):
 class PlanRequest(BaseModel):
     snapshot: Snapshot
     assignments: list[Assignment] = Field(max_length=5000)
+
+
+class ProjectRevisionRequest(BaseModel):
+    model_config = {'str_strip_whitespace': True}
+    revision: str = Field(min_length=1, max_length=80)
+
+
+class ProjectCopyRequest(ProjectRevisionRequest):
+    project_name: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class LocalIntervalRequest(BaseModel):
+    timezone: str = Field(min_length=1, max_length=100)
+    start: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$')
+    end: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$')
 
 
 def check_project_structure(snapshot: Snapshot):
@@ -123,7 +140,15 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
                 return JSONResponse({'detail': 'Request exceeds 16 MiB limit'}, status_code=413)
         response = await call_next(request)
         response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['Cache-Control'] = 'no-store'
+        if request.url.path.startswith('/static/') and response.status_code in {200, 304}:
+            # Public code/assets contain no project data. Revalidate their ETag
+            # on every navigation so an upgrade cannot leave stale JS or CSS.
+            response.headers['Cache-Control'] = 'public, max-age=0, must-revalidate'
+            if response.headers.get('etag', '').startswith('"'):
+                response.headers['ETag'] = 'W/' + response.headers['etag']
+            response.headers.add_vary_header('Accept-Encoding')
+        else:
+            response.headers['Cache-Control'] = 'no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
         return response
@@ -159,6 +184,29 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     def version():
         from . import __version__
         return {'version': __version__, 'auth_enabled': app.state.web_auth_enabled}
+
+    @app.get('/api/status')
+    def service_status():
+        from . import __version__
+        worker = getattr(app.state, 'worker', None)
+        ready = not start_worker or (worker is not None and worker.is_alive())
+        counts = {}
+        storage_ready = True
+        try:
+            with store.connect() as connection:
+                counts = {row['state']: row['count'] for row in connection.execute(
+                    "SELECT state,count(*) AS count FROM jobs WHERE owner=? AND state IN ('queued','running') GROUP BY state",
+                    (owner,),
+                )}
+        except Exception:
+            storage_ready = False
+        return JSONResponse({
+            'version': __version__,
+            'status': 'ok' if ready and storage_ready else 'unavailable',
+            'worker': {'enabled': start_worker, 'ready': ready},
+            'storage_ready': storage_ready,
+            'jobs': {'queued': counts.get('queued', 0), 'running': counts.get('running', 0)},
+        }, status_code=200 if ready and storage_ready else 503)
 
     @app.get('/api/demo')
     def demo():
@@ -201,13 +249,56 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
         """Normalize an imported project without replacing a persisted revision."""
         return check_project_structure(snapshot)
 
+    from .project_creation import ProjectCreateRequest, create_project
+
+    @app.post('/api/projects/new')
+    def new_project(data: ProjectCreateRequest):
+        return {'snapshot': check_project_structure(create_project(data))}
+
+    @app.post('/api/intervals/resolve')
+    def resolve_interval(data: LocalIntervalRequest):
+        from .timeutils import localize, minute
+        try:
+            start_local = datetime.fromisoformat(data.start)
+            end_local = datetime.fromisoformat(data.end)
+            start = localize(start_local.date(), start_local.strftime('%H:%M'), data.timezone)
+            end = localize(end_local.date(), end_local.strftime('%H:%M'), data.timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise HTTPException(422, 'Unbekannte Projektzeitzone') from exc
+        except (ValueError, OverflowError) as exc:
+            message = str(exc)
+            if message.startswith('Mehrdeutige'):
+                message = 'Diese Uhrzeit kommt bei der Zeitumstellung zweimal vor. Beginn oder Ende außerhalb dieser doppelten Stunde wählen.'
+            elif message.startswith('Nicht existierende'):
+                message = 'Diese Uhrzeit existiert wegen der Zeitumstellung nicht. Eine Uhrzeit vor oder nach dem Zeitsprung wählen.'
+            else:
+                message = 'Datum, Uhrzeit oder Projektzeitzone ungültig.'
+            raise HTTPException(422, message) from exc
+        if minute(end) <= minute(start):
+            raise HTTPException(422, 'Das Ende muss nach dem Beginn liegen.')
+        return {'start': start.isoformat(), 'end': end.isoformat()}
+
     @app.put('/api/snapshots')
     def save(snapshot: Snapshot):
         return store.save_snapshot(check_project_structure(snapshot), owner)
 
     @app.get('/api/snapshots')
-    def list_snapshots():
-        return store.list_snapshots(owner)
+    def list_snapshots(archived: bool = False,
+                       limit: int = Query(default=200, ge=1, le=1000),
+                       offset: int = Query(default=0, ge=0, le=1_000_000)):
+        return store.list_snapshots(owner, archived=archived, limit=limit, offset=offset)
+
+    @app.post('/api/snapshots/{id}/copy')
+    def copy_snapshot(id: str, data: ProjectCopyRequest):
+        return store.copy_snapshot(id, owner, data.revision, data.project_name)
+
+    @app.post('/api/snapshots/{id}/archive')
+    def archive_snapshot(id: str, data: ProjectRevisionRequest):
+        return store.set_archived(id, owner, data.revision, True)
+
+    @app.post('/api/snapshots/{id}/restore')
+    def restore_snapshot(id: str, data: ProjectRevisionRequest):
+        return store.set_archived(id, owner, data.revision, False)
 
     @app.get('/api/snapshots/{id}')
     def get_snapshot(id: str):
@@ -228,6 +319,10 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     @app.get('/api/jobs/{id}/snapshot')
     def get_job_snapshot(id: str):
         return store.get_job_snapshot(id, owner)
+
+    @app.get('/api/jobs/{id}/status')
+    def get_job_status(id: str):
+        return store.get_job_status(id, owner)
 
     @app.get('/api/jobs/{id}')
     def get_job(id: str):
@@ -262,7 +357,10 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
         return Response(content, media_type='text/csv' if format == 'csv' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': f'attachment; filename="plan.{format}"'})
 
     static = Path(__file__).with_name('static')
-    app.mount('/static', StaticFiles(directory=static), name='static')
+    # Compress deterministic assets only. Personnel responses and authenticated
+    # forms remain uncompressed and are never retained in browser caches.
+    app.mount('/static', GZipMiddleware(StaticFiles(directory=static),
+              minimum_size=1024, compresslevel=5), name='static')
 
     @app.get('/')
     def index():

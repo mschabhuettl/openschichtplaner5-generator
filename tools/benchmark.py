@@ -5,6 +5,7 @@ import json
 import os
 import platform
 from importlib.metadata import version
+from time import monotonic
 from sp5generator.demo import make_demo
 from sp5generator.solver import solve
 
@@ -14,7 +15,9 @@ parser.add_argument("--days", type=int, default=31)
 parser.add_argument("--time-limit", type=float, default=30)
 args = parser.parse_args()
 snapshot = make_demo(args.employees, args.days)
+started = monotonic()
 result = solve(snapshot, time_limit=args.time_limit)
+elapsed = monotonic() - started
 print(
     json.dumps(
         {
@@ -31,6 +34,8 @@ print(
             "time_limit": args.time_limit,
             "status": result.solver_status,
             "runtime_seconds": result.runtime_seconds,
+            "elapsed_seconds": elapsed,
+            "first_feasible_seconds": result.parameters.get("first_feasible_seconds"),
             "assignments": len(result.assignments),
             "valid": result.validation.valid,
             "complete": result.validation.complete,

@@ -11,6 +11,21 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 
 Im Browser `http://127.0.0.1:8080` öffnen. Der lokale Dienst ist für eine Planungsinstanz auf einem kontrollierten Linux-Rechner vorgesehen; er startet seinen Hintergrundworker selbst. Optional lässt sich ein gemeinsames Passwort konfigurieren; getrennte Benutzerkonten oder Mandanten gibt es nicht. Siehe [Webbetrieb](web-operation.md). Keine Originalverzeichnisse in das Zustandsverzeichnis legen.
 
+## Eigenes Projekt und Arbeitsbereiche
+
+Vorhandene SP5-Daten werden im Bereich **Projekte** über **Vorhandene Daten
+importieren** geladen. Wer ohne SP5 plant, kann stattdessen **Neues Projekt**
+wählen; der Assistent fragt Zeitraum, Team, Funktionen und wiederkehrende
+Schichten mit ihrem Besetzungsbedarf ab. Ruhevorgaben werden ausdrücklich
+bestätigt. Freigaben und dienstfreie Randzeiten werden nur nach entsprechender
+Bestätigung übernommen und können andernfalls später ergänzt werden.
+
+Die Hauptnavigation führt zu **Team & Freigaben**, **Regeln & Bedarf**,
+**Berechnen** und **Dienstplan**. Schichttabellen und weitere Detailbereiche
+werden beim Öffnen geladen. Größere Listen und Monatspläne lassen sich
+seitenweise durchblättern; Berechnung und Exporte verwenden weiterhin sämtliche
+Daten des Projekts.
+
 ## API laden
 
 Alternativ **Konfigurierte SP5-API** wählen. Die Adresse und das Sitzungstoken werden lokal am Server konfiguriert. **Teams laden** und **Daten importieren** verwenden dann die HTTP-Quelle; Matrix und weitere Bearbeitung bleiben gleich. [Konfiguration und lokale Prüfung](api-source.md).

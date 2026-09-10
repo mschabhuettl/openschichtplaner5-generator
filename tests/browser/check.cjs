@@ -27,7 +27,30 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert(ready, 'Web service starts');
     browser = await chromium.launch({headless:true, args:['--no-sandbox'], ...(process.env.WEB_TEST_CHROMIUM?{executablePath:process.env.WEB_TEST_CHROMIUM}:{})});
     const page = await browser.newPage();
+    page.setDefaultTimeout(30000);
+    async function screenshot(name){
+      if(!process.env.WEB_TEST_SCREENSHOT_DIR)return;
+      await page.evaluate(()=>{window.scrollTo(0,0);return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+      await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,name),fullPage:true});
+    }
+    async function navigate(panel){
+      await page.locator(`.main-nav [data-navigate="${panel}"]`).click();
+      await page.locator(`[data-panel="${panel}"]`).waitFor({state:'visible'});
+    }
+    async function reveal(selector){
+      const target=page.locator(selector);
+      const panel=await target.evaluate(element=>element.closest('[data-panel]')?.dataset.panel);
+      if(panel)await navigate(panel);
+      // Open disclosure controls through their actual keyboard/click interface.
+      for(let remaining=5;remaining>0;remaining--){
+        const closed=target.locator('xpath=ancestor::details[not(@open)]').first();
+        if(!await closed.count())break;
+        await closed.locator(':scope > summary').click();
+      }
+    }
+    async function saveProject(){await reveal('#save');await page.click('#save');}
     async function uploadProject(file){
+      await reveal('#file');
       await page.waitForFunction(()=>!document.querySelector('#file').disabled);
       const checked=page.waitForResponse(r=>r.url().endsWith('/api/snapshots/check')&&r.request().method()==='POST');
       await page.setInputFiles('#file',file);await checked;
@@ -43,6 +66,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     });
     await page.goto(base);
     await page.waitForFunction(()=>/^Version [0-9]+\.[0-9]+\.[0-9]+/.test(document.querySelector('#version').textContent));
+    await reveal('#sourceType');
     await page.selectOption('#sourceType', 'api');
     await page.click('#inspect');
     await page.waitForSelector('[data-team-id="3"]');
@@ -69,13 +93,14 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const selector = '.matrix-cell[data-employee-id="sp5:employee:101"][data-function-id="sp5:service:201"][data-workplace-id="*"]';
     assert.match(await page.locator(selector).innerText(), /Vorschlag/);
     assert.equal(snapshot.employees[0].approvals.length, 0);
-    if(process.env.WEB_TEST_SCREENSHOT_DIR) await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,'matrix.png'),fullPage:true});
+    await screenshot('matrix.png');
     await page.click(selector);
     assert.equal(await page.locator(selector).getAttribute('aria-pressed'), 'true');
     await page.click('#transpose');
     assert.equal(await page.locator(selector).getAttribute('aria-pressed'), 'true');
-    await page.click('#save');
+    await saveProject();
     await page.waitForFunction(() => document.querySelector('#notice').textContent.includes('dauerhaft'));
+    await reveal('#restore');
     await page.click('#restore');
     await page.waitForFunction(() => document.querySelector('#notice').textContent.includes('Daten geladen'));
     assert.equal(await page.locator(selector).getAttribute('aria-pressed'), 'true');
@@ -89,7 +114,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.waitForFunction(() => [...document.querySelectorAll('.matrix-cell')].some(b=>b.textContent.includes('Betreut')));
     await page.click(selector);
     const datedSave = page.waitForResponse(r=>r.url().endsWith('/api/snapshots') && r.request().method()==='PUT');
-    await page.click('#save');
+    await saveProject();
     const datedResult = await (await datedSave).json();
     assert.deepEqual(datedResult.employees[0].approvals.map(a=>[a.valid_from,a.valid_until,a.supervised]), [
       ['2026-01-01','2026-02-01',true], ['2026-02-09','2026-03-31',true]
@@ -102,7 +127,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.match(await page.locator(selector).innerText(), /Einzelne Arbeitsplätze/);
     await page.click(selector);
     const partialSave = page.waitForResponse(r=>r.url().endsWith('/api/snapshots') && r.request().method()==='PUT');
-    await page.click('#save');
+    await saveProject();
     const partialResult = await (await partialSave).json();
     assert(partialResult.employees[0].approvals.every(a=>a.supervised));
     assert(partialResult.employees[0].approvals.some(a=>a.valid_until==='2026-02-08'&&a.workplace_id==='*'));
@@ -111,6 +136,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const calendarSnapshot=structuredClone(snapshot);
     calendarSnapshot.assignments=calendarSnapshot.demands.map(d=>({employee_id:calendarSnapshot.employees[0].id,demand_id:d.id,fixed:false,segments:[]}));
     await uploadProject({name:'synthetic-services.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(calendarSnapshot))});
+    await navigate('plan');
     await page.selectOption('#planView','positions');
     await page.waitForFunction(()=>document.querySelector('#calendar thead').textContent.includes('Dienst'));
     assert.equal(await page.locator('#calendar tbody tr').count(),3);
@@ -118,8 +144,10 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert(await page.locator('#calendar tbody tr').nth(0).locator('.shift-badge').count()>0);
     assert(await page.locator('#calendar tbody tr').nth(1).locator('.shift-badge').count()>0);
     await page.selectOption('#planView','employees');
+    await reveal('#demo');
     await page.click('#demo');
     await page.waitForFunction(() => document.querySelector('#source').textContent.includes('SYNTHETISCHE DEMO'));
+    await navigate('calculate');
     await page.fill('#limit', '5');
     await page.click('#solve');
     await page.waitForFunction(() => document.querySelector('#result').textContent.includes('Vollständig'), null, {timeout:30000});
@@ -128,7 +156,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.selectOption('#planView', 'positions');
     assert.match(await page.locator('#calendar thead').innerText(), /Funktion/);
     assert.match(await page.locator('#calendar .shift-badge').first().innerText(), /Testperson/);
-    if(process.env.WEB_TEST_SCREENSHOT_DIR) await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,'monthly.png'),fullPage:true});
+    await screenshot('monthly.png');
     await page.locator('#assignmentDetails summary').click();
     await page.locator('#plan tbody input[type="checkbox"]').first().check();
     // A failing history list must not prevent polling the newly submitted job.
@@ -157,14 +185,18 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.unroute('**/api/jobs');
     assert.match(await page.locator('#validation').textContent(), /"valid": true/);
     // A completed draft survives reload through the persistent job history.
-    const solvedAssignments=await page.locator('#plan tbody tr').count();
+    const solvedAssignments=computed.result.assignments.length;
     await page.addInitScript(()=>{Object.defineProperty(crypto,'randomUUID',{value:undefined,configurable:true});});
     await page.reload();
+    await reveal('#savedJobs');
     await page.waitForSelector(`#savedJobs option[value="${newJob.id}"]`,{state:'attached'});
     await page.selectOption('#savedJobs',newJob.id);
     await page.click('#restoreJob');
     await page.waitForFunction(()=>document.querySelector('#result').textContent.includes('Vollständig'));
-    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    await navigate('plan');
+    await page.locator('#assignmentDetails summary').click();
+    await page.locator('#plan tbody tr').first().waitFor({state:'visible'});
+    assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
     assert.match(await page.locator('#saveStatus').innerText(),/Ungespeicherte/);
     // Project backup includes all rules and the latest fixed assignments and reopens.
     const backupDownload=page.waitForEvent('download');
@@ -191,25 +223,28 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     releaseUpload();await loading;
     page.off('request',countJob);await page.unroute('**/api/snapshots/check');
     await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('Daten geladen'));
-    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    await navigate('plan');
+    await reveal('#plan');
+    assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
     // Invalid projects never replace the in-memory draft or leave the UI broken.
     await uploadProject({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from('{"employees":[]}')});
     await page.waitForFunction(()=>document.querySelector('#notice').classList.contains('error'));
-    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
     assert.match(await page.locator('#notice').innerText(),/Felder/);
     const invalidZone=structuredClone(backedUp);invalidZone.timezone='Invalid/Nowhere';
     const rejectedZone=page.waitForResponse(r=>r.url().endsWith('/api/snapshots/check')&&r.request().method()==='POST');
     await uploadProject({name:'invalid-timezone.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(invalidZone))});
     assert.equal((await rejectedZone).status(),422);
     await page.waitForFunction(()=>document.querySelector('#file').disabled===false);
-    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
     acceptDiscard=false;
+    await reveal('#demo');
     await page.click('#demo');
-    assert.equal(await page.locator('#plan tbody tr').count(),solvedAssignments);
+    assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
     acceptDiscard=true;
     // Saving advances the recovered project without overwriting the original job input.
     const recoveredSave=page.waitForResponse(r=>r.url().endsWith('/api/snapshots')&&r.request().method()==='PUT');
-    await page.click('#save');
+    await saveProject();
     const recovered=await(await recoveredSave).json();
     assert.notEqual(recovered.id,newJob.snapshot_id);
     assert.equal(recovered.assignments.length,solvedAssignments);
@@ -217,6 +252,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const original=await(await fetch(base+'/api/jobs/'+newJob.id+'/snapshot')).json();
     assert.equal(original.id,newJob.snapshot_id);
     // Every profile field is editable without JSON, with persisted nullable caps.
+    await navigate('rules');
     const profile = page.locator('#profiles details').first();
     await profile.locator('summary').click();
     const expected = {
@@ -236,18 +272,20 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.match(await page.locator('#validation').textContent(), /nicht aktuell/);
     assert(!await page.locator('#result').innerText().then(t=>t.includes('Vollständig')));
     const profileSave=page.waitForResponse(r=>r.url().endsWith('/api/snapshots')&&r.request().method()==='PUT');
-    await page.click('#save');
+    await saveProject();
     const profileResponse=await profileSave;
     assert.equal(profileResponse.status(),200);
     const storedProfile=(await profileResponse.json()).profiles[0];
     for(const [key,value] of Object.entries({...expected,weekly_rest_frame:'rolling_local',weekly_rest_add_daily:true,confirmed:true}))assert.equal(storedProfile[key],value,key);
+    await reveal('#restore');
     await page.click('#restore');
     await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('Daten geladen'));
+    await navigate('rules');
     await profile.locator('summary').click();
     assert.equal(await profile.locator('[data-profile-field="max_period_minutes"]').inputValue(),'4800');
     await profile.locator('[data-profile-field="max_period_minutes"]').fill('');
     const clearedSave=page.waitForResponse(r=>r.url().endsWith('/api/snapshots')&&r.request().method()==='PUT');
-    await page.click('#save');
+    await saveProject();
     assert.equal((await (await clearedSave).json()).profiles[0].max_period_minutes,null);
     // The calendar renders local dates and end-exclusive midnight, not UTC slices.
     const demo = await (await fetch(base+'/api/demo')).json();
@@ -260,12 +298,13 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     demo.assignments = [{employee_id:demo.employees[0].id,demand_id:demand.id,fixed:true,segments:[]}];
     await uploadProject( {name:'synthetic-calendar.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(demo))});
     await page.waitForFunction(() => document.querySelector('#source').textContent.includes('Pacific/Auckland'));
+    await navigate('plan');
     await page.selectOption('#planView','employees');
     assert.equal(await page.locator('#calendar td[data-date="2026-01-05"] .shift-badge').count(),1);
     assert.equal(await page.locator('#calendar td[data-date="2026-01-06"] .shift-badge').count(),0);
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    if(process.env.WEB_TEST_SCREENSHOT_DIR) await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,'mobile.png'),fullPage:true});
+    await screenshot('mobile.png');
     // Unsaved removal of an input fixation must fail independent validation and export.
     await page.locator('#assignmentDetails').evaluate(details=>{details.open=true;});
     assert(await page.locator('#plan tbody input[type="checkbox"]').first().isChecked());
@@ -295,6 +334,8 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('HTTP 503'));
     assert.equal(validationCalls,1);
     assert(await page.locator('#validate').isEnabled());
+    await page.unroute('**/api/validate');
+    await require('./product-flows.cjs')({page,base,navigate,reveal,uploadProject,root,state,delay});
     assert.deepEqual(errors, []);
     console.log('Passed: exact team selection, history, matrix, solver, job recovery, project backup roundtrip, rejected invalid files, unsaved-work guard, profile persistence, calendar/timezones, fixed-input validation/export, desktop/mobile, actionable errors.');
   } catch(error) {

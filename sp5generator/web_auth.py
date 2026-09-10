@@ -9,19 +9,26 @@ from collections import OrderedDict
 from urllib.parse import parse_qs
 
 from fastapi import Request
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 _COOKIE = 'sp5_session'
 _SESSION_SECONDS = 8 * 60 * 60
 _MAX_BODY = 8192
 _MAX_ENTRIES = 1024
-_LOGIN_HTML = '''<!doctype html><html lang="de"><meta charset="utf-8">
+_LOGIN_HTML = '''<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Anmelden · OpenSchichtplaner5 Generator</title><main>
-<h1>OpenSchichtplaner5 Generator</h1><h2>Anmelden</h2>
+<meta name="color-scheme" content="light">
+<link rel="stylesheet" href="/static/login.css">
+<title>Anmelden · OpenSchichtplaner5 Generator</title></head><body><main>
+<div class="brand"><span class="brand-mark" aria-hidden="true">S</span><span>OpenSchichtplaner5<span class="brand-subtitle">Generator</span></span></div>
+<div class="login-card"><p class="eyebrow">IHR PLANUNGSBEREICH</p><h1>Willkommen zurück.</h1>
+<p class="intro">Melden Sie sich an, um Ihre Projekte und Dienstpläne zu öffnen.</p>
+<h2>Anmelden</h2>
 <form method="post" action="/login"><label for="password">Passwort</label>
 <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
-<button type="submit">Anmelden</button></form></main></html>'''
+<button type="submit">Arbeitsbereich öffnen <span aria-hidden="true">→</span></button></form></div>
+<p class="footer">OpenSchichtplaner5 Generator · Lokale Dienstplanung</p></main></body></html>'''
 
 
 def install_web_auth(app):
@@ -57,7 +64,7 @@ def install_web_auth(app):
 
     @app.middleware('http')
     async def authentication(request: Request, call_next):
-        if request.url.path in {'/login', '/logout', '/healthz'}:
+        if request.url.path in {'/login', '/logout', '/healthz', '/static/login.css'}:
             return await call_next(request)
         now = time.monotonic()
         trim(sessions, now)
@@ -83,7 +90,7 @@ def install_web_auth(app):
             del attempts[key]
         count, expiry = attempts.get(remote, (0, now + 60))
         if count >= 5 or (remote not in attempts and len(attempts) >= _MAX_ENTRIES):
-            return JSONResponse({'detail': 'Too many login attempts'}, status_code=429, headers={'Retry-After': '60'})
+            return HTMLResponse(_LOGIN_HTML.replace('<h2>Anmelden</h2>', '<h2>Anmelden</h2><p class="error" role="alert">Zu viele Anmeldeversuche. Bitte in einer Minute erneut versuchen.</p>'), status_code=429, headers={'Retry-After': '60'})
         attempts[remote] = (count + 1, expiry)
         if request.headers.get('content-type', '').split(';')[0].strip().lower() != 'application/x-www-form-urlencoded':
             return JSONResponse({'detail': 'Form submission required'}, status_code=415)
@@ -102,11 +109,11 @@ def install_web_auth(app):
             supplied = fields.get('password', [])
             if len(supplied) != 1:
                 raise ValueError
-            candidate = hashlib.scrypt(supplied[0].encode(), salt=salt, n=16384, r=8, p=1)
+            candidate = await run_in_threadpool(hashlib.scrypt, supplied[0].encode(), salt=salt, n=16384, r=8, p=1)
         except (UnicodeError, ValueError):
             return JSONResponse({'detail': 'Invalid login form'}, status_code=400)
         if not hmac.compare_digest(candidate, password_hash):
-            return HTMLResponse(_LOGIN_HTML.replace('<h2>Anmelden</h2>', '<h2>Anmelden</h2><p>Passwort nicht korrekt.</p>'), status_code=401)
+            return HTMLResponse(_LOGIN_HTML.replace('<h2>Anmelden</h2>', '<h2>Anmelden</h2><p class="error" role="alert">Passwort nicht korrekt. Bitte erneut versuchen.</p>'), status_code=401)
         trim(sessions, now)
         if len(sessions) >= _MAX_ENTRIES:
             sessions.popitem(last=False)

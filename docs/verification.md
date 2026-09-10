@@ -35,6 +35,43 @@ Prüfergebnis, Commit und tatsächliche Testanzahl stehen im jeweiligen
 Die Befehle hier beschreiben den Prüfweg; sie behaupten keinen erfolgreichen
 Lauf für einen beliebigen späteren Commit.
 
+## Lokaler Prüfstand für 0.8.0
+
+Der lokale Python-Prüfumfang umfasst 287 Tests. Den vollständigen erfolgreichen
+Lauf für den veröffentlichten Commit dokumentiert der zugehörige GitHub-Workflow.
+
+Der vollständige Browserlauf bestand unter Linux x86_64 mit Chromium
+152.0.7977.0 auf Desktop und bei 390 Pixel Breite. Neben den bisherigen
+Regressionen wurden Projektanlage, ein abgewiesener Erstellungsversuch mit
+erhaltenen Eingaben und anschließendem erfolgreichen Wiederholen, Änderung
+einer Person, eine Abwesenheit in Europe/Vienna, persistente Freigaben und die
+nachträgliche Bestätigung des Randkontexts geprüft. Nach Neuladen wurde das
+Projekt berechnet und als Excel-Datei heruntergeladen. Escape schloss den
+Assistenten und stellte den Fokus wieder her. Der abschließende Browserlauf
+prüft auch das Anlegen und persistente Speichern einer zusätzlichen Person,
+deren ausdrückliches Entfernen sowie das Erreichen eines Projekts jenseits der
+ersten API-Listenseite bei 1.001 synthetischen Projektzusammenfassungen.
+
+Für die Darstellungsmessung wurde der tatsächlich unabhängig gültige
+Benchmarkplan mit 120 Personen, 31 Tagen und 1.240 Einteilungen geladen. Die
+Messungen umfassen Browseraktionen und zwei Darstellungszyklen; die Suche
+enthält ihre bewusste Eingabeverzögerung.
+
+| Browseraktion | Gemessene Dauer |
+| --- | ---: |
+| Projektdatei öffnen einschließlich HTTP-Vorprüfung | 326 ms |
+| Eine Matrixfreigabe ändern | 68 ms |
+| Person suchen einschließlich Eingabeverzögerung | 233 ms |
+| Monatsansicht öffnen | 94 ms |
+| Nächste Seite mit 30 Personen anzeigen | 160 ms |
+| Bearbeitungsliste mit 40 Einteilungen öffnen | 60 ms |
+
+Danach enthielt das Dokument 3.422 DOM-Elemente. Es wurden noch keine
+Personenauswahllisten für die 1.240 Einteilungen erzeugt. Alle Daten bleiben
+im Projekt; die Seitengröße begrenzt ausschließlich die Darstellung. Diese
+lokalen Einzelmessungen sind keine Lastprüfung mit vielen gleichzeitigen
+Benutzern und keine Zusicherung für jedes Endgerät.
+
 ## Lokaler Prüfstand für 0.7.0
 
 Vor dem Release-Push wurden unter Linux x86_64 mit Python 3.12.14 und OR-Tools
@@ -62,6 +99,33 @@ Diese lokalen Ergebnisse ersetzen den Container- und Browserlauf des
 zugehörigen GitHub-Workflows nicht. Der Workflow prüft den tatsächlich gepushten
 Commit erneut, bevor er dessen Image veröffentlicht.
 
+## Browserablauf und Darstellungsleistung für 0.8.0
+
+Die Browserprüfung navigiert durch die tatsächlichen Arbeitsbereiche. Sie prüft
+zusätzlich die Projektanlage ohne SP5 oder JSON, das Speichern einer geänderten
+Freigabe, Neuladen und Wiederöffnen, Berechnung und Excel-Download. Escape
+schließt den Projektassistenten und gibt den Fokus an den Auslöser zurück.
+
+Ein separater Darstellungsfall lädt 120 Personen, 31 Tage und 1.240 Einteilungen.
+Die Prüfung misst Import, Freigabeänderung, Suche, Monatsansicht, Seitenwechsel
+und das Öffnen der Einteilungsliste; außerdem zählt sie DOM-Elemente. Ein
+synthetischer Darstellungsfall ist kein Solver-Benchmark. Optional kann das
+unabhängig gültige Ergebnis eines tatsächlichen Benchmarks verwendet werden:
+
+```sh
+WEB_TEST_PERFORMANCE_INPUT=/tmp/large-snapshot.json \
+WEB_TEST_PERFORMANCE_RESULT=/tmp/large-result.json \
+WEB_TEST_SCREENSHOT_DIR=/tmp/browser-results \
+npm test --prefix tests/browser
+```
+
+Das Screenshot-Verzeichnis muss vorhanden sein. Die tatsächlichen Werte werden
+im Konsolenprotokoll und dort als `ui-performance.json` gespeichert. Der Lauf
+prüft 30 Monatszeilen und 40 bearbeitbare Einteilungen pro Seite, ohne für jede
+Einteilung sofort eine vollständige Personenauswahl zu erzeugen. Eine großzügige
+10-Sekunden-Grenze erkennt grobe Blockaden auch auf langsameren Testrechnern;
+sie ist kein Zielwert für die normale Bedienung.
+
 ## Fachlicher Kern und Adapter
 
 Python-Tests prüfen unter anderem Freigaben, Qualifikationen,
@@ -88,7 +152,7 @@ HTTP-Endpunkte mit einem separaten Worker und synthetischen Quellen.
 `tools/check_distribution.py` arbeitet in einem temporären Verzeichnis
 außerhalb des Checkouts. Der Ablauf:
 
-1. Wheel-Metadaten, Versionsnummer und alle drei enthaltenen Webressourcen prüfen.
+1. Wheel-Metadaten, Versionsnummer und sämtliche enthaltenen Webressourcen prüfen.
 2. Quellarchiv in einer isolierten Buildumgebung erneut zum Wheel bauen und die
    enthaltenen Anwendungsdateien mit dem ursprünglichen Wheel vergleichen.
 3. Kernwheel in eine neue virtuelle Umgebung mit den Kernconstraints
@@ -143,6 +207,33 @@ CPUs, ein Solverworker, Seed 0. Die zusätzliche Bestätigung des konstruktiven
 Startplans meldete unter fixierten Einteilungen `OPTIMAL`; dies ist kein
 Optimalitätsbeweis für das freie Planungsproblem.
 
+## Vergleichbarer Solverlauf für 0.8.0
+
+Im selben synthetischen Fall mit 120 Personen, 31 Tagen und 1.240 zwingenden
+Einteilungen wurden Version 0.7.0 und der abschließende Stand von 0.8.0 mit
+jeweils 10 Sekunden eingestelltem Budget ausgeführt. Beide lieferten eine
+unabhängig gültige, vollständige `FEASIBLE`-Lösung mit Zielfunktionswert 848.640.
+
+| Messwert | 0.7.0 | 0.8.0 |
+| --- | ---: | ---: |
+| Tatsächliche Gesamtdauer des Aufrufs | 19,153 s | 9,752 s |
+| Erster unabhängig gültiger Plan | nicht erfasst | 3,673 s |
+| Globale untere Schranke | nicht verfügbar | 573.900 |
+
+Umgebung: Linux x86_64, Python 3.12.14, OR-Tools 9.15.6755, neun sichtbare
+logische CPUs, ein Suchworker und Seed 0. Der abschließende Lauf enthält
+1,032 Sekunden Modellaufbau und 0,152 Sekunden unabhängige Ergebnisprüfung.
+Er umfasst 26.941 Modellvariablen und 36.767 Bedingungen. `FEASIBLE` und die
+vorhandene Schranke belegen weiterhin keine globale Optimalität.
+
+Die frühere Überschreitung des eingestellten Budgets wurde insbesondere durch
+die zusätzliche Vorverarbeitung des Optimierungsmodells verursacht. Der
+abschließende Suchpfad vermeidet diese zusätzliche Runde, wenn bereits ein
+unabhängig geprüfter und unter Fixierungen bestätigter Startplan vorliegt.
+Ein eingestelltes Solverbudget ist dennoch keine harte Frist für den gesamten
+Prozess: Eingabeprüfung, Modellaufbau, native Aufrufe und abschließende Prüfung
+benötigen ebenfalls Zeit.
+
 ## Nicht durch diese Prüfungen zugesichert
 
 - Fachliche Richtigkeit ungeklärter importierter Originalsemantik.
@@ -152,4 +243,4 @@ Optimalitätsbeweis für das freie Planungsproblem.
 - Vollständige Abnahme des getrennten Schwesterprojekt-Frontends und dessen
   regulären Anmeldeablaufs gegen Originaldaten.
 
-Siehe [Release 0.7.0](release-0.7.0.md) für Lieferumfang und Aktualisierung.
+Siehe [Release 0.8.0](release-0.8.0.md) für Lieferumfang und Aktualisierung.

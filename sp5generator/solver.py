@@ -2,11 +2,11 @@
 
 from collections import defaultdict
 from datetime import timedelta
-from itertools import combinations
 from time import monotonic
 from ortools.sat.python import cp_model
 from .models import Assignment, Diagnostic, Result, Validation
 from .domain import (
+    MAX_ASSIGNMENTS,
     snapshot_hash,
     input_diagnostics,
     eligibility,
@@ -24,7 +24,7 @@ from .timeutils import (
     midnight,
     overlap,
 )
-from .validator import validate
+from .validator import PreparedValidator, validate
 
 
 # OR-Tools 9.15 can segfault during parallel quality search on a valid demo
@@ -34,12 +34,15 @@ SEARCH_WORKERS = 1
 
 def solve(snapshot, time_limit=30, partial=False):
     started = monotonic()
+    deadline = started + time_limit
+    timings = {}
     parameters = {
         "time_limit": time_limit,
         "partial": partial,
         "workers": SEARCH_WORKERS,
         "random_seed": 0,
         "objective_semantics": "lexicographic vacancies, then configured weighted costs",
+        "phase_seconds": timings,
     }
 
     def result(status, assignments=None, validation=None, **kwargs):
@@ -64,7 +67,23 @@ def solve(snapshot, time_limit=30, partial=False):
             **kwargs,
         )
 
+    def timed_out():
+        return result(
+            "UNKNOWN",
+            validation=Validation(valid=False, complete=False, diagnostics=[
+                Diagnostic(code="time_limit", message="Zeitlimit ohne unabhängig geprüfte Lösung.")
+            ]),
+        )
+
+    def finish(best):
+        # Result construction copies the parameters dictionary. Synchronize
+        # later search status and timings when returning an earlier incumbent.
+        best.parameters = dict(parameters)
+        best.runtime_seconds = monotonic() - started
+        return best
+
     issues = input_diagnostics(snapshot)
+    timings["input_validation"] = monotonic() - started
     if issues:
         return result(
             "MODEL_INVALID",
@@ -99,7 +118,9 @@ def solve(snapshot, time_limit=30, partial=False):
     }
     diagnostics = []
     for e in snapshot.employees:
-        for d in snapshot.demands:
+        for demand_number, d in enumerate(snapshot.demands):
+            if demand_number % 64 == 0 and monotonic() >= deadline:
+                return timed_out()
             in_period = (
                 snapshot.period_start <= shift_day[d.shift_id] <= snapshot.period_end
             )
@@ -132,6 +153,10 @@ def solve(snapshot, time_limit=30, partial=False):
                 model.add(x == 1)
             elif (e.id, d.id) in prior:
                 model.add_hint(x, 1)
+    # The standalone contract and independent checker accept at most this
+    # many assignments, including fixed context. Extra optional staffing must
+    # not drive the optimizer outside that supported result envelope.
+    model.add(sum(xs.values()) <= MAX_ASSIGNMENTS)
     vacancies = []
     for d in snapshot.demands:
         choices = by_demand[d.id]
@@ -153,6 +178,8 @@ def solve(snapshot, time_limit=30, partial=False):
         else:
             model.add(sum(choices) >= d.minimum)
     for sid in shifts:
+        if monotonic() >= deadline:
+            return timed_out()
         slots = [
             d.id
             for d in snapshot.demands
@@ -182,20 +209,52 @@ def solve(snapshot, time_limit=30, partial=False):
             weighted_components[name].append(expr * weight)
             costs.append(expr * weight)
 
-    pair_cache = {}
+    # One conflict edge per pair of duties and rule-profile set. Position
+    # choices on a duty form a clique: at most one of them can be worked.
+    # Expressing that clique directly avoids an employee x demand^2 scan and
+    # four separate constraints for a common two-position pair of duties.
+    conflict_graphs = {}
+    shift_bounds = {s.id: bounds(s) for s in snapshot.shifts}
+    ordered_shifts = sorted(snapshot.shifts, key=lambda s: shift_bounds[s.id][0])
     worked_vars = {}
     nights_vars = {}
     weekend_vars = {}
     for e in snapshot.employees:
+        if monotonic() >= deadline:
+            return timed_out()
         entries = by_employee[e.id]
-        for (da, xa), (db, xb) in combinations(entries, 2):
-            pair_key = (tuple(e.profile_ids), da.shift_id, db.shift_id)
-            if pair_key not in pair_cache:
-                pair_cache[pair_key] = pair_conflict(
-                    snapshot, e, shifts[da.shift_id], shifts[db.shift_id]
-                )
-            if pair_cache[pair_key]:
-                model.add(xa + xb <= 1)
+        by_shift = defaultdict(list)
+        for d, x in entries:
+            by_shift[d.shift_id].append(x)
+        for choices in by_shift.values():
+            if len(choices) > 1:
+                model.add_at_most_one(choices)
+        profile_key = tuple(sorted(e.profile_ids))
+        if profile_key not in conflict_graphs:
+            maximum_rest = max(
+                [0]
+                + [
+                    max(p.min_rest_minutes, p.after_night_rest_minutes,
+                        p.after_night_block_rest_minutes)
+                    for p in snapshot.profiles if p.id in e.profile_ids
+                ]
+            )
+            edges = []
+            for i, left in enumerate(ordered_shifts):
+                if monotonic() >= deadline:
+                    return timed_out()
+                for j in range(i + 1, len(ordered_shifts)):
+                    right = ordered_shifts[j]
+                    # Later duties cannot overlap, interleave, or violate any
+                    # of this employee's rest profiles past this upper bound.
+                    if shift_bounds[right.id][0] - shift_bounds[left.id][1] >= maximum_rest:
+                        break
+                    if pair_conflict(snapshot, e, left, right):
+                        edges.append((left.id, right.id))
+            conflict_graphs[profile_key] = edges
+        for left, right in conflict_graphs[profile_key]:
+            if left in by_shift and right in by_shift:
+                model.add_at_most_one(by_shift[left] + by_shift[right])
         if any(
             p.id in e.profile_ids and p.after_night_block_rest_minutes
             for p in snapshot.profiles
@@ -204,6 +263,8 @@ def solve(snapshot, time_limit=30, partial=False):
                 entries, key=lambda item: bounds(shifts[item[0].shift_id])[0]
             )
             for i, (da, xa) in enumerate(ordered):
+                if monotonic() >= deadline:
+                    return timed_out()
                 for j in range(i + 1, len(ordered)):
                     db, xb = ordered[j]
                     if night_block_conflict(
@@ -381,6 +442,8 @@ def solve(snapshot, time_limit=30, partial=False):
     # Explicit mentor-to-trainee edges with bounded per-duty mentoring slots.
     mentor_load = defaultdict(list)
     for (eid, did), x in xs.items():
+        if monotonic() >= deadline:
+            return timed_out()
         e, d = employees[eid], demands[did]
         if not supervised(snapshot, e, d):
             continue
@@ -433,6 +496,8 @@ def solve(snapshot, time_limit=30, partial=False):
         ("weekends", snapshot.objectives.weekends, "historical_weekends"),
         ("holidays", snapshot.objectives.holidays, "historical_holidays"),
     ):
+        if monotonic() >= deadline:
+            return timed_out()
         counts, opportunities, count_bounds = {}, {}, {}
         for e in snapshot.employees:
             eligible = [
@@ -510,9 +575,13 @@ def solve(snapshot, time_limit=30, partial=False):
                     )
                     model.add_division_equality(scaled, deviation * 100, total_opp)
                     cost(category, scaled, weight)
+    timings["model_build"] = monotonic() - started - timings["input_validation"]
+    parameters["model_variables"] = len(model.proto.variables)
+    parameters["model_constraints"] = len(model.proto.constraints)
+    warm_started = monotonic()
     warm = None
     if len(snapshot.employees) >= 40 and not partial:
-        deadline = min(started + time_limit / 2, monotonic() + 12)
+        initial_plan_deadline = min(started + time_limit / 2, monotonic() + 12)
         plans = {
             e.id: [
                 a.model_copy(deep=True)
@@ -521,21 +590,28 @@ def solve(snapshot, time_limit=30, partial=False):
             ]
             for e in snapshot.employees
         }
-        local_snapshots = {
-            e.id: snapshot.model_copy(
-                update={
-                    "employees": [e],
-                    "assignments": [
-                        a for a in snapshot.assignments if a.employee_id == e.id
-                    ],
-                    "restrictions": [
-                        r for r in snapshot.restrictions if r.employee_id == e.id
-                    ],
-                    "wishes": [w for w in snapshot.wishes if w.employee_id == e.id],
-                }
-            )
-            for e in snapshot.employees
-        }
+        local_validators = {}
+
+        def local_validator(employee):
+            if employee.id not in local_validators:
+                local_validators[employee.id] = PreparedValidator(
+                    snapshot.model_copy(update={
+                        "employees": [employee],
+                        "assignments": [
+                            a for a in snapshot.assignments
+                            if a.employee_id == employee.id
+                        ],
+                        "restrictions": [
+                            r for r in snapshot.restrictions
+                            if r.employee_id == employee.id
+                        ],
+                        "wishes": [
+                            w for w in snapshot.wishes
+                            if w.employee_id == employee.id
+                        ],
+                    })
+                )
+            return local_validators[employee.id]
         load = {
             eid: sum(shifts[demands[a.demand_id].shift_id].paid_minutes for a in plan)
             for eid, plan in plans.items()
@@ -555,7 +631,7 @@ def solve(snapshot, time_limit=30, partial=False):
                         load[eid] * 100 / employees[eid].employment_fraction
                     ),
                 ):
-                    if monotonic() > deadline:
+                    if monotonic() > initial_plan_deadline:
                         break
                     if any(a.demand_id == d.id for a in plans[eid]):
                         continue
@@ -566,7 +642,7 @@ def solve(snapshot, time_limit=30, partial=False):
                             i.model_copy(deep=True) for i in shifts[d.shift_id].segments
                         ],
                     )
-                    if validate(local_snapshots[eid], plans[eid] + [candidate]).valid:
+                    if local_validator(employees[eid]).validate(plans[eid] + [candidate]).valid:
                         chosen = candidate
                         break
                 if chosen is None:
@@ -587,6 +663,7 @@ def solve(snapshot, time_limit=30, partial=False):
                 chosen = {(a.employee_id, a.demand_id) for a in candidate}
                 for key, x in xs.items():
                     model.add_hint(x, int(key in chosen))
+    timings["initial_plan"] = monotonic() - warm_started
     weighted = sum(costs)
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = SEARCH_WORKERS
@@ -597,6 +674,7 @@ def solve(snapshot, time_limit=30, partial=False):
     phase = "vacancies" if partial else "feasibility"
     model.minimize(sum(vacancies) if partial else 0)
     if warm:
+        certificate_started = monotonic()
         certificate = cp_model.CpSolver()
         certificate.parameters.num_search_workers = 1
         certificate.parameters.max_time_in_seconds = max(
@@ -604,6 +682,7 @@ def solve(snapshot, time_limit=30, partial=False):
         )
         certificate.parameters.fix_variables_to_their_hinted_value = True
         certified_status = certificate.solve(model)
+        timings["initial_plan_certificate"] = monotonic() - certificate_started
         parameters["warm_start_certificate_status"] = certificate.status_name(
             certified_status
         )
@@ -612,7 +691,20 @@ def solve(snapshot, time_limit=30, partial=False):
         )
         if certified_status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             warm = None
+        else:
+            # Carry the complete certified solution into optimization. Hints
+            # only for assignments leave thousands of auxiliary variables
+            # unresolved before CP-SAT can accept its first incumbent.
+            model.clear_hints()
+            for index in range(len(model.proto.variables)):
+                variable = model.get_int_var_from_proto_index(index)
+                model.add_hint(variable, certificate.value(variable))
     if warm:
+        # With a complete certified hint, large presolve/probing passes can
+        # consume the entire interactive budget before accepting that hint.
+        # Search the original equivalent model directly in this case.
+        solver.parameters.cp_model_presolve = False
+        parameters["quality_presolve"] = False
         plan, checked = warm
         metrics = {
             "employees": {},
@@ -676,6 +768,7 @@ def solve(snapshot, time_limit=30, partial=False):
             )
             for key, terms in weighted_components.items()
         }
+        parameters["first_feasible_seconds"] = monotonic() - started
         best = result(
             "FEASIBLE",
             plan,
@@ -689,11 +782,14 @@ def solve(snapshot, time_limit=30, partial=False):
         model.minimize(weighted)
     while True:
         remaining = time_limit - (monotonic() - started)
+        if best:
+            # Leave a small allowance to copy and independently recheck the
+            # final incumbent; a validated fallback is already available.
+            remaining -= min(1.0, time_limit * 0.05)
         if remaining <= 0:
             if best:
                 best.solver_status = "FEASIBLE"
-                best.runtime_seconds = monotonic() - started
-                return best
+                return finish(best)
             return result(
                 "UNKNOWN",
                 validation=Validation(
@@ -709,14 +805,15 @@ def solve(snapshot, time_limit=30, partial=False):
                 ),
             )
         solver.parameters.max_time_in_seconds = remaining
+        search_started = monotonic()
         status = solver.solve(model)
+        timings["search"] = timings.get("search", 0) + monotonic() - search_started
         name = solver.status_name(status)
         parameters["last_optimization_status"] = name
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             if best:
                 best.solver_status = "FEASIBLE"
-                best.runtime_seconds = monotonic() - started
-                return best
+                return finish(best)
             message = (
                 model.validate()
                 if status == cp_model.MODEL_INVALID
@@ -748,7 +845,11 @@ def solve(snapshot, time_limit=30, partial=False):
             for (eid, did), x in xs.items()
             if solver.value(x)
         ]
+        validation_started = monotonic()
         checked = validate(snapshot, assignments)
+        timings["result_validation"] = (
+            timings.get("result_validation", 0) + monotonic() - validation_started
+        )
         hard = [d for d in checked.diagnostics if d.code not in ("vacancy", "context")]
         if hard:
             # Valid inequalities: violating employee schedules cannot remain
@@ -771,6 +872,7 @@ def solve(snapshot, time_limit=30, partial=False):
                 )
             separation_rounds += 1
             continue
+        parameters.setdefault("first_feasible_seconds", monotonic() - started)
         metrics = {
             "employees": {},
             "objective_contributions": {
@@ -857,4 +959,4 @@ def solve(snapshot, time_limit=30, partial=False):
             model.minimize(weighted)
             phase = "quality"
             continue
-        return best
+        return finish(best)

@@ -1,6 +1,7 @@
 """Persistent local jobs. HTTP processes enqueue; a separate bounded worker solves."""
 
 import contextlib
+from datetime import datetime, timezone
 import fcntl
 import json
 import multiprocessing
@@ -17,6 +18,23 @@ class Conflict(ValueError):
     pass
 
 
+def _project_summary(payload):
+    """Materialize list data once when writing, never when listing projects."""
+    name = payload.get("metadata", {}).get("project_name", "")
+    if not isinstance(name, str) or len(name) > 120:
+        raise ValueError("Projektname muss ein Text mit höchstens 120 Zeichen sein")
+    return {
+        "project_name": name.strip(),
+        "created_at": payload.get("created_at"),
+        "period_start": payload.get("period_start"),
+        "period_end": payload.get("period_end"),
+        "source": payload.get("source", ""),
+        "employee_count": len(payload.get("employees", [])),
+        "shift_count": len(payload.get("shifts", [])),
+        "demand_count": len(payload.get("demands", [])),
+    }
+
+
 class Store:
     def __init__(self, path):
         # A symlink or relative spelling must not create a second worker lock.
@@ -31,8 +49,60 @@ class Store:
             CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,actor TEXT NOT NULL,job_id TEXT NOT NULL,created_at REAL NOT NULL,payload TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS jobs_queue ON jobs(state,created_at);
             CREATE INDEX IF NOT EXISTS jobs_owner_created ON jobs(owner,created_at DESC);
+            CREATE INDEX IF NOT EXISTS jobs_owner_snapshot_created ON jobs(owner,snapshot_id,created_at DESC);
             """)
+        self._migrate_project_summaries()
         os.chmod(self.path, 0o600)
+
+    def _migrate_project_summaries(self):
+        """Upgrade 0.7 databases atomically without rewriting their snapshots.
+
+        BEGIN IMMEDIATE also serializes simultaneous app/worker startup. A
+        failed migration rolls back columns and backfill together for retry.
+        """
+        columns = {
+            "project_name": "TEXT NOT NULL DEFAULT ''",
+            "created_at": "TEXT",
+            "updated_at": "REAL NOT NULL DEFAULT 0",
+            "period_start": "TEXT",
+            "period_end": "TEXT",
+            "source": "TEXT NOT NULL DEFAULT ''",
+            "employee_count": "INTEGER NOT NULL DEFAULT 0",
+            "shift_count": "INTEGER NOT NULL DEFAULT 0",
+            "demand_count": "INTEGER NOT NULL DEFAULT 0",
+            "archived": "INTEGER NOT NULL DEFAULT 0",
+            "summary_version": "INTEGER NOT NULL DEFAULT 0",
+        }
+        with self.transaction() as conn:
+            existing = {row["name"] for row in conn.execute("PRAGMA table_info(snapshots)")}
+            for name, definition in columns.items():
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE snapshots ADD COLUMN {name} {definition}")
+            for row in conn.execute("SELECT id,payload FROM snapshots WHERE summary_version=0"):
+                payload = json.loads(row["payload"])
+                # Previously unrestricted metadata must not prevent upgrading.
+                metadata = dict(payload.get("metadata", {}))
+                name = metadata.get("project_name", "")
+                metadata["project_name"] = name[:120] if isinstance(name, str) else ""
+                summary = _project_summary({**payload, "metadata": metadata})
+                try:
+                    created = datetime.fromisoformat(summary["created_at"])
+                    if created.tzinfo is None:
+                        created = created.replace(tzinfo=timezone.utc)
+                    updated_at = created.timestamp()
+                except (TypeError, ValueError, OverflowError, OSError):
+                    updated_at = 0
+                setters = ",".join(f"{key}=?" for key in summary)
+                conn.execute(
+                    f"UPDATE snapshots SET {setters},updated_at=?,summary_version=1 WHERE id=?",
+                    (*summary.values(), updated_at, row["id"]),
+                )
+            # The project picker is answered entirely from this compact index;
+            # SQLite need not touch any pages containing personnel JSON.
+            conn.execute("""CREATE INDEX IF NOT EXISTS snapshots_owner_recent ON snapshots(
+                owner,archived,updated_at DESC,id DESC,revision,project_name,created_at,
+                period_start,period_end,source,employee_count,shift_count,demand_count)""")
+            conn.execute("CREATE INDEX IF NOT EXISTS snapshots_summary_version ON snapshots(summary_version)")
 
     @contextlib.contextmanager
     def connect(self):
@@ -60,7 +130,7 @@ class Store:
     def save_snapshot(self, snapshot, owner):
         with self.transaction() as conn:
             current = conn.execute(
-                "SELECT * FROM snapshots WHERE id=?", (snapshot.id,)
+                "SELECT owner,revision FROM snapshots WHERE id=?", (snapshot.id,)
             ).fetchone()
             if current:
                 if current["owner"] != owner:
@@ -73,11 +143,20 @@ class Store:
             snapshot = snapshot.model_copy(
                 update={"revision": str(revision)}, deep=True
             )
-            conn.execute(
-                "INSERT OR REPLACE INTO snapshots VALUES(?,?,?,?)",
-                (snapshot.id, owner, revision, snapshot.model_dump_json()),
-            )
+            self._write_snapshot(conn, snapshot, owner)
         return snapshot
+
+    @staticmethod
+    def _write_snapshot(conn, snapshot, owner):
+        summary = _project_summary(snapshot.model_dump(mode="json"))
+        columns = ["id", "owner", "revision", "payload", *summary, "updated_at", "summary_version"]
+        update = ",".join(f"{key}=excluded.{key}" for key in columns if key not in {"id", "owner"})
+        conn.execute(
+            f"INSERT INTO snapshots({','.join(columns)}) VALUES({','.join('?' for _ in columns)}) "
+            f"ON CONFLICT(id) DO UPDATE SET {update}",
+            (snapshot.id, owner, int(snapshot.revision), snapshot.model_dump_json(),
+             *summary.values(), time.time(), 1),
+        )
 
     def get_snapshot(self, id, owner):
         with self.connect() as conn:
@@ -88,20 +167,60 @@ class Store:
             raise KeyError(id)
         return Snapshot.model_validate_json(row["payload"])
 
-    def list_snapshots(self, owner):
+    def list_snapshots(self, owner, archived=False, limit=200, offset=0):
         """Summaries for reopening saved work, without personnel or source data."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("Project list limit must be between 1 and 1000")
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 1_000_000:
+            raise ValueError("Project list offset must be between 0 and 1000000")
         with self.connect() as conn:
             rows = conn.execute(
-                """SELECT id,revision,
-                json_extract(payload,'$.created_at') AS created_at,
-                json_extract(payload,'$.period_start') AS period_start,
-                json_extract(payload,'$.period_end') AS period_end,
-                json_extract(payload,'$.source') AS source,
-                json_array_length(payload,'$.employees') AS employee_count
-                FROM snapshots WHERE owner=? ORDER BY rowid DESC""",
-                (owner,),
+                """SELECT id,revision,project_name,created_at,updated_at,period_start,
+                period_end,source,employee_count,shift_count,demand_count,archived
+                FROM snapshots WHERE owner=? AND archived=?
+                ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
+                (owner, bool(archived), limit, offset),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [{**dict(row), "archived": bool(row["archived"])} for row in rows]
+
+    def copy_snapshot(self, id, owner, revision, project_name=None):
+        with self.transaction() as conn:
+            row = self._project_for_update(conn, id, owner, revision)
+            snapshot = Snapshot.model_validate_json(row["payload"])
+            snapshot.id = str(uuid.uuid4())
+            snapshot.revision = "1"
+            snapshot.created_at = datetime.now(timezone.utc)
+            original_name = snapshot.metadata.get("project_name")
+            fallback = original_name if isinstance(original_name, str) and original_name.strip() else "Projekt"
+            snapshot.metadata["project_name"] = project_name if project_name is not None else f"{fallback[:112]} – Kopie"
+            # A copy does not share the original project's synthetic acceptance.
+            snapshot.metadata.pop("accepted_revision", None)
+            self._write_snapshot(conn, snapshot, owner)
+        return snapshot
+
+    def set_archived(self, id, owner, revision, archived):
+        with self.transaction() as conn:
+            row = self._project_for_update(conn, id, owner, revision)
+            snapshot = Snapshot.model_validate_json(row["payload"])
+            if bool(row["archived"]) != bool(archived):
+                if archived and conn.execute(
+                    "SELECT 1 FROM jobs WHERE snapshot_id=? AND owner=? AND state IN ('queued','running') LIMIT 1",
+                    (id, owner),
+                ).fetchone():
+                    raise Conflict("Laufende Berechnung zuerst beenden oder abbrechen")
+                snapshot.revision = str(row["revision"] + 1)
+                self._write_snapshot(conn, snapshot, owner)
+                conn.execute("UPDATE snapshots SET archived=? WHERE id=?", (bool(archived), id))
+        return snapshot
+
+    @staticmethod
+    def _project_for_update(conn, id, owner, revision):
+        row = conn.execute("SELECT * FROM snapshots WHERE id=? AND owner=?", (id, owner)).fetchone()
+        if row is None:
+            raise KeyError(id)
+        if str(revision) != str(row["revision"]):
+            raise Conflict("Snapshot revision changed; reload before changing this project")
+        return row
 
     def submit(self, id, owner, time_limit=30, partial=False, revision=None):
         if not 0 < time_limit <= 600:
@@ -111,11 +230,13 @@ class Store:
         job_id = str(uuid.uuid4())
         with self.transaction() as conn:
             snapshot = conn.execute(
-                "SELECT payload,revision FROM snapshots WHERE id=? AND owner=?",
+                "SELECT payload,revision,archived FROM snapshots WHERE id=? AND owner=?",
                 (id, owner),
             ).fetchone()
             if not snapshot:
                 raise KeyError(id)
+            if snapshot["archived"]:
+                raise Conflict("Archiviertes Projekt vor einer Berechnung wiederherstellen")
             if revision is not None and str(revision) != str(snapshot["revision"]):
                 raise Conflict("Snapshot revision changed; reload before calculation")
             active = conn.execute(
@@ -169,15 +290,38 @@ class Store:
     def get_job(self, id, owner):
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT * FROM jobs WHERE id=? AND owner=?", (id, owner)
+                """SELECT id,snapshot_id,state,created_at,started_at,finished_at,
+                parameters,result,error FROM jobs WHERE id=? AND owner=?""", (id, owner)
             ).fetchone()
         if not row:
             raise KeyError(id)
         data = dict(row)
-        data.pop("payload")
-        data.pop("owner")
         data["parameters"] = json.loads(data["parameters"])
         data["result"] = json.loads(data["result"]) if data["result"] else None
+        return data
+
+    def get_job_status(self, id, owner):
+        """Polling never reads a stored input or a possibly large result."""
+        with self.connect() as conn:
+            row = conn.execute(
+                """SELECT rowid,id,snapshot_id,state,created_at,started_at,finished_at,
+                parameters,error FROM jobs WHERE id=? AND owner=?""", (id, owner)
+            ).fetchone()
+            if not row:
+                raise KeyError(id)
+            queue_position = None
+            if row["state"] == "queued":
+                queue_position = conn.execute(
+                    """SELECT count(*) FROM jobs WHERE state='queued'
+                    AND (created_at<? OR (created_at=? AND rowid<=?))""",
+                    (row["created_at"], row["created_at"], row["rowid"]),
+                ).fetchone()[0]
+        data = dict(row)
+        data.pop("rowid")
+        data["parameters"] = json.loads(data["parameters"])
+        data["queue_position"] = queue_position
+        end = data["finished_at"] if data["finished_at"] is not None else time.time()
+        data["elapsed_seconds"] = max(0, end - data["started_at"]) if data["started_at"] is not None else 0
         return data
 
     def cancel(self, id, owner):

@@ -71,7 +71,7 @@ def test_partial_export_revalidates_and_recomputes_vacancies(tmp_path, suffix):
     else:
         from openpyxl import load_workbook
         workbook = load_workbook(target)
-        output = list(workbook.active.values)
+        output = list(workbook["Einteilungen"].values)
         workbook.close()
     assert output[1][2] == "Nicht vollständig"
     assert any(row[0] == snapshot.demands[0].id and str(row[1]) == str(snapshot.demands[0].minimum)
@@ -112,3 +112,42 @@ def test_export_checks_snapshot_identity(tmp_path):
     result.snapshot_id = "another-snapshot"
     with pytest.raises(ValueError, match="reference"):
         export_table(snapshot, result, tmp_path / "plan.csv")
+
+
+def test_workbook_calendar_balances_and_untrusted_names(tmp_path):
+    from openpyxl import load_workbook
+    from sp5generator.demo import make_demo
+    from sp5generator.domain import snapshot_hash
+    from sp5generator.export import export_table
+    from sp5generator.models import Assignment
+
+    snapshot = make_demo(days=2)
+    snapshot.assignments = []
+    snapshot.metadata["project_name"] = "=untrusted project"
+    employee = snapshot.employees[2]
+    employee.name = "=untrusted person"
+    employee.credit_minutes = 120
+    employee.balance_minutes = -60
+    result = incomplete_result(snapshot)
+    result.snapshot_hash = snapshot_hash(snapshot)
+    result.assignments = [Assignment(employee_id=employee.id, demand_id="d0-night-p0", fixed=True)]
+    path = tmp_path / "calendar.xlsx"
+    export_table(snapshot, result, path)
+    workbook = load_workbook(path)
+    assert workbook.sheetnames == ["Plan 2026-01", "Stundenübersicht", "Offene Stellen", "Einteilungen"]
+    calendar = workbook.active
+    assert calendar.freeze_panes == "B5"
+    assert calendar["A1"].data_type == "s"
+    assert calendar["A7"].value == "'=untrusted person"
+    assert "20:00–06:00 (+1)" in calendar["B7"].value
+    assert "20:00–06:00 (+1)" in calendar["C7"].value
+    assert calendar["B7"].fill.fgColor.rgb.endswith("EAEFFB")
+    balances = workbook["Stundenübersicht"]
+    assert balances["C7"].value == 10  # Midnight crossing is paid once.
+    assert balances["D7"].value == 2
+    assert balances["E7"].value == -1
+    assert balances["F7"].value == 11
+    assert balances["G7"].value == 2
+    assert balances["H7"].value == 1
+    assert all(cell.data_type != "f" for sheet in workbook for row in sheet for cell in row)
+    workbook.close()

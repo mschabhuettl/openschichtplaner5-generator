@@ -1,5 +1,5 @@
 include README.md LICENSE Dockerfile requirements.lock
-recursive-include docs *.md *.json
+recursive-include docs *.md *.json *.png
 recursive-include examples *.json
 recursive-include tools *.py
 recursive-include tests *.py
@@ -9,5 +9,5 @@ include compose.yaml requirements-web.lock
 
 include compose.portainer-dev.yaml
 
-include tests/browser/check.cjs tests/browser/package.json tests/browser/package-lock.json
+include tests/browser/check.cjs tests/browser/product-flows.cjs tests/browser/package.json tests/browser/package-lock.json
 prune tests/browser/node_modules

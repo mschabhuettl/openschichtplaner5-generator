@@ -24,7 +24,11 @@ from zipfile import ZipFile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = {f"sp5generator/static/{name}" for name in ("index.html", "app.js", "style.css")}
+ASSETS = {
+    path.relative_to(ROOT).as_posix()
+    for path in (ROOT / "sp5generator" / "static").rglob("*")
+    if path.is_file()
+}
 
 
 def require(condition, message):
@@ -85,8 +89,8 @@ def check_web(cli, cwd, env, version):
                 raise RuntimeError("Installed web server did not become healthy")
             actual = json.loads(request("/api/version"))
             require(actual["version"] == version, "Installed web version mismatch")
-            for path in ("/", "/static/app.js", "/static/style.css"):
-                require(len(request(path)) > 100, f"Missing installed web resource: {path}")
+            for path in ["/"] + ["/" + asset.removeprefix("sp5generator/") for asset in sorted(ASSETS)]:
+                require(len(request(path)) > 0, f"Missing installed web resource: {path}")
             snapshot = json.loads((cwd / "input.json").read_text())
             saved = json.loads(request("/api/snapshots", snapshot, "PUT"))
             job = json.loads(request("/api/jobs", {

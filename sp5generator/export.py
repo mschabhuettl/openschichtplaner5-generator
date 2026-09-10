@@ -118,20 +118,9 @@ def export_table(snapshot: Snapshot, result: Result, path: str | Path):
     result = result.model_copy(update={"validation": validation})
     path = Path(path)
     if path.suffix.lower() == ".xlsx":
-        from openpyxl import Workbook
-        from openpyxl.styles import Font
+        from .workbook import planning_workbook
 
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "Dienstplan"
-        for row in rows(snapshot, result):
-            sheet.append([safe_cell(v) for v in row])
-        sheet.freeze_panes = "C4"
-        for cell in sheet[3]:
-            cell.font = Font(bold=True)
-        for col in "ABCDEFGHIJ":
-            sheet.column_dimensions[col].width = 24
-        workbook.save(path)
+        planning_workbook(snapshot, result).save(path)
     elif path.suffix.lower() == ".csv":
         with path.open("w", encoding="utf-8-sig", newline="") as output:
             writer = csv.writer(output)

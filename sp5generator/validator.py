@@ -113,12 +113,34 @@ def weekly_windows(snapshot, profile, spans, employee=None):
                 yield anchor, finish_minute, required_at(anchor, finish_minute)
 
 
+class PreparedValidator:
+    """Repeated arithmetic checks against an isolated, unchanged snapshot.
+
+    A planning heuristic checks many proposals for the same input. Its private
+    copy lets us check input integrity once without accepting stale public
+    snapshots or trusting any of the solver's constraints.
+    """
+
+    def __init__(self, snapshot):
+        self._snapshot = snapshot.model_copy(deep=True)
+        self._input_errors = input_diagnostics(self._snapshot)
+
+    def validate(self, assignments):
+        return _validate(self._snapshot, assignments, self._input_errors)
+
+
 def validate(snapshot, assignments):
+    return _validate(snapshot, assignments)
+
+
+def _validate(snapshot, assignments, input_errors=None):
     if len(assignments) > MAX_ASSIGNMENTS:
         return Validation(valid=False, complete=False, diagnostics=[Diagnostic(
             code="size_limit", message="Höchstens 5000 Einteilungen pro Prüfung sind unterstützt."
         )])
-    errors = input_diagnostics(snapshot)
+    errors = (
+        input_diagnostics(snapshot) if input_errors is None else list(input_errors)
+    )
     if errors:
         return Validation(valid=False, complete=False, diagnostics=errors)
     employees = {e.id: e for e in snapshot.employees}
