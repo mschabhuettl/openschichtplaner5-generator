@@ -35,6 +35,12 @@ Diese Browserprüfung verwendete eine isolierte synthetische Testanmeldung und n
 
 Die eigenständige Weboberfläche wurde zusätzlich mit Chromium auf Desktop und 390-Pixel-Breite geprüft: Demo bearbeiten, speichern, berechnen, unabhängig prüfen, fixieren und neu berechnen; außerdem frisch synthetisiertes DBF-Stammverzeichnis prüfen, Team wählen, importieren, historischen Freigabevorschlag ausdrücklich bestätigen und speichern. Keine JavaScript-Fehler oder horizontalen Seitenüberläufe. Drei zusätzliche Webtests und vier Verzeichnisimporttests bestehen.
 
+## Container und eigenständiges Paket
+
+Version 0.1.1 wurde als Wheel und Quellarchiv gebaut und deren Dateiinhalte geprüft. Eine frische Wheel-Installation mit den Extras `web,sp5` startete die enthaltene Oberfläche und einen echten Worker außerhalb des Checkouts; die Demo ergab 56 vollständige, unabhängig gültige Einteilungen.
+
+Der [Containerlauf für Commit 352b1b3](https://github.com/mschabhuettl/openschichtplaner5-generator/actions/runs/34527690138) hat das Linux-amd64-Image gebaut, die CLI-Berechnung und unabhängige Validierung mit `--network none` sowie den HTTP-Webstart erfolgreich geprüft. Das Image wird als herunterladbares Workflow-Artefakt mit Prüfsumme bereitgestellt, nicht in einer Containerregistry veröffentlicht.
+
 ## Benchmark
 
 Der synthetische Lauf mit 120 Personen über 31 Tage umfasst 62 Schichten,
@@ -56,7 +62,7 @@ behandelt. Der Benchmark ist kein universelles Laufzeitversprechen.
 
 ## Tatsächliche Grenzen
 
-- Der Container wird separat durch den GitHub-Workflow gebaut und geprüft; dessen konkreter Laufstatus ist maßgeblich. Lokal ist keine Containerlaufzeit verfügbar.
+- Lokal ist keine Containerlaufzeit verfügbar; die Containerprüfung erfolgt auf GitHub Actions.
 - Native SP5-Gesamtübernahme nicht implementiert; Zusatzregeln und bestehende Writer haben noch keine gemeinsame Transaktionsgrenze.
 - Bedarfskombinationen und Sonderwerte aus SP5 benötigen belegte fachliche Klärung. Ungeklärte Imports sind nicht freigabefähig.
 - Erweiterte UI-Regeln teilweise als strukturierter JSON-Editor, Detailtexte derzeit deutsch.
