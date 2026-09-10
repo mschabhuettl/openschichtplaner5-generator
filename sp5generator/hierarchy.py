@@ -53,3 +53,18 @@ def selected_group_ids(groups, root):
         if int(group["parent_id"]) in selected:
             selected.add(int(group["id"]))
     return [int(g["id"]) for g in tree if int(g["id"]) in selected]
+
+
+def resolve_group_selection(groups, team_id=None, team_ids=None):
+    """Exact checkbox IDs, or legacy recursive single-team selection."""
+    if team_ids is None:
+        if team_id is None:
+            raise ValueError("Mindestens eine sichtbare Gruppe auswählen.")
+        return selected_group_ids(groups, team_id)
+    if team_id is not None:
+        raise ValueError("team_id und team_ids nicht gleichzeitig angeben.")
+    tree = group_tree(groups)
+    selected = {int(str(g).removeprefix("sp5:group:")) for g in team_ids}
+    if not selected or not selected <= {int(g["id"]) for g in tree}:
+        raise ValueError("Mindestens eine sichtbare Gruppe auswählen; unbekannte IDs sind nicht erlaubt.")
+    return [int(g["id"]) for g in tree if int(g["id"]) in selected]

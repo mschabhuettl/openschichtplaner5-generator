@@ -6,7 +6,7 @@ from hashlib import sha256
 import json
 from zoneinfo import ZoneInfo
 
-from .hierarchy import group_tree, selected_group_ids
+from .hierarchy import group_tree, resolve_group_selection
 
 from .models import (
     Employee,
@@ -60,7 +60,8 @@ def _local(day, minute, zone):
 
 
 def import_snapshot(
-    db, period_start: date, period_end: date, team_id: str, timezone: str
+    db, period_start: date, period_end: date, team_id: str | None = None,
+    timezone: str = "Europe/Vienna", team_ids: list[str] | None = None
 ) -> Snapshot:
     """Read from an explicitly supplied library database; never writes or opens a default source.
 
@@ -72,9 +73,9 @@ def import_snapshot(
     if period_end < period_start:
         raise ValueError("Ungültiger Zeitraum")
     zone = ZoneInfo(timezone)
-    native_team = int(team_id.removeprefix("sp5:group:"))
-    groups = db.get_groups() if hasattr(db, "get_groups") else [{"ID": native_team}]
-    scope = selected_group_ids(groups, native_team)
+    groups = db.get_groups() if hasattr(db, "get_groups") else [{"ID": int(str(team_id).removeprefix("sp5:group:"))}]
+    scope = resolve_group_selection(groups, team_id, team_ids)
+    native_team = scope[0]
     context_start, context_end = (
         period_start - timedelta(days=31),
         period_end + timedelta(days=31),
@@ -315,8 +316,8 @@ def import_snapshot(
                     pid = f"sp5:context-position:{row.get('workplace_id') or 'unresolved'}"
                     positions[pid] = Position(
                         id=pid,
-                        name="Übernommener Dienst",
-                        function_id=pid,
+                        name=native_workplaces.get(row.get("workplace_id"), {}).get("NAME") or "Arbeitsplatz ungeklärt",
+                        function_id=f"sp5:function:{row['workplace_id']}" if row.get("workplace_id") in native_workplaces else pid,
                         workplace_id=f"sp5:workplace:{row.get('workplace_id') or 'unresolved'}",
                         qualifications_required=True,
                     )
@@ -506,6 +507,8 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
         raise ValueError("Historische Plansicht muss ist, soll oder both sein.")
     employees = {e.id: e for e in snapshot.employees}
     shifts = {str(s["ID"]): s for s in db.get_shifts(include_hidden=True)}
+    workplaces = {str(w["ID"]): w for w in db.get_workplaces(include_hidden=True)}
+    position_ids = {p.id for p in snapshot.positions}
     by_employee = {
         eid: {
             "employee_id": eid,
@@ -571,6 +574,17 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
             observation["last_date"] = max(observation["last_date"], str(day))
             if wid not in (None, 0, "0", ""):
                 item["approvals"][str(wid)] += 1
+                pid = f"sp5:position:{wid}"
+                if pid not in position_ids:
+                    snapshot.positions.append(Position(
+                        id=pid,
+                        name=workplaces.get(str(wid), {}).get("NAME") or f"Arbeitsplatz {wid}",
+                        function_id=f"sp5:function:{wid}",
+                        workplace_id=f"sp5:workplace:{wid}",
+                        qualifications_required=True,
+                    ))
+                    position_ids.add(pid)
+                    snapshot.metadata.setdefault("historical_only_position_ids", []).append(pid)
         month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
     output = []
     for item in by_employee.values():
@@ -600,28 +614,25 @@ def import_directory(
     directory,
     period_start,
     period_end,
-    team_id,
-    timezone,
+    team_id=None,
+    timezone="Europe/Vienna",
     history_start=None,
     history_end=None,
     history_plan="ist",
+    team_ids=None,
 ):
     """Explicit local directory import with change detection and matrix suggestions."""
     if (period_end - period_start).days > 366:
         raise ValueError("Planungszeitraum auf höchstens 366 Tage begrenzen.")
     db, files = _source_database(directory)
     before = _source_fingerprint(files)
-    native_team = int(str(team_id).removeprefix("sp5:group:"))
-    if native_team not in {g["ID"] for g in db.get_groups()}:
-        raise ValueError("Die ausgewählte Gruppe existiert nicht in der Quelle.")
-    snapshot = import_snapshot(db, period_start, period_end, str(native_team), timezone)
+    snapshot = import_snapshot(db, period_start, period_end, team_id, timezone, team_ids=team_ids)
     history_end = history_end or period_start - timedelta(days=1)
     history_start = history_start or history_end - timedelta(days=89)
     if history_end >= period_start:
         raise ValueError(
             "Die historische Basis muss vor dem neuen Planungszeitraum enden."
         )
-    snapshot.metadata["selected_team_id"] = str(native_team)
     snapshot.metadata["history_matrix"] = historical_matrix(
         db, snapshot, history_start, history_end, history_plan
     )

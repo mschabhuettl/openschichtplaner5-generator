@@ -11,7 +11,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 from uuid import uuid4
 
 from .sp5_adapter import historical_matrix, import_snapshot
-from .hierarchy import selected_group_ids, group_tree
+from .hierarchy import resolve_group_selection, group_tree
 
 
 class APIImportError(ValueError):
@@ -106,6 +106,7 @@ class APIClient:
 class _Database:
     def __init__(self, client, team):
         self.client, self.team = client, team
+        self.scope = None
 
     def rows(self, path, **params):
         rows = self.client.get(path, **params)
@@ -123,7 +124,7 @@ class _Database:
         return [r["ID"] for r in self.rows(f"/api/groups/{group}/members")]
 
     def get_employee_groups(self, employee):
-        return [g for g in selected_group_ids(self.get_groups(), self.team)
+        return [g for g in (self.scope if self.scope is not None else resolve_group_selection(self.get_groups(), self.team))
                 if employee in self.get_group_members(g)]
 
     def get_holidays(self):
@@ -178,11 +179,12 @@ def inspect_api():
 def import_api(
     period_start,
     period_end,
-    team_id,
-    timezone,
+    team_id=None,
+    timezone="Europe/Vienna",
     history_start=None,
     history_end=None,
     history_plan="ist",
+    team_ids=None,
 ):
     """Read canonical snapshots and explicit history proposals through the existing API."""
     if not 0 <= (period_end - period_start).days <= 366:
@@ -198,18 +200,18 @@ def import_api(
     if history_plan not in ("ist", "soll", "both"):
         raise APIImportError("Historische Plansicht muss ist, soll oder both sein.")
     try:
-        team = int(str(team_id).removeprefix("sp5:group:"))
         client = APIClient()
         client.authorize()
-        db = _Database(client, team)
-        if team not in {g["ID"] for g in db.get_groups()}:
-            raise APIImportError("Ausgewählte Gruppe ist nicht zugänglich.")
-        members = {eid for gid in selected_group_ids(db.get_groups(), team) for eid in db.get_group_members(gid)}
+        db = _Database(client, None)
+        scope = resolve_group_selection(db.get_groups(), team_id, team_ids)
+        team = db.team = scope[0]
+        db.scope = scope
+        members = {eid for gid in scope for eid in db.get_group_members(gid)}
         if not members <= {e["ID"] for e in db.get_employees()}:
             raise APIImportError(
                 "API-Personensicht ist für die ausgewählte Gruppe unvollständig."
             )
-        snapshot = import_snapshot(db, period_start, period_end, str(team), timezone)
+        snapshot = import_snapshot(db, period_start, period_end, timezone=timezone, team_ids=[str(g) for g in scope])
         matrix = historical_matrix(
             db, snapshot, history_start, history_end, history_plan
         )
@@ -238,7 +240,7 @@ def import_api(
         [
             "API-Zusatzdaten für Verfügbarkeit, Skills und Arbeitszeitregeln sind noch nicht kanonisch zugeordnet; bestehende Regeln lokal prüfen und ergänzen.",
             "API-Sichtbarkeit, Cache-Aktualität und Vollständigkeit einschließlich angrenzender Dienste lokal bestätigen; wiederholte Antworten ersetzen keine Quelltransaktion.",
-            "Mitgliedschaften im ausgewählten Team und seinen Unterteams wurden übernommen; Zuordnungen außerhalb dieses Teilbaums gegebenenfalls ergänzen.",
+            "Mitgliedschaften in den ausgewählten Gruppen wurden übernommen; Zuordnungen außerhalb dieser Auswahl gegebenenfalls ergänzen.",
         ]
     )
     snapshot.id = "sp5:api-import:" + str(uuid4())

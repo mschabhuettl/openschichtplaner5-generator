@@ -7,8 +7,10 @@ services:
       SP5_API_URL: "http://${API_IP}:5005"
       SP5_API_DEV_MODE: "true"
       SP5_WEB_ALLOWED_HOSTS: "${GENERATOR_IP}"
-    volumes:
-      - generator_state:/state
+    tmpfs:
+      - /state:uid=10001,gid=10001,mode=0700
+      - /tmp
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
-volumes:
-  generator_state:

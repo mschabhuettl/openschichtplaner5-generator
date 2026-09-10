@@ -22,7 +22,8 @@ from .models import Snapshot, Assignment, Result
 class ApiImportRequest(BaseModel):
     period_start: date
     period_end: date
-    team_id: str
+    team_id: str | None = None
+    team_ids: list[str] | None = None
     timezone: str
     history_plan: Literal['ist', 'soll', 'both'] = 'ist'
     history_start: date | None = None

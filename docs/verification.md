@@ -9,7 +9,7 @@ python -m pytest -q
 python tools/benchmark.py --employees 120 --days 31 --time-limit 45
 ```
 
-Der Generator-Testlauf bestand mit 71 Tests. Abgedeckt sind unter anderem Freigaben, Qualifikation/RESTR, Betreuungskapazität, Teilplanung, harte Dienstartgrenzen versus Wünsche, Ruhegrenzen, rollierende und Kalenderwochenruhe, Randkontext, Profilwechsel, mehrteilige Dienste, Zeitumstellung, korrumpierte Ergebnisse und ein vollständig enumerierter kleiner Referenzfall. Jobtests prüfen Revisionen, Benutzerisolation, tatsächlichen Workerprozess, Abbruch, Wiederanlauf, konkurrierende idempotente Übernahme und Rückabwicklung bei injiziertem Auditfehler.
+Der Generator-Testlauf bestand mit 74 Tests. Abgedeckt sind unter anderem Freigaben, Qualifikation/RESTR, Betreuungskapazität, Teilplanung, harte Dienstartgrenzen versus Wünsche, Ruhegrenzen, rollierende und Kalenderwochenruhe, Randkontext, Profilwechsel, mehrteilige Dienste, Zeitumstellung, korrumpierte Ergebnisse und ein vollständig enumerierter kleiner Referenzfall. Jobtests prüfen Revisionen, Benutzerisolation, tatsächlichen Workerprozess, Abbruch, Wiederanlauf, konkurrierende idempotente Übernahme und Rückabwicklung bei injiziertem Auditfehler.
 
 Der Adapter ist sowohl gegen neue synthetische Fassadenstrukturen als auch über frisch erzeugte minimale dBASE-Dateien mit `sp5lib`-Schreib-/Lesefunktionen geprüft. Die minimalen Testtabellen sind keine Behauptung vollständiger Originalformatparität. Ungeklärte Originalsemantik bleibt gesondert blockierend dokumentiert.
 
@@ -77,3 +77,7 @@ behandelt. Der Benchmark ist kein universelles Laufzeitversprechen.
 ## Teamhierarchie
 
 Fünf synthetische Hierarchietests und ein HTTP-Regressionstest prüfen `SUPERID`, verschachtelte Unterteams, Elternteams ohne direkte Mitglieder, Mehrfachmitgliedschaften, bedarfsspezifische Gruppenzuordnung, unvervielfachte Historie und fehlerhafte Zyklen. Chromium importierte über einen lokalen synthetischen HTTP-Server einen Elternknoten mit zwei Unterteam-Ebenen: eine Person mit zwei Mitgliedschaften erscheint einmal, ihre Teams sind sichtbar. Desktop und schmale Ansicht ohne JavaScript-Fehler oder Seitenüberlauf.
+
+## Mehrfachauswahl und Tabellenoberfläche
+
+Exakte Teamlisten, Legacy-Einzelauswahl und historische Funktionen ohne zusätzlichen Bedarf sind mit synthetischen Regressionen geprüft. Der automatisierte Chromium-Ablauf prüft ausgeblendete Unterteams, mehrfach zugeordnete Personen, historische Vorschläge, Achsentausch, Speichern, zeitlich begrenzte und betreute Freigaben, beide Monatsansichten sowie Fixierung und Neuberechnung mit echtem Worker. Die Prüfungen laufen vor der Image-Veröffentlichung im Container-Workflow. Anleitung: [Matrix und Monatsplan](matrix-and-monthly-plan.md).

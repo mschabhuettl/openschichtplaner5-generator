@@ -11,3 +11,5 @@ dist/
 compose.override.yaml
 secrets/
 generator-state/
+
+node_modules/

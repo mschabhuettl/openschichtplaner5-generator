@@ -43,10 +43,10 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
 Browser: `http://127.0.0.1:8080`. Kein separates Frontend oder SP5-API-Projekt nötig.
-SP5-Stammverzeichnis oder konfigurierte SP5-API laden, Team/Zeitraum auswählen und aus bisherigen Einteilungen
+SP5-Stammverzeichnis oder konfigurierte SP5-API laden, Teams im Auswahlbaum an-/abwählen und den Zeitraum festlegen und aus bisherigen Einteilungen
 unbestätigte Matrixvorschläge erzeugen. Freigaben, Verfügbarkeiten, Profile und
 Dienstarten bleiben bearbeitbar; Historie ersetzt keine Qualifikationsnachweise.
-Originaldateien werden nur gelesen. [Bedienung und Import](docs/standalone-web.md).
+Originaldateien werden nur gelesen. Die Excel-artige Personen-/Funktionsmatrix lässt sich transponieren; Ergebnisse erscheinen als Monatsplan nach Personen oder Funktionen. [Matrix und Monatsplan](docs/matrix-and-monthly-plan.md), [Bedienung und Import](docs/standalone-web.md).
 
 ## Docker
 
