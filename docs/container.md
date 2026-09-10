@@ -13,6 +13,18 @@ Die Weboberfläche liegt unter `http://127.0.0.1:8080`. Das benannte Volume `gen
 
 Das Image heißt `ghcr.io/mschabhuettl/openschichtplaner5-generator:latest` und wird für `linux/amd64` gebaut. Für einen reproduzierbaren Stand kann in Compose stattdessen der Tag `sha-<vollständige Commit-ID>` oder der Digest verwendet werden. `latest` wird nur nach erfolgreichen Containerprüfungen auf `main` aktualisiert.
 
+### Registry-Zugriff
+
+GitHub legt neue Containerpakete zunächst privat an, unabhängig von der Repository-Sichtbarkeit. Solange das Paket nicht öffentlich freigegeben ist, ist vor `docker compose pull` eine lokale Anmeldung an `ghcr.io` mit einem GitHub-Token mit `read:packages` erforderlich. Dies ist ein anderer Zugang als das SP5-Sitzungstoken. Ein bereits in Docker konfigurierter GitHub-Zugang kann weiterverwendet werden.
+
+Eine lokale Datei mit dem Registry-Token kann ohne Token im Befehlsargument verwendet werden:
+
+```sh
+docker login ghcr.io --username mschabhuettl --password-stdin < /pfad/zur/lokalen/github-token-datei
+```
+
+Alternativ kann der Eigentümer in den [Paketeinstellungen](https://github.com/users/mschabhuettl/packages/container/openschichtplaner5-generator/settings) die Sichtbarkeit auf Public setzen; dann ist kein Registry-Login nötig. Dies ist von den Einstellungen des Quellrepositories getrennt. Siehe [GitHub-Dokumentation zur Paketsichtbarkeit](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+
 ## Interne SP5-API verbinden
 
 Die API muss aus dem Container erreichbar sein. `localhost` im Container bezeichnet den Container selbst, nicht den Docker-Host. Verwende die tatsächlich konfigurierte interne Adresse; es ist kein öffentlicher API-Endpunkt erforderlich.
@@ -23,7 +35,7 @@ Die Basis-URL kann in einer **lokalen, nicht versionierten** `.env` neben Compos
 SP5_API_URL=http://192.0.2.10:8000
 ```
 
-Die Beispieladresse ist ein Dokumentationsplatzhalter und muss ersetzt werden. Zugangstoken nicht in `.env`, Compose, Kommandozeilen oder URLs schreiben. Falls die API einen Token erfordert, lege ihn lokal in einer nur für den Betreiber zugänglichen Datei ab und ergänze eine lokale `compose.override.yaml`:
+Die Beispieladresse ist ein Dokumentationsplatzhalter und muss ersetzt werden. Zugangstoken nicht in `.env`, Compose, Kommandozeilen oder URLs schreiben. Für die API-Anmeldung lege das gültige Sitzungstoken lokal in einer nur für den Betreiber zugänglichen Datei ab und ergänze eine lokale `compose.override.yaml`:
 
 ```yaml
 services:

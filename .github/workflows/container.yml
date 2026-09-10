@@ -51,6 +51,8 @@ jobs:
           docker tag openschichtplaner5-generator:local "$IMAGE:sha-$GITHUB_SHA"
           docker push "$IMAGE:sha-$GITHUB_SHA"
           docker push "$IMAGE:latest"
+          docker pull "$IMAGE:sha-$GITHUB_SHA"
+          docker run --rm --network none "$IMAGE:sha-$GITHUB_SHA" --help > /dev/null
       - name: Save Docker image
         run: |
           docker save openschichtplaner5-generator:local | gzip > openschichtplaner5-generator-linux-amd64.tar.gz
