@@ -61,7 +61,8 @@ def _local(day, minute, zone):
 
 def import_snapshot(
     db, period_start: date, period_end: date, team_id: str | None = None,
-    timezone: str = "Europe/Vienna", team_ids: list[str] | None = None
+    timezone: str = "Europe/Vienna", team_ids: list[str] | None = None,
+    existing_plan_mode: str = "reference",
 ) -> Snapshot:
     """Read from an explicitly supplied library database; never writes or opens a default source.
 
@@ -72,6 +73,8 @@ def import_snapshot(
 
     if period_end < period_start:
         raise ValueError("Ungültiger Zeitraum")
+    if existing_plan_mode not in ("reference", "fixed"):
+        raise ValueError("Bestehender Plan: Modus muss reference oder fixed sein.")
     zone = ZoneInfo(timezone)
     groups = db.get_groups() if hasattr(db, "get_groups") else [{"ID": int(str(team_id).removeprefix("sp5:group:"))}]
     scope = resolve_group_selection(groups, team_id, team_ids)
@@ -90,6 +93,8 @@ def import_snapshot(
         "provenance": {},
         "unresolved_native": {},
         "context_schedule": [],
+        "existing_plan_mode": existing_plan_mode,
+        "reference_schedule": [],
         "service_matrix_version": 1,
         "selected_team_id": str(native_team),
         "selected_group_ids": scope,
@@ -127,14 +132,42 @@ def import_snapshot(
             "DADEM: Verhältnis zum Schichtbedarf und Zeitfenster noch zu klären."
         )
         metadata["unresolved_native"]["daily_requirements"] = daily
-    if specials:
-        unresolved.append(
-            "SPDEM: Vorrang gegenüber regelmäßigem Bedarf noch zu klären."
-        )
-        metadata["unresolved_native"]["special_requirements"] = specials
+    special_cells = {}
+    for row in specials:
+        if any(row.get(k) is None for k in ("group_id", "shift_id", "workplace_id", "min", "max")):
+            unresolved.append("SPDEM: Unvollständige Bedarfsangabe.")
+            metadata["unresolved_native"].setdefault("special_requirements", []).append(row)
+            continue
+        day = calc.to_date(row.get("date"))
+        if day is None:
+            unresolved.append("SPDEM: Ungültiges Datum.")
+            continue
+        if not period_start <= day <= period_end:
+            continue
+        key = (row.get("group_id"), day, row.get("shift_id"))
+        special_cells.setdefault(key, []).append({**row, "_date": day.isoformat(), "_source": "SPDEM"})
+    for key, values in special_cells.items():
+        if len(values) > 1:
+            unresolved.append("SPDEM: Mehrdeutiger tagesbezogener Bedarf; lokal auflösen.")
+            metadata["unresolved_native"].setdefault("special_requirements", []).extend({k: v for k, v in r.items() if not k.startswith("_")} for r in values)
     employees = []
+    parents = {int(g["id"]): int(g["parent_id"]) for g in metadata["group_tree"]}
+    metadata["direct_group_memberships"] = {}
     for e in source_employees:
         eid = f"sp5:employee:{e['ID']}"
+        direct_groups = set(db.get_employee_groups(e["ID"]))
+        effective_groups = set(direct_groups)
+        for group in direct_groups:
+            parent = parents.get(group, 0)
+            while parent:
+                if parent in scope:
+                    effective_groups.add(parent)
+                parent = parents.get(parent, 0)
+        metadata["direct_group_memberships"][eid] = sorted(direct_groups)
+        if effective_groups != direct_groups:
+            message = "Übergeordnete ausgewählte Teams umfassen die geladenen Unterteammitglieder; Einsatzbereich bestätigen."
+            if message not in unresolved:
+                unresolved.append(message)
         ctx = calc.EmployeeContext.from_record(e)
         target = calc.get_nominal_hours(
             ctx, period_start, period_end, holidays=holidays
@@ -145,7 +178,7 @@ def import_snapshot(
                 name=" ".join(
                     str(e.get(k) or "").strip() for k in ("FIRSTNAME", "NAME")
                 ).strip(),
-                team_ids=[f"sp5:group:{g}" for g in db.get_employee_groups(e["ID"])],
+                team_ids=[f"sp5:group:{g}" for g in sorted(effective_groups)],
                 employment_start=calc.to_date(e.get("EMPSTART")) or date.min,
                 employment_end=calc.to_date(e.get("EMPEND")) or date.max,
                 profile_ids=["sp5:unconfirmed"],
@@ -162,7 +195,7 @@ def import_snapshot(
     )
     employee_map = {e.id: e for e in employees}
     shifts, positions, demands, restrictions, assignments = {}, {}, [], [], []
-    rows = requirements.get("shift_requirements", [])
+    rows = list(requirements.get("shift_requirements", [])) + [values[0] for values in special_cells.values() if len(values) == 1]
     for row in rows:
         gid = row.get("group_id")
         if gid not in (*scope, 0, None):
@@ -208,7 +241,9 @@ def import_snapshot(
         d = period_start
         while d <= period_end:
             idx = calc.day_index(d, holidays)
-            if idx == row.get("weekday"):
+            cell = (gid, d, sid)
+            applies = (d.isoformat() == row["_date"]) if "_date" in row else (idx == row.get("weekday") and cell not in special_cells)
+            if applies:
                 shift_id = f"sp5:shift:{sid}:{d.isoformat()}" + (
                     f":group:{gid}" if len(scope) > 1 else ""
                 )
@@ -238,12 +273,12 @@ def import_snapshot(
                     )
                     demands.append(
                         Demand(
-                            id=f"sp5:demand:{row['id']}:{d}",
+                            id=f"sp5:demand:{row.get('_source', 'SHDEM')}:{row['id']}:{d}",
                             shift_id=shift_id,
                             position_id=position_id,
                             minimum=row["min"],
                             maximum=None if row["max"] == -1 else row["max"],
-                            source="sp5:SHDEM",
+                            source=f"sp5:{row.get('_source', 'SHDEM')}",
                         )
                     )
                 except ValueError as exc:
@@ -285,6 +320,7 @@ def import_snapshot(
                 k: row.get(k)
                 for k in (
                     "employee_id",
+                    "group_id",
                     "date",
                     "kind",
                     "shift_id",
@@ -318,6 +354,42 @@ def import_snapshot(
                 except ValueError as exc:
                     unresolved.append(f"ABSEN {eid} {d}: {exc}")
             elif kind == "shift" and row.get("shift_id") in native_shifts:
+                if period_start <= d <= period_end:
+                    # A baseline must reference actual demand, never create it.
+                    member_teams = set(employee_map[eid].team_ids) & {
+                        f"sp5:group:{g}" for g in scope
+                    }
+                    explicit_group = row.get("group_id")
+                    if explicit_group not in (None, 0, "", "0"):
+                        member_teams &= {f"sp5:group:{explicit_group}"}
+                    wid = row.get("workplace_id")
+                    candidates = [
+                        demand for demand in demands
+                        if demand.source in ("sp5:SHDEM", "sp5:SPDEM")
+                        and shifts[demand.shift_id].segments[0].start.date() == d
+                        and shifts[demand.shift_id].team_id in member_teams
+                        and positions[demand.position_id].function_id == f"sp5:service:{row['shift_id']}"
+                        and (wid in (None, "") or positions[demand.position_id].workplace_id
+                             in {f"sp5:workplace:{wid}", "sp5:workplace:0"})
+                        and demand.maximum != 0
+                    ]
+                    reference = {**safe, "candidate_demand_ids": [v.id for v in candidates]}
+                    metadata["reference_schedule"].append(reference)
+                    if len(candidates) == 1:
+                        reference["demand_id"] = candidates[0].id
+                        assignment = Assignment(
+                            employee_id=eid, demand_id=candidates[0].id,
+                            fixed=existing_plan_mode == "fixed",
+                        )
+                        if assignment not in assignments:
+                            assignments.append(assignment)
+                    else:
+                        reference["resolution"] = "unmatched" if not candidates else "ambiguous"
+                        metadata["unresolved_native"].setdefault("reference_schedule", []).append(reference)
+                        unresolved.append(
+                            f"Bestehender Dienst {eid} {d}: keine eindeutige Zuordnung zum tatsächlichen Besetzungsbedarf."
+                        )
+                    continue
                 native = native_shifts[row["shift_id"]]
                 idx = calc.day_index(d, holidays)
                 try:
@@ -641,13 +713,17 @@ def import_directory(
     history_end=None,
     history_plan="ist",
     team_ids=None,
+    existing_plan_mode="reference",
 ):
     """Explicit local directory import with change detection and matrix suggestions."""
     if (period_end - period_start).days > 366:
         raise ValueError("Planungszeitraum auf höchstens 366 Tage begrenzen.")
     db, files = _source_database(directory)
     before = _source_fingerprint(files)
-    snapshot = import_snapshot(db, period_start, period_end, team_id, timezone, team_ids=team_ids)
+    snapshot = import_snapshot(
+        db, period_start, period_end, team_id, timezone, team_ids=team_ids,
+        existing_plan_mode=existing_plan_mode,
+    )
     history_end = history_end or period_start - timedelta(days=1)
     history_start = history_start or history_end - timedelta(days=89)
     if history_end >= period_start:

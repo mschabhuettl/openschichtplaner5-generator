@@ -102,5 +102,6 @@ def test_api_exact_selection_does_not_query_excluded_subtree(monkeypatch):
     snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), timezone="UTC", team_ids=["1", "3"])
     assert snapshot.metadata["selected_group_ids"] == [1, 3]
     assert len(snapshot.employees) == 1
-    assert snapshot.employees[0].team_ids == ["sp5:group:3"]
+    assert snapshot.employees[0].team_ids == ["sp5:group:1", "sp5:group:3"]
+    assert snapshot.metadata["direct_group_memberships"]["sp5:employee:101"] == [3]
     assert snapshot.metadata["history_period"] == {"start": "2025-10-08", "end": "2026-01-05"}

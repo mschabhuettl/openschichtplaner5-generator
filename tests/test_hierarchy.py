@@ -82,7 +82,7 @@ def test_parent_import_includes_children_preserves_demand_teams_and_deduplicates
     db = TreeDatabase()
     snapshot = import_snapshot(db, date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
     assert len(snapshot.employees) == 1
-    assert snapshot.employees[0].team_ids == ["sp5:group:2", "sp5:group:3"]
+    assert snapshot.employees[0].team_ids == ["sp5:group:1", "sp5:group:2", "sp5:group:3"]
     regular = [s for s in snapshot.shifts if s.source == "sp5:SHIFT"]
     assert {s.team_id for s in regular} == {"sp5:group:2", "sp5:group:3"}
     assert len(snapshot.assignments) == 1

@@ -185,6 +185,7 @@ def import_api(
     history_end=None,
     history_plan="ist",
     team_ids=None,
+    existing_plan_mode="reference",
 ):
     """Read canonical snapshots and explicit history proposals through the existing API."""
     if not 0 <= (period_end - period_start).days <= 366:
@@ -211,7 +212,7 @@ def import_api(
             raise APIImportError(
                 "API-Personensicht ist für die ausgewählte Gruppe unvollständig."
             )
-        snapshot = import_snapshot(db, period_start, period_end, timezone=timezone, team_ids=[str(g) for g in scope])
+        snapshot = import_snapshot(db, period_start, period_end, timezone=timezone, team_ids=[str(g) for g in scope], existing_plan_mode=existing_plan_mode)
         matrix = historical_matrix(
             db, snapshot, history_start, history_end, history_plan
         )

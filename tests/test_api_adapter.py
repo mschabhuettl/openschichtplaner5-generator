@@ -196,7 +196,7 @@ def test_parent_team_imports_nested_people_without_duplicates(transport):
     responses['/api/staffing-requirements']['shift_requirements'][0]['group_id'] = 2
     snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC', date(2026, 1, 1), date(2026, 1, 5))
     assert len(snapshot.employees) == 1
-    assert set(snapshot.employees[0].team_ids) == {'sp5:group:2', 'sp5:group:3'}
+    assert set(snapshot.employees[0].team_ids) == {'sp5:group:1', 'sp5:group:2', 'sp5:group:3'}
     regular = [d for d in snapshot.demands if d.source == 'sp5:SHDEM']
     assert len(regular) == 1
     assert next(s for s in snapshot.shifts if s.id == regular[0].shift_id).team_id == 'sp5:group:2'

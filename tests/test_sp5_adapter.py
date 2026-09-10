@@ -207,3 +207,129 @@ def test_explicit_zero_and_unbounded_staffing_without_workplace():
     assert s.positions[0].workplace_id == 'sp5:workplace:0'
     assert any('Importinterpretation bestätigen' in message for message in s.unresolved)
     assert s.metadata['provenance']['sp5:requirement:501']['native_max'] == -1
+
+
+class ExistingPlanDatabase(SyntheticDatabase):
+    def get_schedule(self, year, month, **kw):
+        if (year, month) != (2026, 1):
+            return []
+        return [{"employee_id": 101, "date": "2026-01-06", "kind": "shift",
+                 "shift_id": 201, "workplace_id": 301}]
+
+
+@pytest.mark.parametrize("mode,fixed", [("reference", False), ("fixed", True)])
+def test_existing_plan_maps_actual_demand_without_duplicate_staffing(mode, fixed):
+    snapshot = import_snapshot(ExistingPlanDatabase(), date(2026, 1, 1), date(2026, 1, 31),
+                               "1", "UTC", existing_plan_mode=mode)
+    assert len(snapshot.demands) == 1
+    assert len(snapshot.assignments) == 1
+    assert snapshot.assignments[0].demand_id == snapshot.demands[0].id
+    assert snapshot.assignments[0].fixed is fixed
+    assert all(d.source == "sp5:SHDEM" for d in snapshot.demands)
+    assert snapshot.metadata["reference_schedule"][0]["demand_id"] == snapshot.demands[0].id
+
+
+def test_default_existing_plan_is_nonfixed_reference():
+    snapshot = import_snapshot(ExistingPlanDatabase(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.assignments[0].fixed
+    with pytest.raises(ValueError, match="reference"):
+        import_snapshot(ExistingPlanDatabase(), date(2026, 1, 6), date(2026, 1, 6),
+                        "1", "UTC", existing_plan_mode="unknown")
+
+
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_unmatched_or_ambiguous_reference_never_fabricates_demand(ambiguous):
+    class Source(ExistingPlanDatabase):
+        def get_staffing_requirements(self):
+            row = super().get_staffing_requirements()["shift_requirements"][0]
+            return {"shift_requirements": [row, {**row, "id": 402}] if ambiguous else []}
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.assignments
+    assert len(snapshot.demands) == (2 if ambiguous else 0)
+    reference = snapshot.metadata["unresolved_native"]["reference_schedule"][0]
+    assert reference["resolution"] == ("ambiguous" if ambiguous else "unmatched")
+    assert reference["shift_id"] == 201
+
+
+@pytest.mark.parametrize("workplace", [None, 0, 301])
+def test_reference_can_match_unbound_demand(workplace):
+    class Source(ExistingPlanDatabase):
+        def get_staffing_requirements(self):
+            result = super().get_staffing_requirements()
+            result["shift_requirements"][0]["workplace_id"] = 0
+            return result
+        def get_schedule(self, year, month, **kw):
+            return [{**row, "workplace_id": workplace}
+                    for row in super().get_schedule(year, month, **kw)]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.assignments) == 1
+    assert len(snapshot.demands) == 1
+
+
+@pytest.mark.parametrize("explicit_group", [None, 2])
+def test_multigroup_reference_requires_unique_group_mapping(explicit_group):
+    class Source(ExistingPlanDatabase):
+        def get_groups(self):
+            return [{"ID": 1}, {"ID": 2}]
+        def get_employee_groups(self, e):
+            return [1, 2]
+        def get_staffing_requirements(self):
+            row = super().get_staffing_requirements()["shift_requirements"][0]
+            return {"shift_requirements": [row, {**row, "id": 402, "group_id": 2}]}
+        def get_schedule(self, year, month, **kw):
+            return [{**row, "group_id": explicit_group}
+                    for row in super().get_schedule(year, month, **kw)]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6),
+                               timezone="UTC", team_ids=["1", "2"])
+    assert len(snapshot.demands) == 2
+    assert len(snapshot.metadata["reference_schedule"]) == 1
+    if explicit_group is None:
+        assert not snapshot.assignments
+        assert snapshot.metadata["reference_schedule"][0]["resolution"] == "ambiguous"
+    else:
+        assert len(snapshot.assignments) == 1
+        demand = next(d for d in snapshot.demands if d.id == snapshot.assignments[0].demand_id)
+        shift = next(s for s in snapshot.shifts if s.id == demand.shift_id)
+        assert shift.team_id == "sp5:group:2"
+
+
+@pytest.mark.parametrize("maximum", [0, -1, 3])
+def test_date_specific_demand_replaces_holiday_requirement(maximum):
+    class Source(SyntheticDatabase):
+        def get_special_staffing(self, **kw):
+            return [{"id": 701, "date": "2026-01-06", "group_id": 1,
+                     "shift_id": 201, "workplace_id": 0, "min": 0, "max": maximum}]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.demands) == 1
+    assert snapshot.demands[0].source == "sp5:SPDEM"
+    assert snapshot.demands[0].maximum == (None if maximum == -1 else maximum)
+    assert snapshot.demands[0].minimum == 0
+    snapshot.model_dump_json()
+
+
+def test_ambiguous_special_demand_never_falls_back_to_regular():
+    class Source(SyntheticDatabase):
+        def get_special_staffing(self, **kw):
+            return [{"id": n, "date": "2026-01-06", "group_id": 1,
+                     "shift_id": 201, "workplace_id": 0, "min": 0, "max": n}
+                    for n in (1, 2)]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.demands
+    assert snapshot.metadata["unresolved_native"]["special_requirements"]
+    snapshot.model_dump_json()
+
+
+def test_selected_parent_demand_includes_child_members_without_loading_unselected_people():
+    class Source(SyntheticDatabase):
+        def get_groups(self):
+            return [{"ID": 1, "SUPERID": 0}, {"ID": 2, "SUPERID": 1}]
+        def get_group_members(self, group):
+            return [101] if group == 2 else []
+        def get_employee_groups(self, employee):
+            return [2]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), team_ids=["1", "2"], timezone="UTC")
+    assert snapshot.employees[0].team_ids == ["sp5:group:1", "sp5:group:2"]
+    assert snapshot.metadata["direct_group_memberships"]["sp5:employee:101"] == [2]
+    assert any("Einsatzbereich bestätigen" in text for text in snapshot.unresolved)
+    excluded = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), team_ids=["1"], timezone="UTC")
+    assert not excluded.employees

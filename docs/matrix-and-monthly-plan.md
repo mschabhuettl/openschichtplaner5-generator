@@ -53,3 +53,13 @@ Der Test startet selbst einen lokalen Webdienst samt Worker und eine ausschließ
 ## Bestehende Importe
 
 Snapshots mit der früheren arbeitsplatzbasierten Matrix werden nicht automatisch umgedeutet. Daten erneut importieren und die dienstbezogenen Vorschläge prüfen. Die neuen Dienst-IDs verwenden einen eigenen Namensraum, sodass alte Freigaben nicht versehentlich als Dienstfreigaben gelten.
+
+## Bestehender Plan und tagesbezogener Bedarf
+
+Beim Import ist **Als Vergleich verwenden · neu planen** vorausgewählt. Vorhandene Einteilungen innerhalb des Planungszeitraums werden einem eindeutig passenden Bedarf zugeordnet und bleiben veränderbar. **Bestehende Einteilungen fixieren** schützt dieselben Einteilungen ausdrücklich vor einer Neuberechnung. Vorhandene Einteilungen erzeugen in diesem Zeitraum keinen zusätzlichen Pflichtbedarf. Nicht eindeutig zuordenbare Einteilungen bleiben als offene Angaben erhalten. Außerhalb des Zeitraums bleibt der feste Randkontext erhalten; seine Regeln werden weiterhin geprüft.
+
+Tagesbezogene Sonderbedarfe ersetzen den regelmäßigen Bedarf derselben Gruppe und desselben Diensts am betreffenden Datum. Sie werden nicht addiert. Auch eine Obergrenze null ersetzt einen positiven Regelbedarf. Mehrdeutige Sonderbedarfe blockieren die Freigabe, statt auf Regelbedarf zurückzufallen. Die Wochentags-/Feiertagszeitfenster des Diensts bleiben maßgeblich. Die separate DADEM-Bedeutung und individuelle Sonderdienstzeiten sind damit nicht automatisch geklärt.
+
+Grundlage für die Vorrangregel: [Originalhandbuch, Abschnitte 3.6 und 4.3](https://www.schichtplaner.de/manual/de/sp5/Schichtplaner5.pdf).
+
+Geladene Unterteammitglieder erhalten zusätzlich den Einsatzbereich ihrer ebenfalls ausgewählten übergeordneten Teams. Diese Importinterpretation muss bestätigt werden; direkte Mitgliedschaften bleiben separat in den Metadaten erhalten. Nicht ausgewählte Unterteams liefern weiterhin keine zusätzlichen Personen.
