@@ -151,6 +151,9 @@ class _Database:
     def get_restrictions(self):
         return self.rows("/api/restrictions")
 
+    def get_spshi_entries_for_day(self, date_str, group_id=None):
+        return self.rows("/api/einsatzplan", date=date_str, group_id=group_id)
+
     def get_schedule(self, year, month, **kw):
         return self.rows(
             "/api/schedule",

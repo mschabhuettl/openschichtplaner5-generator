@@ -333,3 +333,30 @@ def test_selected_parent_demand_includes_child_members_without_loading_unselecte
     assert any("Einsatzbereich bestätigen" in text for text in snapshot.unresolved)
     excluded = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), team_ids=["1"], timezone="UTC")
     assert not excluded.employees
+
+
+def test_native_time_parser_handles_all_segments_and_rejects_partial_parse():
+    from sp5generator.sp5_adapter import _parse_native_windows
+    assert _parse_native_windows("06:15-09:45;10:30-14:00") == [(375, 585), (630, 840)]
+    assert _parse_native_windows("22:00-24:00") == [(1320, 1440)]
+    for value in ("06:15-09:45 garbage", "06:60-09:45", "24:00-25:00"):
+        with pytest.raises(ValueError):
+            _parse_native_windows(value)
+
+
+@pytest.mark.parametrize("end", ["13:00", "14:00"])
+def test_special_detail_matches_only_identical_nominal_time(end):
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            if month != 1:
+                return []
+            return [{"employee_id": 101, "date": "2026-01-06", "kind": "special_shift",
+                     "shift_id": 201, "workplace_id": 301, "spshi_type": 0}]
+        def get_spshi_entries_for_day(self, date_str, **kw):
+            return [{"id": 901, "employee_id": 101, "date": date_str,
+                     "shift_id": 201, "workplace_id": 301, "type": 0,
+                     "startend": f"08:00-10:00;11:00-{end}", "duration": 4}]
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert bool(snapshot.assignments) == (end == "13:00")
+    assert snapshot.metadata["context_schedule"][0]["startend"]
+    assert any(text.startswith("Sonderdienst") for text in snapshot.unresolved) == (end != "13:00")

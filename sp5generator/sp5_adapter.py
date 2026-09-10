@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal, ROUND_HALF_UP
 from hashlib import sha256
 import json
+import re
 from zoneinfo import ZoneInfo
 
 from .hierarchy import group_tree, resolve_group_selection
@@ -33,11 +34,46 @@ def _unique_rows(rows):
 
 
 def _scope_schedule(db, scope, year, month, **kwargs):
-    return _unique_rows(
+    rows = _unique_rows(
         row
         for gid in scope
         for row in db.get_schedule(year, month, group_id=gid, **kwargs)
     )
+    if not hasattr(db, "get_spshi_entries_for_day"):
+        return rows
+    details = {}
+    for day in sorted({r["date"] for r in rows if r.get("kind") == "special_shift"}):
+        details[day] = _unique_rows(
+            entry for gid in scope for entry in db.get_spshi_entries_for_day(day, group_id=gid)
+        )
+    result = []
+    for row in rows:
+        if row.get("kind") == "special_shift":
+            matches = [v for v in details.get(row.get("date"), [])
+                       if v.get("employee_id") == row.get("employee_id")
+                       and v.get("shift_id") == row.get("shift_id")
+                       and v.get("workplace_id") == row.get("workplace_id")
+                       and v.get("type", 0) == row.get("spshi_type", 0)]
+            if len(matches) == 1:
+                row = {**row, "startend": matches[0].get("startend"),
+                       "duration": matches[0].get("duration"), "detail_id": matches[0].get("id")}
+        result.append(row)
+    return result
+
+
+def _parse_native_windows(value):
+    """Parse every native interval; never silently discard malformed pieces."""
+    tokens = str(value or "").replace(";", " ").split()
+    windows = []
+    for token in tokens:
+        match = re.fullmatch(r"(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})", token)
+        if not match:
+            raise ValueError("Ungültiges Dienstzeitformat")
+        a, b, c, d = map(int, match.groups())
+        if a > 23 or b > 59 or c > 24 or d > 59 or (c == 24 and d):
+            raise ValueError("Ungültige Uhrzeit")
+        windows.append((a * 60 + b, c * 60 + d))
+    return windows
 
 
 def _minutes(hours):
@@ -249,7 +285,7 @@ def import_snapshot(
                 )
                 native = native_shifts[sid]
                 try:
-                    windows = calc.parse_startend(
+                    windows = _parse_native_windows(
                         str(native.get(f"STARTEND{idx}") or "")
                     )
                     if not windows:
@@ -328,10 +364,22 @@ def import_snapshot(
                     "interval",
                     "start_time",
                     "end_time",
+                    "startend",
+                    "duration",
+                    "spshi_type",
                 )
             }
             metadata["context_schedule"].append(safe)
             kind = row.get("kind")
+            if kind == "special_shift" and row.get("spshi_type", 0) == 0 and row.get("shift_id") in native_shifts:
+                idx = calc.day_index(d, holidays)
+                try:
+                    actual = _parse_native_windows(row.get("startend"))
+                    nominal = _parse_native_windows(native_shifts[row["shift_id"]].get(f"STARTEND{idx}"))
+                    if actual and actual == nominal and row.get("duration") is not None and _minutes(row["duration"]) == _minutes(native_shifts[row["shift_id"]].get(f"DURATION{idx}")):
+                        kind = "shift"
+                except ValueError:
+                    pass
             if kind == "absence":
                 mode = row.get("interval", 0)
                 bounds = {0: (0, 1440), 1: (0, 720), 2: (720, 1440)}.get(mode)
@@ -393,7 +441,7 @@ def import_snapshot(
                 native = native_shifts[row["shift_id"]]
                 idx = calc.day_index(d, holidays)
                 try:
-                    windows = calc.parse_startend(
+                    windows = _parse_native_windows(
                         str(native.get(f"STARTEND{idx}") or "")
                     )
                     if not windows:
@@ -465,7 +513,7 @@ def import_snapshot(
                     unresolved.append(f"Bestehender Dienst {eid} {d}: {exc}")
             else:
                 unresolved.append(
-                    f"Sonderdienst {eid} {d}: originale Zeitabweichung fehlt im öffentlichen Lesemodell; gezielt ergänzen."
+                    f"Sonderdienst {eid} {d}: individuelle Zeit-/Stundenabweichung oder fehlende eindeutige Detailzuordnung; gezielt ergänzen."
                 )
         month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
     profile = RuleProfile(
