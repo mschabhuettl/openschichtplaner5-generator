@@ -972,3 +972,62 @@ def test_http_restriction_shift_scope_does_not_identify_root_cause(
         assert not snapshot.restrictions[0].approved
     assert all(not employee.approvals for employee in snapshot.employees)
     assert all(request.get_method() == "GET" for request in calls)
+
+
+@pytest.mark.parametrize('path', ['/api/staffing-requirements',
+                                  '/api/staffing-requirements/special?group_id=1'])
+@pytest.mark.parametrize('category,message', [
+    ('read', 'konnte nicht vollständig gelesen'),
+    ('structure', 'strukturell unvollständig'),
+    ('numeric_value', 'ungeklärte Zahlenwerte'),
+])
+def test_staffing_source_contract_uses_only_local_messages(transport, path, category, message):
+    from email.message import Message
+
+    api = APIClient()
+    calls = []
+    headers = Message()
+    headers['x-sp5-error-code'] = 'staffing_source_unresolved'
+    headers['x-sp5-error-category'] = category
+
+    class Broken:
+        def open(self, request, **kwargs):
+            calls.append(request.full_url)
+            raise HTTPError(request.full_url, 500, 'PRIVATE_REASON', headers,
+                            BytesIO(b'PRIVATE_BODY'))
+
+    api.opener = Broken()
+    for _ in range(2):
+        with pytest.raises(APIImportError) as error:
+            api.get(path)
+        assert message in str(error.value)
+        assert 'Import abgebrochen' in str(error.value)
+        assert 'PRIVATE' not in str(error.value)
+        assert api.cache == {}
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize('status,path,code,category', [
+    (401, '/api/staffing-requirements', 'staffing_source_unresolved', 'read'),
+    (500, '/api/groups', 'staffing_source_unresolved', 'read'),
+    (500, '/api/staffing-requirements', 'PRIVATE_CODE', 'read'),
+    (500, '/api/staffing-requirements', 'staffing_source_unresolved', 'PRIVATE_CATEGORY'),
+    (500, '/api/staffing-requirements', None, None),
+])
+def test_unrecognized_staffing_error_contract_stays_generic(transport, status, path, code, category):
+    api = APIClient()
+    headers = ({'X-SP5-Error-Code': code, 'X-SP5-Error-Category': category}
+               if code is not None else None)
+
+    class Broken:
+        def open(self, request, **kwargs):
+            raise HTTPError(request.full_url, status, 'PRIVATE_REASON', headers,
+                            BytesIO(b'PRIVATE_BODY'))
+
+    api.opener = Broken()
+    with pytest.raises(APIImportError) as error:
+        api.get(path)
+    assert str(error.value) == (
+        f'API-Anfrage abgelehnt (HTTP {status}); Zugriff und API-Version prüfen.'
+    )
+    assert api.cache == {}

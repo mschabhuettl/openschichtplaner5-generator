@@ -171,14 +171,14 @@ def test_generator_aborts_and_does_not_cache_failed_source(source, client, table
             response = http.get(urlsplit(request.full_url).path)
             if response.status_code >= 400:
                 raise HTTPError(request.full_url, response.status_code, 'source failure',
-                                {}, BytesIO(response.content))
+                                response.headers, BytesIO(response.content))
             return BytesIO(response.content)
 
     # Exercise the real reader/cache without a production login or socket.
     api = object.__new__(APIClient)
     api.base, api.headers, api.cache = 'http://synthetic.test', {}, {}
     api.opener = ASGITransport()
-    with pytest.raises(APIImportError, match='HTTP 500'):
+    with pytest.raises(APIImportError, match='ungeklärte Zahlenwerte.*HTTP 500'):
         api.get(url)
     assert api.cache == {}
     # A retry must actually reread; no empty successful cache entry was created.
@@ -220,3 +220,25 @@ def test_existing_osp5_consumer_reads_actual_http_error(source, client, monkeypa
         input=json.dumps(response.json()), text=True, capture_output=True, check=True,
     )
     assert json.loads(completed.stdout) == MESSAGES[category]
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('missing', ['MIN', 'MAX'])
+def test_missing_count_column_currently_becomes_zero(source, client, table, url, method, missing):
+    """Characterize a remaining schema gap, not an approved default.
+
+    Strict byte/numeric validation sees only columns present in the DBF.
+    Library r.get(..., 0) still fabricates the absent counterpart as zero.
+    """
+    _, _, path = source
+    present = 'MAX' if missing == 'MIN' else 'MIN'
+    payload = bytearray(synthetic_dbf([b' 0001']))
+    payload[32:43] = present.encode().ljust(11, b'\0')
+    (path / f'5{table}.DBF').write_bytes(payload)
+    http, sanitized = client
+    response = http.get(url)
+    assert response.status_code == 200
+    rows = response.json()['shift_requirements'] if table == 'SHDEM' else response.json()
+    assert rows[0][present.lower()] == 1
+    assert rows[0][missing.lower()] == 0
+    assert sanitized == []

@@ -93,6 +93,26 @@ class APIClient:
         except APIImportError:
             raise
         except HTTPError as exc:
+            # Only the fixed staffing-source contract is interpreted. Never
+            # display the upstream body, reason, or arbitrary header values.
+            if (
+                exc.code == 500
+                and urlsplit(path).path in (
+                    "/api/staffing-requirements",
+                    "/api/staffing-requirements/special",
+                )
+                and exc.headers is not None
+                and exc.headers.get("X-SP5-Error-Code") == "staffing_source_unresolved"
+            ):
+                message = {
+                    "read": "Bedarfsquelle konnte nicht vollständig gelesen werden.",
+                    "structure": "Bedarfsquelle ist strukturell unvollständig oder ungültig.",
+                    "numeric_value": "Bedarfsquelle enthält ungeklärte Zahlenwerte.",
+                }.get(exc.headers.get("X-SP5-Error-Category"))
+                if message:
+                    raise APIImportError(
+                        f"{message} Import abgebrochen (HTTP 500); Bedarfsquelle in SP5 prüfen."
+                    ) from None
             raise APIImportError(
                 f"API-Anfrage abgelehnt (HTTP {exc.code}); Zugriff und API-Version prüfen."
             ) from None

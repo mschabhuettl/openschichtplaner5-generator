@@ -3882,3 +3882,42 @@ strikte Pflichtfeldprüfung gezielt in SHDEM/SPDEM integrieren. Keine globale
 Zahlenpflicht ohne Vertrag optionaler Felder. Produktive Upstream-Repositories
 und Generatorlaufzeit bleiben unverändert; daher keine identische erneute
 Privatabnahme. Kein Release und kein Kausalnachweis für den Originaljob 0.9.29.
+
+### Generator-Verbraucher des quellfreien Bedarfsfehlervertrags
+
+`APIClient._read` interpretiert jetzt ausschließlich HTTP 500 der beiden
+Bedarfs-Endpunkte mit `X-SP5-Error-Code=staffing_source_unresolved` und einer
+bekannten Kategorie `read`, `structure` oder `numeric_value`. Es verwendet
+feste lokale Meldungen samt Importabbruch, weder fremde Headertexte noch den
+Responsebody. Unbekannte Kategorien, andere Endpunkte/Statuscodes und fehlende
+Header behalten die allgemeine Fehlermeldung. Keine leere Ersatzliste und
+kein Fehlercache; ein erneuter Aufruf liest erneut. Queryparameter der
+Sonderbedarfsroute und die normale Groß-/Kleinschreibungsunabhängigkeit von
+HTTP-Headern sind abgedeckt.
+
+Elf neue Transportregressionen in `tests/test_api_adapter.py` prüfen bekannte
+Kategorien, negative Vertragsfälle und zwei fehlgeschlagene Leseversuche.
+`test_generator_aborts_and_does_not_cache_failed_source` reicht jetzt die
+tatsächlichen synthetischen ASGI-Header weiter und prüft die Zahlenwertdiagnose
+bis zum Generator. Der produktive Upstream unterstützt diesen Kandidatenvertrag
+noch nicht; normale vorhandene Antworten werden nicht umgedeutet.
+
+### Nachgewiesene verbleibende Pflichtspaltenlücke
+
+Vier neue Charakterisierungstests
+`test_missing_count_column_currently_becomes_zero` zeigen: Selbst mit dem
+strikten Reader-Kandidaten wird eine **fehlende** MIN- oder MAX-Spalte einer
+synthetischen SHDEM-/SPDEM-Datei nicht erkannt. Der Reader prüft vorhandene
+Feldbeschreibungen und Zahlenbytes. Anschließend ersetzen Library
+`SP5Database.get_staffing_requirements` und `get_special_staffing` durch
+`r.get("MIN", 0)` / `r.get("MAX", 0)` die fehlende Spalte durch Null. Die
+isolierten API-Routen liefern HTTP 200. Dies ist keine Freigabe dieses Defaults,
+sondern ein reproduzierbarer Restfehler vor der geplanten Tabellenvertragsprüfung.
+
+Damit reicht ein strikter Zahlenparser allein nicht: SHDEM/SPDEM benötigen
+gezielte Pflichtspaltenprüfung vor dem Library-Mapping. Explizite Null muss von
+fehlender Spalte unterscheidbar bleiben, insbesondere weil Generator
+`import_snapshot` MAX=0 als keine Besetzung und MAX=-1 als unbegrenzt behandelt.
+Leere gültige Tabellen dürfen nicht pauschal als defekt gelten; ein globaler
+Pflichtvertrag für alle numerischen Spalten wäre weiterhin unbegründet.
+Keine Aussage, dass die echte 0.9.29-Eingabe diese fehlenden Spalten enthält.
