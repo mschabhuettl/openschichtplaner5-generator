@@ -7,7 +7,7 @@ import uuid
 from sp5lib.database import SP5Database
 
 
-def probe(order, shift_ids=None, absence_interval=None):
+def probe(order, shift_ids=None, absence_interval=None, special=None):
     day = "2026-09-07"
     shift_ids = shift_ids or [5 + kind for kind in order]
     tables = {"MASHI": [
@@ -17,6 +17,8 @@ def probe(order, shift_ids=None, absence_interval=None):
     if absence_interval is not None:
         tables["ABSEN"] = [{"EMPLOYEEID": 10, "DATE": day, "LEAVETYPID": 7,
                             "INTERVAL": absence_interval, "START": 600, "END": 660}]
+    if special is not None:
+        tables["SPSHI"] = [{"EMPLOYEEID": 10, "DATE": day, **row} for row in special]
     db = object.__new__(SP5Database)
     db.db_path = f"synthetic-views-{uuid.uuid4()}"
     db._read = lambda table: tables.get(table, [])
@@ -39,6 +41,15 @@ def probe(order, shift_ids=None, absence_interval=None):
         assert absence["interval"] == absence_interval
         assert absence["start_time"] == (600 if absence_interval == 3 else 0)
         assert absence["end_time"] == (660 if absence_interval == 3 else 0)
+    if special is not None:
+        monthly_special = [r for r in db.get_schedule(2026, 9) if r["kind"] == "special_shift"]
+        assert len(monthly_special) == len(special)
+        assert all("startend" not in r and "duration" not in r for r in monthly_special)
+        for entry in (daily_entry, weekly_entry):
+            assert entry["kind"] == "special_shift"
+            assert entry["spshi_id"] == special[-1]["ID"]
+            assert entry["spshi_startend"] == special[-1]["STARTEND"]
+            assert entry["spshi_duration"] == special[-1]["DURATION"]
     daily = daily_entry["shift_id"]
     weekly = weekly_entry["shift_id"]
     return monthly, daily, weekly
@@ -70,6 +81,20 @@ def main():
         assert monthly["ist"] == [5]
         assert daily is None
         assert weekly is None
+    special_cases = 0
+    for kind in (0, 1):
+        for shift_id in (0, 5):
+            first = {"ID": 1, "SHIFTID": shift_id, "TYPE": kind,
+                     "STARTEND": "0800-1000", "DURATION": 2.0}
+            second = {**first, "ID": 2, "STARTEND": "1600-1900", "DURATION": 3.0}
+            for rows in ([first], [first, second], [second, first]):
+                monthly, daily, weekly = probe((0,), special=rows)
+                assert monthly["ist"] == [5]
+                assert daily == shift_id
+                assert weekly == shift_id
+                special_cases += 1
+    print(f"PASS: {special_cases} special-duty combinations, 156 assertions; "
+          "day/week keep last special, monthly omits its time detail")
     print("PASS: 4 absence intervals, 40 assertions; day/week hide duty and time window")
     print(f"PASS: 8 synthetic source orders, {checks} assertions; "
           "day/week lose both cross-plan and same-plan duties")

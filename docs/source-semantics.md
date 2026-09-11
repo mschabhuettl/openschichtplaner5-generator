@@ -1880,3 +1880,43 @@ und Anzeigepriorität von Zeitberechnung trennen. Sonderdienst-Kombinationen
 bleiben als nächster Prüfpunkt offen; nicht pauschal alle Overrides entfernen.
 Zusätzlich unveränderte Generator-Grenzregression geprüft:
 `tests/test_partial_limits.py`: **88 passed**. Kein Runtimefix oder Release.
+
+### Sonderdienstvertrag: Anzeige, Rohdaten und wirksame Arbeit trennen
+
+Zwölf weitere synthetische Kombinationen in
+`tools/audit_upstream_schedule_views.py` (TYPE 0/1, SHIFTID 0/5,
+Einzeleintrag und zwei umgekehrt geordnete Sonderdienste), **156 zusätzliche
+Assertions bestanden**: Tages-/Wochenweg zeigt ausschließlich den letzten
+Sonderdienst samt dessen Zeitdetail, auch bei SHIFTID=0. Monatsweg erhält
+normalen Dienst und sämtliche Sonderdienste, lässt aber STARTEND/DURATION
+im Sonderdiensteintrag weg. Insgesamt 236 Auditassertions bestanden.
+
+Das ist **nicht** gleichbedeutend mit additiver wirksamer Arbeitszeit:
+`sp5lib/calculations.py:_replaced_dates` bestimmt Ersetzung über gesetzte
+SHIFTID, unabhängig von TYPE. Der bestehende Librarytest
+`test_special_shift_replaces_duty` belegt sechs statt vierzehn Stunden.
+Generator `sp5_adapter.py:_scope_schedule` ergänzt Sonderdienstzeiten aus
+`get_spshi_entries_for_day` nur bei eindeutiger Zuordnung. `import_snapshot`
+normalisiert anschließend ersetzte Ist-Dienste personentagweit und erhält
+Soll-Referenzen getrennt. Der Regressionstest
+`test_reference_selection_never_switches_context_absences_or_special_duties`
+sichert diesen Unterschied und blockiert unbekannte Ersatzzeiten.
+**75 Adaptertests bestanden**, unveränderte Runtime.
+
+Damit ist der Vertrag für den nächsten zusammenhängenden Kandidaten eingegrenzt:
+
+1. Explizite Planselektion für normale Dienste durch Library → API → OSP5;
+   SPSHI.TYPE niemals als Ist/Soll-Flag interpretieren.
+2. Verlustfreie Eintragslisten mit Herkunft, stabiler Identität und Zeitdetails;
+   freie Personentage weiterhin darstellbar. OSP5 darf Listen nicht wieder in
+   ein einzelnes Person/Datum-Element zusammenfalten.
+3. Rohdaten-/Anzeigeeinträge von wirksamer Arbeitszeit unterscheiden:
+   Ersetzung mit SHIFTID erhalten, eigenständige Sonderdienste und Abwesenheits-
+   fenster nicht durch pauschales Override verbergen oder pauschal addieren.
+4. Generatorweitergabe nur nach eindeutiger Zeit-/Quellzuordnung; fehlende
+   Details weiter blockieren, keine Freigaben oder Stundenlimits ableiten.
+
+Die Quellansichten taugen damit ohne Normalisierung nicht als unabhängiger
+Stundenvalidator. Der fehlende Original-600s-Job bleibt eine getrennte
+Reproduktionslücke; keiner dieser Ansichtsbefunde beweist seine Ursache.
+Keine produktiven Änderungen oder neue Releasefreigabe aus diesem Audit.
