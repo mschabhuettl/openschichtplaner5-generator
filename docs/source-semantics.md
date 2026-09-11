@@ -4379,3 +4379,45 @@ cover existing staffing activation, not yet automatic temporal activation.
 Generator currently rejects this new category with its generic HTTP-500 message;
 specific Generator diagnostics and full-app temporal activation remain next.
 No private baseline repetition or claim of reproducing the reported 0.9.29 plan.
+
+### Full-app calendar activation gate (2026-09-11)
+
+`tools/upstream-library-staffing-temporal-activation-candidate.patch` layers on
+`upstream-library-staffing-activation-candidate.patch`. The isolated
+`SP5Database._read` now selects `date_fields=("DATE",)` for SPDEM and
+`weekday_fields=("WEEKDAY",)` for SHDEM. Other tables and the default permissive
+constructor remain unchanged. This reuses the existing opt-in reader; no new
+calendar parser or inferred staffing requirement is introduced.
+
+`tools/test_upstream_staffing_full_app.py` adds a temporal activation mode using
+the actual API dependency factory, middleware and both `/api` and `/api/v1`.
+`tools/test_upstream_staffing_temporal_app.py` checks active/empty/deleted sources,
+valid/blank/impossible/wrong-type temporal values and matching/nonmatching
+team/date filters. Every source is first parsed into the permissive Library cache.
+Unauthenticated requests remain 401; invalid sources remain source-free 500 even
+when filters would exclude their rows. Valid holiday 7 and valid empty/deleted
+sources remain successful. The actual Generator APIClient rejects failed reads
+without caching them and retries successfully after synthetic source repair.
+Generator's temporal diagnostic remains generic HTTP 500 (and v1 is outside its
+specific diagnostic allowlist); successful error rejection is not a specific
+user-facing diagnosis and does not imply a generated/validated schedule.
+
+Run environment in addition to the earlier activation variables:
+
+```sh
+SP5_STRICT_READER=/tmp/sp5-temporal-contract/sp5lib/dbf_reader.py
+SP5_STAFFING_ROUTER=/tmp/sp5-temporal-api-contract/sp5api/routers/master_data.py
+SP5_TEMPORAL_DATABASE=/tmp/sp5-temporal-activation/sp5lib/database.py
+```
+
+The full-app/source/reader plus partial/calendar limits suite passes **508 tests**
+(two known dependency warnings). Ruff and diff check pass. The first full-app run
+used the older numeric-only API candidate and correctly failed two temporal
+category assertions; selecting the temporal API candidate corrected the harness.
+These paths are isolated source copies, not productive configuration or data.
+The three upstream checkouts remain unchanged. No release/runtime change and no
+repetition of the unchanged private baseline. Remote CI remains unverified
+(`gh` unavailable). Original 0.9.29 input/job/result remains unavailable; no causal
+claim about 600 seconds, 24-hour duties or weekly overruns follows from this gate.
+Next: complete Generator-specific temporal diagnostics with synthetic allowlist
+checks, then integrate and privately GET-audit the combined runtime candidate.

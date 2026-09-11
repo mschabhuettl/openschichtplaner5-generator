@@ -1,0 +1,13 @@
+--- a/sp5lib/database.py
++++ b/sp5lib/database.py
+@@ -158,7 +158,9 @@
+             return read_dbf(
+                 self._table(name), strict=True,
+                 numeric_fields=("MIN", "MAX"),
+-                required_fields=("GROUPID", "SHIFTID", "WORKPLACID"))
++                required_fields=("GROUPID", "SHIFTID", "WORKPLACID"),
++                date_fields=("DATE",) if name == "SPDEM" else (),
++                weekday_fields=("WEEKDAY",) if name == "SHDEM" else ())
+         path = self._table(name)
+         key = (self.db_path, name)
+         try:

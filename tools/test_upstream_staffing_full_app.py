@@ -2,7 +2,8 @@
 
 Run explicitly with SP5_API_SOURCE, SP5_STAFFING_ROUTER and SP5_STRICT_READER.
 Candidate activation additionally needs SP5_STAFFING_DATABASE and
-SP5_STAFFING_DEPENDENCIES; injected mode remains the comparison baseline.
+SP5_STAFFING_DEPENDENCIES; temporal mode needs SP5_TEMPORAL_DATABASE and
+the temporal reader/API candidates. Injected mode remains the comparison baseline.
 When combining with test_upstream_staffing_source_contract.py, also set
 SP5_OSP5_FRONTEND to the OSP5 frontend checkout (its consumer checks require it).
 Only Python source is copied, never upstream fixtures, .env or state. The child
@@ -18,7 +19,7 @@ import sys
 import pytest
 
 
-@pytest.mark.parametrize('activation', ['injected', 'candidate'])
+@pytest.mark.parametrize('activation', ['injected', 'candidate', 'temporal'])
 @pytest.mark.parametrize('prefix', ['/api', '/api/v1'])
 def test_full_app_staffing_contract(tmp_path, prefix, activation):
     package = Path(os.environ['SP5_API_SOURCE']) / 'sp5api'
@@ -28,7 +29,7 @@ def test_full_app_staffing_contract(tmp_path, prefix, activation):
         shutil.copyfile(source, target)
     shutil.copyfile(os.environ['SP5_STAFFING_ROUTER'],
                     tmp_path / 'code/sp5api/routers/master_data.py')
-    if activation == 'candidate':
+    if activation in ('candidate', 'temporal'):
         shutil.copyfile(os.environ['SP5_STAFFING_DEPENDENCIES'],
                         tmp_path / 'code/sp5api/dependencies.py')
     backend = tmp_path / 'backend'
@@ -44,8 +45,11 @@ def test_full_app_staffing_contract(tmp_path, prefix, activation):
         'SP5_AUDIT_LOG': str(backend / 'audit.json'),
         'SP5_STRICT_READER': os.environ['SP5_STRICT_READER'],
     }
-    if activation == 'candidate':
-        env['SP5_STAFFING_DATABASE'] = os.environ['SP5_STAFFING_DATABASE']
+    if activation in ('candidate', 'temporal'):
+        env['SP5_STAFFING_DATABASE'] = os.environ[
+            'SP5_TEMPORAL_DATABASE' if activation == 'temporal' else 'SP5_STAFFING_DATABASE']
+    if activation == 'temporal':
+        env['SP5_TEMPORAL_ACTIVATION'] = '1'
     completed = subprocess.run([sys.executable, str(Path(__file__).resolve()), prefix],
                                cwd=backend, env=env, capture_output=True, text=True, timeout=90)
     assert completed.returncode == 0, completed.stdout + completed.stderr
@@ -102,6 +106,13 @@ def run_contract(prefix):
                         'ADMIN': False, 'RIGHTS': 1}
     headers = {'X-Auth-Token': token}
     try:
+        if os.environ.get('SP5_TEMPORAL_ACTIVATION'):
+            from test_upstream_staffing_temporal_app import check_temporal
+            check_temporal(http, headers, prefix, root, SP5Database, APIClient, APIImportError)
+            del _sessions[token]
+            assert http.get(prefix + '/staffing-requirements', headers=headers).status_code == 401
+            print('full-app contract passed')
+            return
         for table, suffix in [('SHDEM', ''), ('SPDEM', '/special')]:
             url = prefix + '/staffing-requirements' + suffix
             assert http.get(url).status_code == 401
