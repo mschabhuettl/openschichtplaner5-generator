@@ -1829,3 +1829,30 @@ Darstellung mehrerer Einträge statt eines verlustbehafteten Person/Datum-
 Dictionaries. Danach Stundenprüfung und Referenzvergleich an denselben
 Vertrag binden. Bisherige Ist-only-Stundenkandidaten bleiben experimentell.
 Keine Änderungen an Originalcheckouts, produktiver API oder Benutzerinstallation.
+
+### Mehrfachdienste derselben Planart: zusätzlicher Verlust belegt
+
+Die erweiterte Charakterisierung prüft jetzt acht Quellreihenfolgen mit
+40 Assertions. Auch zwei unterschiedliche **Ist-Dienste allein** (ebenso zwei
+Soll-Dienste) bleiben im Monatsweg beide erhalten, während Tages-/Wochenweg
+nur den jeweils letzten liefert. Ein Planfilter allein behebt diesen Verlust
+also nicht. Die synthetische Eingabe belegt den Darstellungsverlust, nicht die
+fachliche Zulässigkeit zweier konkreter Dienste oder deren reale Dauer.
+
+Zusätzliche Kompatibilitätsgrenze: OSP5
+`frontend/src/pages/Wochenansicht.tsx` baut in der Tageszuordnung mit
+`m.set(entry.employee_id, entry)` erneut einen Eintrag pro Person. Nur die
+Library auf Listen umzustellen genügt deshalb nicht. API
+`routers/schedule.py:get_schedule_day/get_schedule_week` besitzt derzeit kein
+Planargument. Vorhandene Librarytests in
+`tests/test_database_calculations.py` prüfen Zyklus-/Materialisierungspriorität
+und freie Tage, aber dort nicht zwei normale Dienste derselben Person am Tag.
+
+Korrekturvertrag muss deshalb **für ist, soll und both** Mehrfacheinträge
+verlustfrei tragen, freie Personentage erhalten und Sonderdienst-/Abwesenheits-
+Priorität ausdrücklich abgrenzen. Stundenvergleiche dürfen nicht aus dieser
+bisherigen Ein-Zellen-Ansicht berechnet werden. Generator-Monatsimport bleibt
+von diesem konkreten Verlust unberührt; keine Erklärung des fehlenden
+Original-600s-Jobs daraus ableiten. Nächster gezielter Prüfpunkt sind
+Normaldienst plus Sonderdienst/Abwesenheit und die bestehenden Override-Tests,
+bevor ein kompatibler gemeinsamer Änderungskandidat entsteht.

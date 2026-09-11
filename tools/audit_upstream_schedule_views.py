@@ -7,11 +7,12 @@ import uuid
 from sp5lib.database import SP5Database
 
 
-def probe(order):
+def probe(order, shift_ids=None):
     day = "2026-09-07"
+    shift_ids = shift_ids or [5 + kind for kind in order]
     tables = {"MASHI": [
-        {"EMPLOYEEID": 10, "DATE": day, "SHIFTID": 5 + kind, "TYPE": kind}
-        for kind in order
+        {"EMPLOYEEID": 10, "DATE": day, "SHIFTID": shift_id, "TYPE": kind}
+        for kind, shift_id in zip(order, shift_ids, strict=True)
     ]}
     db = object.__new__(SP5Database)
     db.db_path = f"synthetic-views-{uuid.uuid4()}"
@@ -40,7 +41,19 @@ def main():
         assert daily == 5 + order[-1]
         assert weekly == daily
         checks += 5
-    print(f"PASS: 4 synthetic source orders, {checks} assertions; day/week last-row wins")
+    for kind in (0, 1):
+        for shift_ids in ([5, 6], [6, 5]):
+            monthly, daily, weekly = probe((kind, kind), shift_ids)
+            selected = "ist" if kind == 0 else "soll"
+            other = "soll" if kind == 0 else "ist"
+            assert sorted(monthly[selected]) == [5, 6]
+            assert monthly[other] == []
+            assert sorted(monthly["both"]) == [5, 6]
+            assert daily == shift_ids[-1]
+            assert weekly == daily
+            checks += 5
+    print(f"PASS: 8 synthetic source orders, {checks} assertions; "
+          "day/week lose both cross-plan and same-plan duties")
 
 
 if __name__ == "__main__":
