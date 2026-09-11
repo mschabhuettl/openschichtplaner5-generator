@@ -1892,7 +1892,7 @@ normalen Dienst und sämtliche Sonderdienste, lässt aber STARTEND/DURATION
 im Sonderdiensteintrag weg. Insgesamt 236 Auditassertions bestanden.
 
 Das ist **nicht** gleichbedeutend mit additiver wirksamer Arbeitszeit:
-`sp5lib/calculations.py:_replaced_dates` bestimmt Ersetzung über gesetzte
+`sp5lib/calculations.py:_replaced_days` bestimmt Ersetzung über gesetzte
 SHIFTID, unabhängig von TYPE. Der bestehende Librarytest
 `test_special_shift_replaces_duty` belegt sechs statt vierzehn Stunden.
 Generator `sp5_adapter.py:_scope_schedule` ergänzt Sonderdienstzeiten aus
