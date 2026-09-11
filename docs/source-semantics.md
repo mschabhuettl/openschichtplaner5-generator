@@ -2831,3 +2831,33 @@ der korrigierte Aufruf mit `PYTHONPATH=<Library>:.:tests` besteht vollständig.
 Dieser Befund betrifft den isolierten Diagnosekandidaten. Er belegt weder
 doppelte Definitionen in Originaldaten noch die Ursache der gemeldeten
 24h-Dienste. 24h bleiben nach tatsächlichen konfigurierten Grenzen zu beurteilen.
+
+### Zyklusidentität und Feiertagsdatum vor Stundenmessung
+
+Weitere synthetisch belegte Quellenlücken im isolierten Diagnosepfad:
+
+- Library `calculations.expand_cycle_assignments` reduziert CYCLE auf ein
+  Dictionary nach ID. Zwei Definitionen (positive versus Null-Länge) liefern
+  allein nach Reihenfolge einen Dienst oder keinen. `_validate_cycle_sources`
+  lehnt jetzt mehrfach definierte tatsächlich verwendete CYCLE-IDs ab, auch
+  identische Dubletten. Fremde Zyklen/Personen, außerhalb liegende Zuordnungen
+  und die Sollsicht werden dadurch nicht zusätzlich blockiert.
+- Library `holiday_calendar` ignoriert fehlende/leere DATE; `day_index` wählt
+  dann den Wochentag statt STARTEND7. Bei ungültigem String wirft die Library
+  einen Fehler mit Rohinhalt. `measure_selected` prüft jetzt das Datum vorab
+  und bricht mit der inhaltsfreien Kategorie `Unresolved HOLID source date`
+  ab. Ein unbekanntes Datum kann keiner Periode sicher zugeordnet werden.
+  Doppelte gültige Feiertagsdaten sind für diesen Zeitpfad hingegen nicht
+  mehrdeutig: `day_index` nutzt nur die Datumsmitgliedschaft, nicht INTERVAL.
+
+Belege: `tools/test_cycle_source_coverage_candidate.py` (7 neue Fälle,
+3 zunächst rot), `tools/test_selected_work_segments_candidate.py` (7 neue
+Fälle, 6 zunächst rot, echter gepatchter API-Selektor). Zusammen mit
+Kalenderkontext/-limits, Dienstkonflikten und Generator-Teilplan-/Ruhetests:
+**257 passed**; Ruff und Diffcheck grün. Bestehende Library-Funktionen werden
+weiter verwendet; kein zusätzlicher Parser und keine neue Fachregel.
+
+Keine produktive Integration, kein Release und kein Nachweis solcher Fehler
+in Originaldaten. Der konkrete 0.9.29-Job bleibt für einen Ursachenbeweis
+erforderlich. Konsistenter Snapshot, stabile Zuordnungsidentitäten und
+vollständiger Ruhezeit-Randkontext bleiben Integrationsvoraussetzungen.

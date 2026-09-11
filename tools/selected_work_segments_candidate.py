@@ -86,7 +86,16 @@ def measure_selected(db, selector, employee_id, start, end, plan, zone):
     if plan == 'ist':
         _validate_cycle_sources(db, employee_id, start, end)
     manual, cycle, special = selector(db, employee_id, start, end, plan)
-    holidays = calc.holiday_calendar(db._read('HOLID'))
+    holiday_rows = db._read('HOLID')
+    for row in holiday_rows:
+        try:
+            holiday_day = calc.to_date(row.get('DATE'))
+        except (TypeError, ValueError):
+            holiday_day = None
+        if type(holiday_day) is not date:
+            # Unknown period membership must not silently select weekday times.
+            raise ValueError('Unresolved HOLID source date')
+    holidays = calc.holiday_calendar(holiday_rows)
     shifts = {}
     for row in db._read('SHIFT'):
         shifts.setdefault(int(row['ID']), []).append(row)
@@ -145,7 +154,9 @@ def _validate_cycle_sources(db, employee_id, start, end):
             raise ValueError(f'Unresolved {source} source date')
         return parsed
 
-    cycles = {int(row.get('ID') or 0): row for row in db._read('CYCLE')}
+    cycles = {}
+    for row in db._read('CYCLE'):
+        cycles.setdefault(int(row.get('ID') or 0), []).append(row)
     relevant_assignments = set()
     relevant_lengths = {}
     for row in db._read('CYASS'):
@@ -158,9 +169,12 @@ def _validate_cycle_sources(db, employee_id, start, end):
             raise ValueError('Unresolved CYASS reversed interval')
         if first > end or (last is not None and last < start):
             continue
-        definition = cycles.get(int(row.get('CYCLEID') or 0))
-        if definition is None:
+        definitions = cycles.get(int(row.get('CYCLEID') or 0), [])
+        if not definitions:
             raise ValueError('Unresolved CYCLE definition')
+        if len(definitions) != 1:
+            raise ValueError('Unresolved CYCLE ambiguous definition')
+        definition = definitions[0]
         try:
             size = int(definition.get('SIZE') or 0)
         except (ValueError, TypeError):

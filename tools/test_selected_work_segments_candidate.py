@@ -15,6 +15,25 @@ from tools.selected_work_segments_candidate import measure_selected
 DAY = date(2026, 1, 5)
 
 
+@pytest.mark.parametrize('value', [None, '', 'invalid'])
+@pytest.mark.parametrize('plan', ['ist', 'soll'])
+def test_unknown_holiday_date_cannot_silently_choose_weekday_hours(collect, value, plan):
+    t = tables()
+    t['SHIFT'][0].update(STARTEND0='08:00-16:00', STARTEND7='00:00-24:00')
+    t['HOLID'] = [{'DATE': value}]
+    with pytest.raises(ValueError, match='Unresolved HOLID source date'):
+        collect(t, plan)
+
+
+def test_duplicate_holiday_day_does_not_make_time_slot_ambiguous(collect):
+    # day_index uses date membership, not INTERVAL or record identity.
+    t = tables()
+    t['SHIFT'][0]['STARTEND7'] = '08:00-16:00'
+    t['HOLID'] = [{'DATE': str(DAY), 'INTERVAL': interval} for interval in (0, 1)]
+    result = collect(t)
+    assert result[0].duty.calendar_minutes('Europe/Vienna') == {DAY: 480}
+
+
 @pytest.fixture
 def collect():
     selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan

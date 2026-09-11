@@ -94,3 +94,40 @@ def test_soll_does_not_validate_unselected_cycle_sources():
     result = measure_selected(SimpleNamespace(_read=lambda n: t.get(n, [])),
         lambda *_: ([], [], []), 10, DAY, DAY, 'soll', 'Europe/Vienna')
     assert result == ()
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_duplicate_selected_cycle_definition_is_not_resolved_by_order(reverse):
+    t = data()
+    t['CYCLE'].append({'ID': 1, 'SIZE': 0, 'UNIT': 0})
+    t['CYENT'] = [{'CYCLEEID': 1, 'INDEX': 0, 'SHIFTID': 7}]
+    if reverse:
+        t['CYCLE'].reverse()
+    # Actual Library behavior: identical assignment yields work or nothing.
+    assert len(expand(t)) == (1 if reverse else 0)
+    with pytest.raises(ValueError, match='Unresolved CYCLE ambiguous definition'):
+        measure(t)
+
+
+def test_identical_selected_cycle_duplicates_are_still_ambiguous():
+    t = data()
+    t['CYCLE'].append(dict(t['CYCLE'][0]))
+    with pytest.raises(ValueError, match='Unresolved CYCLE ambiguous definition'):
+        measure(t)
+
+
+@pytest.mark.parametrize('scope', ['foreign_cycle', 'outside', 'foreign_person', 'soll'])
+def test_unselected_cycle_duplicates_do_not_block(scope):
+    t = data()
+    t['CYCLE'].append(dict(t['CYCLE'][0]))
+    if scope == 'foreign_cycle':
+        t['CYASS'][0]['CYCLEID'] = 2
+        t['CYCLE'].append({'ID': 2, 'SIZE': 1, 'UNIT': 0})
+    elif scope == 'outside':
+        t['CYASS'][0]['START'] = '2027-01-01'
+    elif scope == 'foreign_person':
+        t['CYASS'][0]['EMPLOYEEID'] = 11
+    result = measure_selected(SimpleNamespace(_read=lambda n: t.get(n, [])),
+        lambda *_: ([], [], []), 10, DAY, DAY,
+        'soll' if scope == 'soll' else 'ist', 'Europe/Vienna')
+    assert result == ()
