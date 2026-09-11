@@ -131,3 +131,52 @@ def test_unselected_cycle_duplicates_do_not_block(scope):
         lambda *_: ([], [], []), 10, DAY, DAY,
         'soll' if scope == 'soll' else 'ist', 'Europe/Vienna')
     assert result == ()
+
+
+@pytest.mark.parametrize('identical', [False, True])
+def test_duplicate_assignment_identity_cannot_suppress_two_duties(identical):
+    t = data()
+    t['CYENT'] = [{'CYCLEEID': 1, 'INDEX': 0, 'SHIFTID': 7}]
+    t['CYASS'].append(dict(t['CYASS'][0]))
+    if not identical:
+        t['CYCLE'].append({'ID': 2, 'SIZE': 1, 'UNIT': 0})
+        t['CYENT'].append({'CYCLEEID': 2, 'INDEX': 0, 'SHIFTID': 8})
+        t['CYASS'][1]['CYCLEID'] = 2
+    assert len(expand(t)) == 2
+    t['CYEXC'] = [{'EMPLOYEEID': 10, 'CYCLEASSID': 3, 'DATE': str(DAY), 'TYPE': 1}]
+    assert expand(t) == []
+    with pytest.raises(ValueError, match='Unresolved CYASS ambiguous identity'):
+        measure(t)
+
+
+@pytest.mark.parametrize('scope', ['foreign_person', 'outside', 'distinct'])
+def test_independent_assignment_identities_remain_allowed(scope):
+    t = data()
+    t['CYASS'].append(dict(t['CYASS'][0]))
+    if scope == 'foreign_person':
+        t['CYASS'][1]['EMPLOYEEID'] = 11
+    elif scope == 'outside':
+        t['CYASS'][1]['START'] = '2027-01-01'
+    else:
+        t['CYASS'][1]['ID'] = 4
+    assert measure(t) == ()
+
+
+def test_duplicate_exception_dates_have_set_semantics():
+    t = data()
+    t['CYENT'] = [{'CYCLEEID': 1, 'INDEX': 0, 'SHIFTID': 7}]
+    t['CYEXC'] = [{'ID': i, 'EMPLOYEEID': 10, 'CYCLEASSID': 3,
+                   'DATE': str(DAY), 'TYPE': 1} for i in (1, 2)]
+    assert expand(t) == []
+    assert measure(t) == ()
+
+
+@pytest.mark.parametrize('exception_type', [0, 1, None])
+def test_library_exception_type_does_not_change_suppression(exception_type):
+    # Characterization, not an endorsement of the API's 0=normal comment.
+    t = data()
+    t['CYENT'] = [{'CYCLEEID': 1, 'INDEX': 0, 'SHIFTID': 7}]
+    assert len(expand(t)) == 1
+    t['CYEXC'] = [{'EMPLOYEEID': 10, 'CYCLEASSID': 3,
+                   'DATE': str(DAY), 'TYPE': exception_type}]
+    assert expand(t) == []

@@ -169,6 +169,11 @@ def _validate_cycle_sources(db, employee_id, start, end):
             raise ValueError('Unresolved CYASS reversed interval')
         if first > end or (last is not None and last < start):
             continue
+        assignment_id = int(row.get('ID') or 0)
+        # Library exceptions use (employee, assignment ID), not cycle ID.
+        # A collision would suppress multiple independently expanded duties.
+        if assignment_id in relevant_assignments:
+            raise ValueError('Unresolved CYASS ambiguous identity')
         definitions = cycles.get(int(row.get('CYCLEID') or 0), [])
         if not definitions:
             raise ValueError('Unresolved CYCLE definition')
@@ -183,7 +188,7 @@ def _validate_cycle_sources(db, employee_id, start, end):
             raise ValueError('Unresolved CYCLE length')
         cycle_id = int(row.get('CYCLEID') or 0)
         relevant_lengths[cycle_id] = size * (7 if int(definition.get('UNIT') or 0) == 1 else 1)
-        relevant_assignments.add(int(row.get('ID') or 0))
+        relevant_assignments.add(assignment_id)
     positions = set()
     for row in db._read('CYENT'):
         cycle_id = int(row.get('CYCLEEID') or 0)

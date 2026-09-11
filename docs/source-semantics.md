@@ -2861,3 +2861,36 @@ Keine produktive Integration, kein Release und kein Nachweis solcher Fehler
 in Originaldaten. Der konkrete 0.9.29-Job bleibt für einen Ursachenbeweis
 erforderlich. Konsistenter Snapshot, stabile Zuordnungsidentitäten und
 vollständiger Ruhezeit-Randkontext bleiben Integrationsvoraussetzungen.
+
+### Zykluszuordnung: Ausnahme-Schlüssel und widersprüchliche TYPE-Erklärung
+
+Library `calculations.expand_cycle_assignments` adressiert CYEXC über
+`(EMPLOYEEID, CYCLEASSID)` und expandiert jede CYASS-Zeile einzeln. Zwei aktive
+Zuordnungen derselben Person mit derselben ID ergeben synthetisch zwei Dienste;
+eine einzige Ausnahme unterdrückt beide, selbst bei unterschiedlichen Zyklen.
+Der isolierte `_validate_cycle_sources`-Kandidat lehnt diese Kollision jetzt vor
+der Selektion mit `Unresolved CYASS ambiguous identity` ab. Fremde Personen,
+außerhalb liegende Zuordnungen und unterschiedliche IDs bleiben erlaubt.
+Doppelte Ausnahme-Datumszeilen sind dagegen im bestehenden Set-Pfad idempotent.
+Belege: sechs neue Tests in `tools/test_cycle_source_coverage_candidate.py`,
+zwei davon vor der Korrektur rot. Kein Nachweis solcher Dubletten in Realdaten.
+
+Die anschließende zusammenhängende Prüfung zeigt eine **offene Semantik**, keine
+Berechtigung zur stillen Korrektur: API `routers/schedule.py::CycleExceptionSet`
+kommentiert TYPE mit `1=skip, 0=normal`; Library `set_cycle_exception` wiederholt
+dies. `expand_cycle_assignments` liest TYPE aber überhaupt nicht: 0, 1 und None
+unterdrücken jeweils den Dienst (drei neue Charakterisierungstests).
+OSP5 `frontend/src/pages/Schichtmodell.tsx::AddExceptionModal` nennt TYPE dagegen
+Plan-Eintragsart, sendet es nicht und nutzt so API-Default 1. Der vorhandene
+`AddExceptionModal.test.tsx` sichert nur diesen ausgelassenen Parameter ab, nicht
+TYPE=0. Daher weder TYPE=0 als Wiederherstellung implementiert noch Ausnahmen
+als persönliche Freigaben interpretiert.
+
+Zusätzliche belegte Zuordnungslücke für die nächste Untersuchung: OSP5
+`AddExceptionModal::getAssignmentId` nutzt `assignments.find` ausschließlich nach
+Person, ohne ausgewähltes Datum oder eindeutige Zykluswahl. Bei mehreren
+Zuordnungen hängt das adressierte Ziel von der Listenreihenfolge ab. Erst
+Quellvertrag/Zeitraum prüfen und synthetisch reproduzieren; noch kein UI-Fix.
+
+Keine Originalrepo-/Runtimeänderung und kein Release. Exaktes 0.9.29-Jobpaar,
+atomarer Quellensnapshot und vollständiger Ruhekontext bleiben offen.
