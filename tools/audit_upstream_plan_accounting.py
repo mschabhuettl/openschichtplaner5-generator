@@ -11,7 +11,8 @@ import json
 from sp5lib.database import SP5Database
 
 
-def probe(plan_types: tuple[int, ...], *, cycle: bool = False) -> dict:
+def probe(plan_types: tuple[int, ...], *, cycle: bool = False,
+          ist_source: bool = False, special: str | None = None) -> dict:
     day = "2026-09-07"
     employee = {"ID": 10, "CALCBASE": 0, "HRSDAY": 0}
     shift = {"ID": 5, **{f"DURATION{i}": 8 for i in range(8)},
@@ -28,9 +29,24 @@ def probe(plan_types: tuple[int, ...], *, cycle: bool = False) -> dict:
              "ENTRANCE": 0}
         ] if cycle else [],
     }
+    if special:
+        tables["SPSHI"] = [
+            {"EMPLOYEEID": 10, "DATE": day,
+             "SHIFTID": 5 if special == "replacement" else 0,
+             "TYPE": 1, "DURATION": 2, "STARTEND": "18:00-20:00"}
+        ]
+    # Isolated correction experiment, NOT a production adapter: select Ist
+    # before BOTH movement collection and cycle suppression. SPSHI.TYPE is
+    # deliberately 1 and must not be mistaken for MASHI's plan discriminator.
+    def read(table):
+        rows = tables.get(table, [])
+        if ist_source and table == "MASHI":
+            return [row for row in rows if int(row.get("TYPE") or 0) != 1]
+        return rows
+
     # Bypass the filesystem constructor; replace only source readers.
     db = object.__new__(SP5Database)
-    db._read = lambda table: tables.get(table, [])
+    db._read = read
     db.get_employee = lambda employee_id: employee
     db.get_shifts = lambda **kwargs: [shift]
     db.get_leave_types = lambda **kwargs: []
@@ -46,6 +62,8 @@ def probe(plan_types: tuple[int, ...], *, cycle: bool = False) -> dict:
     return {
         "plan_types": plan_types,
         "cycle": cycle,
+        "ist_source_experiment": ist_source,
+        "special": special,
         "september_actual_hours": month["actual_hours"],
         "annual_actual_hours": result["total_actual_hours"],
         "surcharge_hours": charges[0]["hours"],
@@ -67,6 +85,23 @@ def main() -> None:
         assert result["surcharge_employee_days"] == 1, result
         results.append(result)
     print(json.dumps({"synthetic_only": True, "characterization": results}, indent=2))
+
+    # A single early selection must fix all three consumers together without
+    # losing a fallback cycle or reclassifying additive/replacement specials.
+    experiments = []
+    for kinds, cycle, expected in [
+        ((0,), False, 8), ((1,), False, 0), ((0, 1), False, 8),
+        ((), True, 8), ((1,), True, 8), ((0, 1), True, 8),
+    ]:
+        for special in (None, "replacement", "additive"):
+            hours = 2 if special == "replacement" else expected + (2 if special else 0)
+            result = probe(kinds, cycle=cycle, ist_source=True, special=special)
+            for field in ("september_actual_hours", "annual_actual_hours",
+                          "surcharge_hours", "daily_surcharge_hours"):
+                assert result[field] == hours, result
+            experiments.append(result)
+    print(json.dumps({"synthetic_only": True, "source_selection_experiments": experiments},
+                     indent=2))
 
 
 if __name__ == "__main__":

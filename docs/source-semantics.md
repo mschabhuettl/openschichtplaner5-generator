@@ -9,7 +9,8 @@ Abnahme aller Originaltabellen. Keine realen Datensätze sind enthalten.
 
 ## Aktueller Korrekturstand gegenüber 0.9.29
 
-Konsolidierter Code-/Teststand: `9581f28` (11.09.2026). Die nachfolgenden
+Veröffentlichter konsolidierter Runtime-Stand: `bbcd2e2` (0.9.31, 11.09.2026).
+Die nachfolgenden
 Detailabschnitte dokumentieren auch **historische** Fehlerzustände; offene
 Formulierungen dort sind nicht automatisch offene Fehler im aktuellen Code.
 Diese Übersicht ist keine Release- oder Echtdatenfreigabe.
@@ -37,11 +38,12 @@ Diese Übersicht ist keine Release- oder Echtdatenfreigabe.
 - Mehrdeutige Team-/Arbeitsplatzzuordnung echter Referenzen bleibt sichtbar:
   Quellmitgliedschaft ist kein eindeutiger Einsatzteamnachweis. Die Korrekturen
   erfinden keine Bedarfe, Freigaben oder Zuordnungen.
-- Die private Abnahme des veröffentlichten Stands 0.9.30 (`56cf7cf`) sowie
-  die spätere Abnahme mit vollständigem Runtime-Overlay `9581f28` belegen
+- Die private Abnahme des veröffentlichten Stands 0.9.31 (`bbcd2e2`, ohne
+  Runtime-Overlay) am 11.09.2026, 13:43–13:47 UTC, belegt
   Import/Speicherung, nicht erfolgreiche Neuplanung: beide Plansichten bleiben
   wegen fehlender Einrichtung MODEL_INVALID, ohne generierte Einteilungen.
-  Das Overlay ist kein veröffentlichtes Image. Kein unabhängig gültiger realer
+  Auch der zusätzliche Versuch mit ausdrücklich gesetzter 11h-/36h-Ruhe
+  ersetzt fehlende Freigaben und Profileinrichtung nicht. Kein unabhängig gültiger realer
   Vergleichsplan liegt vor.
 
 ### Geschlossener Korrekturumfang und verbleibende Gates
@@ -1648,3 +1650,59 @@ Vorhandene Librarytests `test_extracharge_hours_by_day_splits_at_midnight`,
 `test_noextra_shift_yields_no_charge` sichern andere Zuschlagsaspekte;
 die zusätzliche Probe deckt die plansichtübergreifende Doppelzählung ab.
 Keine produktive Library/API geändert, keine privaten Daten verwendet.
+
+### Konsolidierte Korrekturprobe: Plansicht vor beiden Verarbeitungsschritten
+
+Das bestehende Auditwerkzeug prüft zusätzlich zur Fehlercharakterisierung
+jetzt einen **isolierten Eingangsfilter**, keine Änderung der Library oder
+Generator-Runtime. Nur beim synthetischen Lesen von MASHI wird TYPE=1 vor
+`_movement_by_employee` **und** `_cycle_shifts_by_employee` ausgeschlossen.
+Die unveränderten Fassaden rechnen anschließend wie bisher. SPSHI bleibt
+vollständig erhalten; sein TYPE=1 ist ausdrücklich keine Soll-Kennzeichnung.
+
+18 Kombinationen (sechs Ist/Soll/Zykluslagen × ohne Sonderdienst / Ersatz /
+Zusatz) prüfen monatliche und jährliche Iststunden sowie Monats- und
+Tageszuschläge gemeinsam mit 72 Assertions. Die 30 Assertions der bisherigen
+Fehlercharakterisierung bleiben daneben bestehen. Testdienst: 08–16 Uhr/8h;
+Sonderdienst: 18–20 Uhr/2h, einmal mit SHIFTID=5 als Tagesersatz, einmal mit
+SHIFTID=0 als Zusatz. Dies sind ausschließlich künstliche Prüfdaten.
+
+| Quelldaten | Iststunden nach früher Auswahl | mit Ersatz | mit Zusatz |
+| --- | --- | --- | --- |
+| nur Ist, kein Zyklus | 8 | 2 | 10 |
+| nur Soll, kein Zyklus | 0 | 2 | 2 |
+| Ist und Soll, kein Zyklus | 8 | 2 | 10 |
+| nur Zyklus | 8 | 2 | 10 |
+| Soll und Zyklus | 8 | 2 | 10 |
+| Ist, Soll und Zyklus | 8 | 2 | 10 |
+
+Alle vier Verbraucher liefern diese Werte. Damit ist ein zusammenhängender
+Korrekturansatz für den Ist-Rechenpfad synthetisch belegt: keine Doppelzählung,
+kein Verlust des Ist-Zyklus durch eine alternative Sollzeile und weiterhin
+unterschiedliche Behandlung von Ersatz und Zusatz. Das ist **kein** fertiger
+Upstream-Patch: Index-/Cacheleser, Soll-/Both-Sichten, API-Verträge und
+Bestandskompatibilität müssen beim Einbau gemeinsam behandelt werden.
+
+Priorisierte Umsetzung und Abnahme:
+
+1. **Library:** Plansicht explizit an MASHI-Auswahl und Zyklusunterdrückung
+   durchreichen; Istkonten als Ist berechnen. Nicht pauschal TYPE auf allen
+   Tabellen filtern und nicht lediglich fertige Summen halbieren. Die
+   vorhandenen Ersatzfunktionen weiterverwenden.
+2. **API/OSP5:** `work_time_rules._employee_plan` und die Aufrufer
+   `WorkTimeRules.tsx` auf denselben expliziten Sichtvertrag bringen;
+   Zeitkonto/Zuschläge durch die korrigierte gemeinsame Librarybasis führen.
+   Ein API-Prüfergebnis bleibt vom unabhängigen Generatorvalidator getrennt.
+3. **Generatorquellen:** Schedule-Transport einschließlich Soll/Both,
+   Zyklus-Randkontext und Sonderersatz gegen korrigierte Library/API prüfen.
+   Die fehlende Ist-Zykluszeile ist hier der konkrete betroffene Importpfad;
+   Zeitkonto-/Zuschlagssummen werden dagegen nicht importiert. Keine
+   fehlenden Dienste aus aggregierten Stunden rekonstruieren.
+4. **Originalfehler:** gespeicherten 0.9.29-Projekt-/Job-/Ergebnisstand mit
+   wirksamen Profilen und tatsächlichen Wochenhöchstgrenzen weiter als
+   notwendiges Beweisstück führen. Dieser Quellenbefund erklärt nicht
+   automatisch die gemeldeten 24h-Dienste oder den 600s-Teilplan.
+
+Keine produktiven Quellen oder Benutzerinstallation geändert. Unveränderte
+0.9.31 wurde nicht erneut direkt gegen dieselbe API getestet; deren letzte
+private Abnahme bleibt oben ausdrücklich als blockierte Neuplanung geführt.
