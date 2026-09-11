@@ -371,6 +371,11 @@ Sie belegt nicht, welche Grenze im gemeldeten Nutzerprojekt konfiguriert war.
 - Herbst-Zeitumstellung: lokal 00–04 Uhr sind 300 tatsächliche Minuten.
   Ein Dienst über Sonntag/Montag wird auf lokale Tage und ISO-Wochen aufgeteilt;
   der Jahreswechsel verwechselt nicht Kalenderjahr und ISO-Wochenjahr.
+  `test_dst_weekly_cap_includes_context_in_elapsed_minutes` prüft zusätzlich
+  Frühjahr (180 Minuten) und Herbst (300 Minuten) mit jeweils 120 Minuten
+  Samstags-Randarbeit: sowohl alte Fixierung als auch `boundary_work`, Voll-
+  und Teilmodus, exakte Wochengrenze und eine Minute darunter. Bezahlung
+  (eine Minute je Dienst) und hohes Periodensoll ändern diese Grenze nicht.
 - UNKNOWN in der Qualitätsphase erhält einen zuvor unabhängig geprüften
   Teilplan als FEASIBLE; UNKNOWN ohne geprüfte Lösung liefert keine Einteilungen.
   Teilmodus lockert Mindestbesetzung, nicht persönliche harte Regeln.

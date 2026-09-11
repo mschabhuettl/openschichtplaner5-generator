@@ -827,3 +827,46 @@ def test_iso_year_local_midnight_with_fixed_context(partial, planning_day, same_
         assert validate(snapshot, result.assignments).valid
         assert {a.demand_id for a in result.assignments} == ({"0"} if below_limit else {"0", "1"})
         assert result.vacancies == ({"1": 1} if below_limit else {})
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("day,elapsed", [(date(2026, 3, 29), 180), (date(2026, 10, 25), 300)])
+@pytest.mark.parametrize("below_limit", [False, True])
+@pytest.mark.parametrize("context_kind", ["fixed", "boundary_work"])
+def test_dst_weekly_cap_includes_context_in_elapsed_minutes(partial, day, elapsed, below_limit, context_kind):
+    from sp5generator.models import BoundaryWork
+
+    # Both Sundays show 00:00–04:00 on the clock. Actual work is three
+    # hours in March and five in October, plus two hours on Saturday.
+    previous = day - timedelta(days=1)
+    snapshot = dated_case(day, day, [
+        (localize(previous, "08:00", "Europe/Vienna"), localize(previous, "10:00", "Europe/Vienna")),
+        (localize(day, "00:00", "Europe/Vienna"), localize(day, "04:00", "Europe/Vienna")),
+    ])
+    snapshot.profiles[0].min_rest_minutes = 660
+    snapshot.profiles[0].max_weekly_minutes = elapsed + 120 - int(below_limit)
+    snapshot.employees[0].target_minutes = 6000
+    for duty in snapshot.shifts:
+        duty.paid_minutes = 1
+    if context_kind == "fixed":
+        snapshot.assignments = [Assignment(employee_id="e0", demand_id="0", fixed=True)]
+        expected_ids = {"0"}
+    else:
+        snapshot.boundary_work = [BoundaryWork(
+            id="previous", employee_id="e0", segments=snapshot.shifts[0].segments, kind="day",
+        )]
+        snapshot.shifts.pop(0)
+        snapshot.demands.pop(0)
+        expected_ids = set()
+    checked = validate(snapshot, plan(snapshot))
+    assert checked.valid is (not below_limit)
+    violations = [d for d in checked.diagnostics if d.code == "weekly_limit"]
+    assert [d.date for d in violations] == ([str(day - timedelta(days=6))] if below_limit else [])
+    result = solver.solve(snapshot, 3, partial=partial)
+    if below_limit and not partial:
+        assert result.solver_status == "INFEASIBLE"
+    else:
+        assert result.solver_status == "OPTIMAL"
+        assert {a.demand_id for a in result.assignments} == (expected_ids if below_limit else expected_ids | {"1"})
+        assert result.vacancies == ({"1": 1} if below_limit else {})
+        assert validate(snapshot, result.assignments).valid
