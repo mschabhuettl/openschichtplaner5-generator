@@ -1,15 +1,23 @@
 --- a/sp5lib/dbf_reader.py
 +++ b/sp5lib/dbf_reader.py
-@@ -211,7 +211,7 @@
+@@ -4,6 +4,7 @@
+ """
+
+ import io
++import math
+ import struct
+ from datetime import date
+ from typing import Any
+@@ -211,7 +212,7 @@
      return _parse_record_specs(raw, _compile_field_specs(fields, names))
- 
- 
+
+
 -def read_dbf(filepath: str, encoding_hint: str = "utf-16-le") -> list[dict[str, Any]]:
 +def read_dbf(filepath: str, encoding_hint: str = "utf-16-le", *, strict: bool = False) -> list[dict[str, Any]]:
      """
      Liest eine .DBF-Datei und liefert die Datensätze als Liste von dicts.
      Zeichenfelder werden als UTF-16 LE dekodiert (wie von Schichtplaner5
-@@ -226,19 +226,74 @@
+@@ -226,19 +227,93 @@
      try:
          with open(filepath, "rb") as f:
              data = f.read()
@@ -55,12 +63,15 @@
 +        raise DBFStructureError("invalid_record_size")
 +    position = 32
 +    field_bytes = 0
++    numeric_fields = []
 +    while position < header_size and data[position] != 0x0D:
 +        if position + 32 > header_size:
 +            raise DBFStructureError("truncated_field_descriptor")
 +        width = data[position + 16]
 +        if not width:
 +            raise DBFStructureError("invalid_field_width")
++        if data[position + 11] in (ord("N"), ord("F")):
++            numeric_fields.append((1 + field_bytes, width, data[position + 17]))
 +        field_bytes += width
 +        position += 32
 +    if position >= header_size:
@@ -74,11 +85,27 @@
 +    for position in range(header_size, header_size + count * record_size, record_size):
 +        if data[position] not in (0x20, 0x2A):
 +            raise DBFStructureError("invalid_deletion_marker")
++        if data[position] == 0x2A:
++            continue  # Deleted rows are not delivered by the existing reader.
++        for offset, width, decimals in numeric_fields:
++            chunk = data[position + offset:position + offset + width]
++            try:
++                number = chunk.decode("ascii").strip()
++            except UnicodeDecodeError:
++                raise DBFStructureError("invalid_numeric_value") from None
++            if not number or number == ".":
++                raise DBFStructureError("missing_numeric_value")
++            try:
++                value = float(number) if "." in number or decimals > 0 else int(number)
++            except ValueError:
++                raise DBFStructureError("invalid_numeric_value") from None
++            if isinstance(value, float) and not math.isfinite(value):
++                raise DBFStructureError("nonfinite_numeric_value")
 +
 +
 +def read_dbf_buffer(data: bytes, *, strict: bool = False) -> list[dict[str, Any]]:
      """Parst einen bereits eingelesenen .DBF-Bytepuffer (siehe :func:`read_dbf`).
- 
+
      Getrennt vom Dateizugriff, damit Aufrufer die Bytes nur EINMAL lesen müssen
      (z. B. der DBF-Cache, der dieselben Bytes auch für die Inhalts-Prüfung hasht)
      — wichtig bei langsamen Bind-Mounts/Netzpfaden.

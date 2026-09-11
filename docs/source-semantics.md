@@ -3689,3 +3689,31 @@ strikten Kandidaten prüfen, Fehlerprovenienz erhalten und Library/API gemeinsam
 berücksichtigen. Keine Änderung am produktiven Reader oder API-Bestand in
 diesem Prüfschritt. Keine Behauptung, dass die private Quelle solche Werte
 enthält oder dies den gemeldeten 0.9.29-Plan verursacht hat.
+
+### Strikter Zahlenlesepfad: isolierter Korrekturkandidat
+
+Der vorhandene `upstream-library-strict-reader-candidate.patch` prüft jetzt
+N/F-Felder aktiver Datensätze vor Ausgabe des Ergebnisses. Der opt-in Pfad
+`read_dbf_buffer(strict=True)` unterscheidet `missing_numeric_value`,
+`invalid_numeric_value` und `nonfinite_numeric_value`; Meldungen enthalten
+weder Feldinhalt noch Personen-/Dateiangaben. Ein gültiger Präfix wird bei
+späterem Zahlenfehler nicht zurückgegeben. Gelöschte Datensätze bleiben
+ordnungsgemäß ausgenommen. Echte Null, negative Werte und Dezimalzahlen
+bleiben unverändert: Der Reader erfindet keine MIN/MAX-/Wochentagsregeln.
+
+42 zusätzliche synthetische Fälle in `tools/test_upstream_strict_reader.py`
+prüfen MIN/MAX/WEEKDAY als N/F, leere/dot/nichtnumerische/nicht-ASCII/nichtendliche
+Werte, gültige Zahlen, gelöschte Sätze und die Weitergabe durch
+`StrictSourceTables` trotz bereits mit falscher Null gefülltem Legacycache.
+Mit den vorhandenen Reader- und Selektionsprüfungen: **109 Tests bestanden**.
+
+Wichtig: Leerwerte sind im strikten Kandidaten ausdrücklich ungeklärte Werte,
+nicht nachweislich beschädigte Originaldaten. Vor produktiver Integration
+muss der Tabellen-/Feldvertrag klären, wo leere Zahlen legitime optionale
+Angaben sind; sie dürfen nicht global als fachliche Null interpretiert werden.
+Dieser Patch bleibt isoliert, produktive Library/API und Generatorlaufzeit
+unverändert. `StrictSourceTables` reicht die Kategorie weiter, ein produktiver
+API-Fehlervertrag ist damit noch nicht implementiert. Der normale Readerpfad
+bleibt kompatibel. Kein erneuter identischer privater Release-Test nötig;
+keine Aussage über Vorkommen dieser Quellwerte in echten Daten oder die Ursache
+des weiterhin nicht vorliegenden Originaljobs 0.9.29.

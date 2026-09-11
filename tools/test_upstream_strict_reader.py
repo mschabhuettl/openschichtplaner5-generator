@@ -157,3 +157,48 @@ def test_strict_file_rereads_same_size_and_mtime(reader, tmp_path):
     path.write_bytes(synthetic_dbf([b' 0020']))
     os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
     assert reader.read_dbf(str(path), strict=True) == [{'ID': 20}]
+
+
+@pytest.mark.parametrize('name', [b'MIN', b'MAX', b'WEEKDAY'])
+@pytest.mark.parametrize('kind', [b'N', b'F'])
+@pytest.mark.parametrize('raw,decimals,code', [
+    (b'nope', 0, 'invalid_numeric_value'),
+    (b'    ', 0, 'missing_numeric_value'),
+    (b'   .', 0, 'missing_numeric_value'),
+    (b'\xff000', 0, 'invalid_numeric_value'),
+    (b' NaN', 1, 'nonfinite_numeric_value'),
+    (b' inf', 1, 'nonfinite_numeric_value'),
+])
+def test_strict_numeric_source_failure_is_not_zero(reader, name, kind, raw, decimals, code):
+    data = bytearray(synthetic_dbf([b' 0001', b' ' + raw]))
+    data[32:43] = name.ljust(11, b'\0')
+    data[43:44] = kind
+    data[49] = decimals
+    with pytest.raises(reader.DBFStructureError) as error:
+        reader.read_dbf_buffer(bytes(data), strict=True)
+    assert error.value.code == code
+    assert str(error.value) == code
+    # A valid prefix must not be returned on numeric source failure.
+    assert len(reader.read_dbf_buffer(bytes(data))) == 2
+
+
+@pytest.mark.parametrize('raw,expected', [(b'0000', 0), (b'  -1', -1),
+                                        (b' 1.0', 1.0), (b' 1.5', 1.5)])
+def test_strict_reader_preserves_numeric_values_without_staffing_policy(reader, raw, expected):
+    data = synthetic_dbf([b' ' + raw])
+    assert reader.read_dbf_buffer(data, strict=True) == [{'ID': expected}]
+    assert reader.read_dbf_buffer(data) == [{'ID': expected}]
+
+
+def test_strict_ignores_deleted_numeric_garbage(reader):
+    data = synthetic_dbf([b'*nope', b' 0000'])
+    assert reader.read_dbf_buffer(data, strict=True) == [{'ID': 0}]
+
+
+def test_strict_numeric_failure_propagates_through_table_bridge(reader, tmp_path):
+    (tmp_path / '5SHDEM.DBF').write_bytes(synthetic_dbf([b' nope']))
+    db = SP5Database(str(tmp_path))
+    assert db._read('SHDEM') == [{'ID': 0}]
+    strict = StrictSourceTables(db, reader.read_dbf)
+    with pytest.raises(reader.DBFStructureError, match='^invalid_numeric_value$'):
+        strict._read('SHDEM')
