@@ -37,7 +37,7 @@ Diese Übersicht ist keine Release- oder Echtdatenfreigabe.
 - Mehrdeutige Team-/Arbeitsplatzzuordnung echter Referenzen bleibt sichtbar:
   Quellmitgliedschaft ist kein eindeutiger Einsatzteamnachweis. Die Korrekturen
   erfinden keine Bedarfe, Freigaben oder Zuordnungen.
-- Die letzte private Abnahme des veröffentlichten Runtime-Stands `d2748ab`
+- Die letzte private Abnahme des veröffentlichten Runtime-Stands `b5617f9`
   belegt Import/Speicherung, nicht erfolgreiche Neuplanung: beide Plansichten
   bleiben wegen fehlender Einrichtung MODEL_INVALID, ohne generierte
   Einteilungen. Kein unabhängig gültiger realer Vergleichsplan liegt vor.
