@@ -1545,7 +1545,7 @@ Transportpfad: API `sp5api/routers/schedule.py:get_schedule` reicht `plan` an
 die Library durch. OSP5 `frontend/src/api/client.ts:1304` fordert dieselbe
 Schedule-Sicht an. Generator `api_adapter._Database.get_schedule` →
 `sp5_adapter._scope_schedule` erhält nur die schon gefilterten Zeilen;
-`_effective_schedule` liest auch Ist als Ersatzbasis. Fehlende Quelldienste
+`_reference_schedule` liest auch Ist als Ersatzbasis. Fehlende Quelldienste
 können damit Referenz- und Randkontext unvollständig machen. Das ist eine
 Folgerung aus dem Datenfluss, kein Nachweis betroffener realer Personen oder
 der ursprünglichen 0.9.29-Fehlerursache. Fehlende Dienste werden nicht erfunden.
