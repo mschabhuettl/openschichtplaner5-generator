@@ -8,7 +8,7 @@
  
  from .. import cache
  from ..dependencies import (
-@@ -18,6 +19,25 @@
+@@ -18,6 +19,33 @@
  from ..schemas import ShiftResponse
  
  router = APIRouter()
@@ -28,13 +28,21 @@
 +        category = "read"
 +    else:
 +        return _sanitize_500(error)
-+    return HTTPException(status_code=500, detail={
-+        "code": "staffing_source_unresolved", "category": category,
-+    })
++    messages = {
++        "numeric_value": "Bedarfsquelle enthält ungeklärte Zahlenwerte.",
++        "structure": "Bedarfsquelle ist strukturell unvollständig oder ungültig.",
++        "read": "Bedarfsquelle konnte nicht vollständig gelesen werden.",
++    }
++    return HTTPException(
++        status_code=500,
++        detail=messages[category],
++        headers={"X-SP5-Error-Code": "staffing_source_unresolved",
++                 "X-SP5-Error-Category": category},
++    )
  
  
  @router.get(
-@@ -125,14 +145,17 @@
+@@ -125,14 +153,17 @@
      month: int | None = Query(None),
      group_id: int | None = Query(None, description="Filter by group ID"),
  ):
@@ -60,7 +68,7 @@
  
  
  # ── Staffing Requirements Write ──────────────────────────────
-@@ -813,7 +836,7 @@
+@@ -813,7 +844,7 @@
      try:
          return get_db().get_special_staffing(date=date, group_id=group_id)
      except Exception as e:

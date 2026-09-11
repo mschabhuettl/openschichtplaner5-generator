@@ -6,6 +6,8 @@ selects the patched reader. No production API, authentication or data accessed.
 import ast
 import importlib.util
 import os
+import json
+import subprocess
 from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError
@@ -80,8 +82,7 @@ def test_numeric_source_to_http(source, client, table, url, method, field, raw, 
     response = http.get(url)
     if category:
         assert response.status_code == 500
-        assert response.json() == {'detail': {'code': 'staffing_source_unresolved',
-                                              'category': category}}
+        assert_source_error(response, category)
         assert sanitized == []
     else:
         assert response.status_code == 200
@@ -102,8 +103,7 @@ def test_read_and_structure_failure_no_empty_success(source, client, table, url,
     http, sanitized = client
     response = http.get(url)
     assert response.status_code == 500
-    assert response.json() == {'detail': {'code': 'staffing_source_unresolved',
-                                         'category': category}}
+    assert_source_error(response, category)
     assert sanitized == []
 
 
@@ -185,3 +185,38 @@ def test_generator_aborts_and_does_not_cache_failed_source(source, client, table
     file.write_bytes(synthetic_dbf([]))
     result = api.get(url)
     assert (result['shift_requirements'] if table == 'SHDEM' else result) == []
+
+
+MESSAGES = {
+    'numeric_value': 'Bedarfsquelle enthält ungeklärte Zahlenwerte.',
+    'structure': 'Bedarfsquelle ist strukturell unvollständig oder ungültig.',
+    'read': 'Bedarfsquelle konnte nicht vollständig gelesen werden.',
+}
+
+
+def assert_source_error(response, category):
+    assert response.json() == {'detail': MESSAGES[category]}
+    assert response.headers['x-sp5-error-code'] == 'staffing_source_unresolved'
+    assert response.headers['x-sp5-error-category'] == category
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('category,kind', [('numeric_value', 'DBFValueError'),
+                                         ('structure', 'DBFStructureError'),
+                                         ('read', 'DBFReadError')])
+def test_existing_osp5_consumer_reads_actual_http_error(source, client, monkeypatch,
+                                                       table, url, method, category, kind):
+    db, reader, _ = source
+
+    def fail(**kwargs):
+        raise getattr(reader, kind)('SYNTHETIC_PRIVATE_PATH_AND_VALUE')
+
+    monkeypatch.setattr(db, method, fail)
+    http, _ = client
+    response = http.get(url)
+    assert_source_error(response, category)
+    completed = subprocess.run(
+        ['node', 'tools/audit_upstream_staffing_error.cjs', os.environ['SP5_OSP5_FRONTEND']],
+        input=json.dumps(response.json()), text=True, capture_output=True, check=True,
+    )
+    assert json.loads(completed.stdout) == MESSAGES[category]

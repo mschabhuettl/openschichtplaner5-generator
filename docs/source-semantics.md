@@ -3847,3 +3847,38 @@ API und Generatorlaufzeit bleiben unverändert. Vollständiger API-Appstart,
 Authentifizierung und produktive v1-Routenregistrierung sind durch den
 isolierten ASGI-Test nicht abgenommen. Kein Release, keine erneute identische
 Privatabnahme und weiterhin kein Originaljob-Nachweis für die 0.9.29-Meldung.
+
+
+### Kompatibler Bedarfsfehlervertrag für den bestehenden OSP5-Verbraucher
+
+Der isolierte API-Kandidat wurde korrigiert: `detail` ist jetzt ein fester,
+verständlicher String, die maschinenlesbaren Werte stehen in
+`X-SP5-Error-Code: staffing_source_unresolved` und
+`X-SP5-Error-Category: read|structure|numeric_value`. Damit ersetzt dieser
+Abschnitt das oben beschriebene Objekt unter `detail`. Es werden weiterhin
+keine Quelldateinamen, Exceptiontexte oder Feldinhalte übertragen. Die
+Antwort bleibt HTTP 500, niemals ein erfolgreicher leerer Bedarf.
+
+`tools/audit_upstream_staffing_error.cjs` extrahiert mit dem vorhandenen
+TypeScript-Parser die **unveränderte** Funktion `extractErrorMessage` aus
+OSP5 `frontend/src/api/client.ts`, transpiliert sie und führt sie mit der
+jeweiligen tatsächlichen synthetischen ASGI-JSON-Antwort als `Response` aus.
+Sechs neue Regressionen (beide GET-Routen × drei Kategorien) belegen die
+lesbare Meldung statt `[object Object]`. Insgesamt 39 Vertragstests bestanden.
+Dies ist ein Funktionsvertragstest, keine Browser- oder vollständige
+App-/Auth-Abnahme. Die Header benötigen für spätere browserseitige
+maschinenlesbare Cross-Origin-Auswertung gegebenenfalls CORS-Exposition;
+der bestehende OSP5-Verbraucher benötigt sie nicht und liest den JSON-Text.
+
+Für den obigen Testaufruf zusätzlich setzen:
+`SP5_OSP5_FRONTEND=/home/hilbert/projects/openschichtplaner5/frontend`.
+Node und die dort vorhandene TypeScript-Abhängigkeit sind erforderlich.
+
+Generator `APIClient._read` bricht weiterhin korrekt ab und cached keine
+Fehlerantwort, zeigt aber noch die generische HTTP-500-Meldung. Nächste
+Integration: ausschließlich bekannte Fehlercodes/Kategorien auf feste lokale
+Meldungen abbilden; keine ungeprüften fremden Fehlertexte anzeigen. Danach
+strikte Pflichtfeldprüfung gezielt in SHDEM/SPDEM integrieren. Keine globale
+Zahlenpflicht ohne Vertrag optionaler Felder. Produktive Upstream-Repositories
+und Generatorlaufzeit bleiben unverändert; daher keine identische erneute
+Privatabnahme. Kein Release und kein Kausalnachweis für den Originaljob 0.9.29.
