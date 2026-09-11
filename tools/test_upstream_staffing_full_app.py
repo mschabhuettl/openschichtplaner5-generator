@@ -3,6 +3,8 @@
 Run explicitly with SP5_API_SOURCE, SP5_STAFFING_ROUTER and SP5_STRICT_READER.
 Candidate activation additionally needs SP5_STAFFING_DATABASE and
 SP5_STAFFING_DEPENDENCIES; injected mode remains the comparison baseline.
+When combining with test_upstream_staffing_source_contract.py, also set
+SP5_OSP5_FRONTEND to the OSP5 frontend checkout (its consumer checks require it).
 Only Python source is copied, never upstream fixtures, .env or state. The child
 uses a fresh environment and private backend. Session injection exercises auth
 validation, not credential login. The strict reader remains an opt-in candidate.
@@ -77,7 +79,8 @@ def run_contract(prefix):
     def strict_read(self, table):
         if table in ('SHDEM', 'SPDEM'):
             return reader.read_dbf(self._table(table), strict=True,
-                                   numeric_fields=('MIN', 'MAX'))
+                                   numeric_fields=('MIN', 'MAX'),
+                                   required_fields=('GROUPID', 'SHIFTID', 'WORKPLACID'))
         return original_read(self, table)
 
     if 'SP5_STAFFING_DATABASE' not in os.environ:
@@ -87,9 +90,10 @@ def run_contract(prefix):
         from sp5api.dependencies import get_db
         assert get_db().strict_staffing is True
         assert SP5Database(os.environ['SP5_DB_PATH']).strict_staffing is False
+    fields = ('MIN', 'MAX', 'GROUPID', 'SHIFTID', 'WORKPLACID')
     root = Path(os.environ['SP5_DB_PATH'])
     for table in ('SHDEM', 'SPDEM', 'DADEM', 'SHIFT', 'WOPL'):
-        (root / f'5{table}.DBF').write_bytes(staffing_columns(('MIN', 'MAX')))
+        (root / f'5{table}.DBF').write_bytes(staffing_columns(fields))
     # Deliberately no TestClient context manager: startup runs independent
     # migrations/schedulers, outside the HTTP/auth/source contract under test.
     http = TestClient(app, raise_server_exceptions=False)
@@ -117,10 +121,10 @@ def run_contract(prefix):
             api.opener = ASGITransport()
             for payload, category in [
                 (staffing_columns(('MIN',)), 'structure'),
-                (staffing_columns(('MIN', 'MAX'), [b' 0000    ']), 'numeric_value'),
+                (staffing_columns(fields, [b' 0000    000100010001']), 'numeric_value'),
                 (None, 'read'),
-                (staffing_columns(('MIN', 'MAX'), [b' 0000  -1']), None),
-                (staffing_columns(('MIN', 'MAX')), None),
+                (staffing_columns(fields, [b' 0000  -1000100010001']), None),
+                (staffing_columns(fields), None),
             ]:
                 if payload is None:
                     path.unlink()
@@ -149,6 +153,40 @@ def run_contract(prefix):
                     else:
                         assert rows == []
                 assert ('deprecation' in response.headers) == (prefix == '/api')
+            # Structural identity loss must fail before team filtering, even
+            # with a permissively warmed cache and empty/deleted-only tables.
+            for missing in ('GROUPID', 'SHIFTID', 'WORKPLACID'):
+                remaining = tuple(field for field in fields if field != missing)
+                for records in ([], [b' ' + b'0001' * len(remaining)],
+                                [b'*' + b'0001' * len(remaining)]):
+                    path.write_bytes(staffing_columns(remaining, records))
+                    if 'SP5_STAFFING_DATABASE' in os.environ:
+                        SP5Database(str(root))._read(table)
+                    for query in ('', '?group_id=1'):
+                        response = http.get(url + query, headers=headers)
+                        assert response.status_code == 500, response.text
+                        assert_source_error(response, 'structure')
+            for duplicate in ('GROUPID', 'SHIFTID', 'WORKPLACID'):
+                duplicated = (*fields, duplicate)
+                path.write_bytes(staffing_columns(duplicated))
+                if 'SP5_STAFFING_DATABASE' in os.environ:
+                    SP5Database(str(root))._read(table)
+                response = http.get(url + '?group_id=1', headers=headers)
+                assert response.status_code == 500, response.text
+                assert_source_error(response, 'structure')
+            # Explicit identities and valid empty/deleted tables remain valid.
+            for records in ([], [b' 0000  -1000100010001'],
+                            [b'*0000  -1000100010001']):
+                path.write_bytes(staffing_columns(fields, records))
+                response = http.get(url + '?group_id=1', headers=headers)
+                assert response.status_code == 200, response.text
+                rows = response.json() if suffix else response.json()['shift_requirements']
+                if records and records[0][:1] == b' ':
+                    assert len(rows) == 1
+                    assert all(rows[0][key] == 1 for key in
+                               ('group_id', 'shift_id', 'workplace_id'))
+                else:
+                    assert rows == []
         del _sessions[token]
         assert http.get(url, headers=headers).status_code == 401
     finally:

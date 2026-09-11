@@ -4222,3 +4222,28 @@ Combined source-contract and hard partial-limit suite: **301 passed**, two known
 dependency warnings. No runtime, production API or installation changed. This
 is a demonstrated synthetic data-loss path, **not evidence that the user's
 0.9.29 source had missing descriptors**, nor the cause of the 600-second result.
+
+
+### Staffing identity contract activated in isolated full-app candidate (2026-09-11)
+
+The Library activation patch now requires exactly one GROUPID, SHIFTID and
+WORKPLACID descriptor in SHDEM/SPDEM in addition to numeric MIN/MAX. This reuses
+`read_dbf(required_fields=...)`; it does not invent IDs, permissions, staffing or
+maximum hours. The API DBF factory opt-in remains isolated, not deployed.
+
+`tools/test_upstream_staffing_full_app.py::run_contract` verifies the real
+`sp5api.main` middleware/auth and both `/api` and `/api/v1` routes, with both
+injected-reader and constructor/factory activation paths. Missing identity
+columns fail with HTTP 500 category `structure` for populated, empty and
+deleted-only tables, with and without `group_id=1`. Duplicate identity columns
+also fail. Warming the permissive Library cache first does not hide the error.
+Valid empty/deleted-only sources remain HTTP 200; explicit identity value 1
+survives the scoped request for all three fields. Existing numeric/read failure,
+authentication and Generator error-cache/retry checks remain in this harness.
+
+This closes the demonstrated structural candidate gap before Library filtering;
+it does not establish DATE/WEEKDAY or identity value/type semantics. No production
+source mutation or Generator runtime change is involved. The exact 0.9.29
+project/job/result is still unavailable, so this is not a causal reproduction of
+the reported 600-second result. Next investigate date/weekday source integrity
+and its effect on selected-period demand, without inferring missing demand.

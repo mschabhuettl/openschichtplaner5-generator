@@ -11,15 +11,18 @@
  
      def _table(self, name: str) -> str:
          return os.path.join(self.db_path, f"5{name}.DBF")
-@@ -151,6 +152,11 @@
+@@ -151,6 +152,14 @@
          Schreibzugriffe gehen über dbf_writer direkt auf die DBF (write-through);
          der Cache ist reine Lese-Beschleunigung, die DBF bleibt Quelle der Wahrheit.
          """
 +        # Opt-in source contract: never reuse a permissively parsed cache entry.
-+        # Scope is intentionally limited to the two staffing count tables.
++        # Scope is intentionally limited to the two staffing tables.
 +        # Reuse the existing strict reader; failures remain source-free and uncached.
 +        if self.strict_staffing and name in ("SHDEM", "SPDEM"):
-+            return read_dbf(self._table(name), strict=True, numeric_fields=("MIN", "MAX"))
++            return read_dbf(
++                self._table(name), strict=True,
++                numeric_fields=("MIN", "MAX"),
++                required_fields=("GROUPID", "SHIFTID", "WORKPLACID"))
          path = self._table(name)
          key = (self.db_path, name)
          try:
