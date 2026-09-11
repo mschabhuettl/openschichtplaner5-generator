@@ -4019,3 +4019,32 @@ verwenden; der normale Checkout besitzt keinen `work_time.py`.
 Für diesen Lauf:
 `SP5_STRICT_READER=/tmp/sp5-count-contract/sp5lib/dbf_reader.py`.
 Die unveränderte private API-Abnahme wurde nicht wiederholt.
+
+### Teilplan: ISO-Jahreswechsel mit festem Randdienst und UTC-Datumsabweichung
+
+`tests/test_partial_limits.py:test_iso_year_local_midnight_with_fixed_context`
+ergänzt acht synthetische Fälle für vollständige und partielle Planung. Der
+01.01.2027 gehört noch zur ISO-Woche ab 28.12.2026: zwei Stunden fester
+Randdienst am Vortag plus zwei Stunden neuer Dienst ergeben 240 reale Minuten.
+Am 04.01.2027 beginnt hingegen eine neue ISO-Woche; dort zählen nur die
+120 neuen Minuten. Der neue Dienst beginnt jeweils lokal um 00:30, also am
+vorherigen UTC-Datum. Erwartungswerte werden ausdrücklich vorgegeben und nicht
+aus dem Tagesminuten-Helfer übernommen. Beide Dienste haben nur eine bezahlte
+Minute und die Person ein großes Soll; beides darf die harte Grenze nicht
+verändern. Die konfigurierte tägliche Ruhe beträgt 660 Minuten.
+
+`solver.solve` summiert `dates_by_shift` je lokalem Tag und Wochenmontag,
+einschließlich fester Randdienste. `validator.validate` prüft dieselben
+relevanten Kalenderwochen über `daily`, getrennt vom Sollkonto. Bei exakt
+passender Grenze bleiben beide Einteilungen erlaubt; eine Minute darunter
+weist der Validator die richtige Wochenüberschreitung aus, der Vollsolver
+meldet INFEASIBLE und der Teilsolver lässt den neuen Bedarf offen. Der feste
+Randdienst bleibt erhalten. Keine neue Wochenhöchstgrenze wird als Default
+festgelegt.
+
+177 Tests bestanden (Teilplangrenzen, Kalendergrenzen, datierte Kalenderruhe),
+Ruff und diff-check ebenfalls. Kein neuer Fehler in diesen Fällen, keine
+Runtimeänderung und kein Release. Die unveränderte private API-Abnahme wird
+nicht wiederholt. Originalprojekt/Jobeingabe/Ergebnis des gemeldeten
+0.9.29-Laufs sind weiterhin nicht verfügbar; dieser Test ist kein Nachweis
+für dessen Ursache und keine Reproduktion des 600-Sekunden-Zeitlimits.

@@ -786,3 +786,44 @@ def test_individual_candidates_do_not_claim_joint_feasibility(partial, constrain
         "eligible_required_demands": 1, "exclusions": {},
         "assigned_demands": 0, "reason": "not_selected_with_candidates",
     }
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("planning_day,same_week", [
+    (date(2027, 1, 1), True),
+    (date(2027, 1, 4), False),
+])
+@pytest.mark.parametrize("below_limit", [False, True])
+def test_iso_year_local_midnight_with_fixed_context(partial, planning_day, same_week, below_limit):
+    # January 1 belongs to 2026-W53; January 4 starts 2027-W01.
+    # The new duty starts on the preceding UTC date, but consumes exactly
+    # 120 minutes on its LOCAL date/week. Fixed context contributes another
+    # 120 only in the first case. These expected totals are hand-calculated.
+    boundary_day = planning_day - timedelta(days=1)
+    snapshot = dated_case(planning_day, planning_day, [
+        (localize(boundary_day, "08:00", "Europe/Vienna"),
+         localize(boundary_day, "10:00", "Europe/Vienna")),
+        (localize(planning_day, "00:30", "Europe/Vienna"),
+         localize(planning_day, "02:30", "Europe/Vienna")),
+    ])
+    profile = snapshot.profiles[0]
+    profile.min_rest_minutes = 660
+    profile.max_weekly_minutes = (240 if same_week else 120) - int(below_limit)
+    snapshot.assignments = [Assignment(employee_id="e0", demand_id="0", fixed=True)]
+    snapshot.employees[0].target_minutes = 6000
+    for duty in snapshot.shifts:
+        duty.paid_minutes = 1
+    checked = validate(snapshot, plan(snapshot))
+    assert checked.valid is (not below_limit)
+    violations = [d for d in checked.diagnostics if d.code == "weekly_limit"]
+    assert len(violations) == int(below_limit)
+    if violations:
+        assert violations[0].date == ("2026-12-28" if same_week else "2027-01-04")
+    result = solver.solve(snapshot, 3, partial=partial)
+    if below_limit and not partial:
+        assert result.solver_status == "INFEASIBLE"
+    else:
+        assert result.solver_status == "OPTIMAL"
+        assert validate(snapshot, result.assignments).valid
+        assert {a.demand_id for a in result.assignments} == ({"0"} if below_limit else {"0", "1"})
+        assert result.vacancies == ({"1": 1} if below_limit else {})
