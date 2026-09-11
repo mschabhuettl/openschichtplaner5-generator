@@ -39,9 +39,12 @@ def variables(model, prefix):
             for i, var in enumerate(model.proto.variables) if var.name.startswith(prefix)]
 
 
-def checked_search(snapshot, model):
+def checked_search(snapshot, model, native_lns=False):
     search = cp_model.CpSolver()
     search.parameters.num_search_workers = 1
+    if native_lns:
+        search.parameters.interleave_search = True
+        search.parameters.use_lns_only = True
     search.parameters.max_time_in_seconds = 3
     assert search.solve(model) == cp_model.OPTIMAL
     assignments = [Assignment(employee_id='e0', demand_id=d.id)
@@ -147,6 +150,26 @@ def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule):
         search.parameters.num_search_workers = 1
         search.parameters.max_time_in_seconds = 3
         assert search.solve(model) == cp_model.INFEASIBLE
+
+
+def test_native_single_worker_lns_preserves_hard_weekly_cap(monkeypatch):
+    snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
+    snapshot.profiles[0].max_weekly_minutes = 480
+    snapshot, primary = coverage_model(monkeypatch, snapshot)
+    quality = primary.clone()
+    quality.add(sum(variables(quality, 'vacancy:')) == 1)
+    quality.minimize(sum(variables(quality, 'hours:')))
+    # Explicit interleaving activates the native portfolio with one worker.
+    # This is an experimental comparison, not a production parameter change.
+    assert checked_search(snapshot, primary, native_lns=True) == (1, 480)
+    assert checked_search(snapshot, quality, native_lns=True) == (1, 480)
+    quality.add(sum(variables(quality, 'vacancy:')) == 0)
+    search = cp_model.CpSolver()
+    search.parameters.num_search_workers = 1
+    search.parameters.interleave_search = True
+    search.parameters.use_lns_only = True
+    search.parameters.max_time_in_seconds = 3
+    assert search.solve(quality) == cp_model.INFEASIBLE
 
 
 def test_quality_clone_does_not_invent_a_24_hour_duty_ban(monkeypatch):

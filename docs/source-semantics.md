@@ -5407,3 +5407,21 @@ path already runs an LNS portfolio. A native comparison would need a deliberatel
 configured, separately verified dispatch (potentially one-worker interleaving),
 not an untested increase in worker count: the single-worker policy preserves a
 previously established process-safety workaround.
+
+
+### Native one-worker interleaved LNS safety probe (2026-09-12)
+
+`test_native_single_worker_lns_preserves_hard_weekly_cap` exercises the existing
+OR-Tools portfolio with both `interleave_search=True` and `use_lns_only=True`,
+keeping one worker. On a synthetic two-duty production model, both coverage and
+fixed-coverage quality retain the configured eight-hour weekly maximum. Forcing
+both eight-hour duties makes the quality clone infeasible. Returned assignments
+also pass the independent validator. This is a narrow safety probe, not proof of
+process safety for all instances, a performance benchmark, or permission to infer
+weekly maxima from nominal targets.
+
+Production search parameters remain unchanged. Before adoption, this alternative
+needs integrated shared-deadline, incumbent fallback, status/proof-scope and Worker
+checks. Native LNS keeps the model's original feasible region; unlike an explicit
+two-addition restriction, no application-level neighbourhood constraint is added.
+Its mere use still does not establish optimal quality or maximum contiguous rest.
