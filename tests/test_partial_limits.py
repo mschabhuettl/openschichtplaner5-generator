@@ -461,3 +461,25 @@ def test_fixed_boundary_time_still_requires_assignment_eligibility(partial, miss
     assert not result.assignments
     assert any(d.code == "fixed_conflict" and d.demand_id == "boundary"
                and missing in d.message for d in result.validation.diagnostics)
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_weekly_violation_does_not_hide_later_daily_or_weekly_diagnostics(partial):
+    snapshot = case(1, [shift("first", 6, 8, 10), shift("second", 13, 8, 10)])
+    snapshot.period_end = date(2026, 1, 18)
+    snapshot.profiles[0].max_daily_minutes = 9 * 60
+    snapshot.profiles[0].max_weekly_minutes = 9 * 60
+    checked = validate(snapshot, plan(snapshot))
+    assert not checked.valid
+    assert [d.date for d in checked.diagnostics if d.code == "daily_limit"] == [
+        "2026-01-06", "2026-01-13",
+    ]
+    assert [d.date for d in checked.diagnostics if d.code == "weekly_limit"] == [
+        "2026-01-05", "2026-01-12",
+    ]
+    result = solver.solve(snapshot, 3, partial=partial)
+    assert result.solver_status == ("OPTIMAL" if partial else "INFEASIBLE")
+    assert not result.assignments
+    if partial:
+        assert result.validation.valid
+        assert sum(result.vacancies.values()) == 2

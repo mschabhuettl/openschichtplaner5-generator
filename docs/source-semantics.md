@@ -1306,3 +1306,27 @@ außer der Zahl identischer Sperrintervalle bleiben gleich; die tatsächlich
 gesperrten Zeiträume bleiben identisch. Keine Gutschrift, Freigabe oder
 Profilbestätigung wird daraus abgeleitet. Dieser Befund erklärt einen
 Herkunftsverlust, nicht den weiterhin fehlenden Originalfall mit 600 Sekunden.
+
+### Wochenlimit-Diagnose darf Tagesverstöße nicht verdecken
+
+Synthetisch belegter zusätzlicher Befund in `validator.validate`: Tages- und
+Wochenlimits liefen in derselben Tagesschleife. Nach der ersten überschrittenen
+Wochensumme beendete `break` die Schleife für das gesamte Profil. Bereits am
+Montag konnte dadurch die Tagesüberschreitung eines späteren Dienstags sowie
+eine zweite verletzte Kalenderwoche unsichtbar bleiben. Das Ergebnis war
+bereits ungültig; der Befund belegt **keine** Annahme eines unzulässigen Plans
+und erklärt ohne Originaleingabe nicht den gemeldeten 600-Sekunden-Fall.
+
+Die unabhängige Prüfung durchläuft nun alle relevanten lokalen Tage und danach
+jede relevante ISO-Woche genau einmal. Reale Einsatzminuten, Profilgültigkeit,
+Randkontext und Überhang nach Periodenende bleiben unverändert. Der Solver
+hatte Tages- und Wochenbedingungen bereits getrennt (`solver.solve`); seine
+harten Bedingungen werden nicht verändert. Bestehende Bibliotheks-/API-
+Sollstunden sind weiterhin keine konfigurierte harte Wochenhöchstgrenze.
+
+`tests/test_partial_limits.py::test_weekly_violation_does_not_hide_later_daily_or_weekly_diagnostics`
+reproduziert den alten Fehler für Voll- und Teilplanung: zwei Zehnstundendienste
+in zwei Wochen, explizite synthetische Neunstunden-Tages-/Wochenlimits. Erwartet
+werden beide Tages- und beide Wochenmeldungen. Vollplanung bleibt INFEASIBLE;
+Teilplanung lässt beide Dienste offen und verletzt keine harten Grenzen.
+Die synthetischen Neunstundenwerte sind keine Nutzerdefaults.

@@ -286,7 +286,9 @@ def _validate(snapshot, assignments, input_errors=None):
                         e.id,
                         day=day,
                     )
-                week = day - timedelta(days=day.weekday())
+            # Check every day before weekly diagnostics; an earlier failing
+            # week must not hide later daily violations or other failing weeks.
+            for week in sorted({day - timedelta(days=day.weekday()) for day in limit_days}):
                 if p.max_weekly_minutes is not None:
                     limit_context_end = max(limit_context_end, week + timedelta(days=6))
                 if (
@@ -300,7 +302,6 @@ def _validate(snapshot, assignments, input_errors=None):
                         e.id,
                         day=week,
                     )
-                    break
             period_work = worked & active_days
             period_nights = nights & active_days
             weekends = {
