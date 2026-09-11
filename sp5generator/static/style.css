@@ -14,3 +14,10 @@ body[data-active-panel=plan] .workspace-metrics{display:none}body[data-active-pa
 
 /* Keep import-review actions reachable on touch screens. */
 #referenceImport .actions button{min-height:44px}
+
+/* Date-only assistance keeps planning decisions in the existing import form. */
+#followPeriodPreparation{min-width:0;margin:0 0 24px;padding:18px;border:1px solid var(--border);border-radius:var(--radius);background:#f6faf8}
+#followPeriodPreparation legend{padding:0 6px;font-size:15px;font-weight:650;color:var(--ink)}
+#followPeriodPreparation>label{max-width:420px;margin-bottom:12px}
+#followPeriodPreview{font-weight:600;color:var(--ink)}
+#followPeriodPreparation>.helper-text{margin:12px 0 0;max-width:760px}

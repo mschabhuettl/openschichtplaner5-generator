@@ -22,7 +22,7 @@ function plannerState(){return {snapshot,assignments,dirty,jsonDirty,jobId,solvi
 function setReadinessSummary(state,count=null){readinessSummary={version:changeVersion,state,count};window.PlannerUI?.refresh?.(plannerState());}
 function publishState(){
  if(stateFrame!==null)return;
- stateFrame=requestAnimationFrame(()=>{stateFrame=null;window.dispatchEvent(new CustomEvent('planner:state',{detail:plannerState()}));refreshAutomaticReadiness();});
+ stateFrame=requestAnimationFrame(()=>{stateFrame=null;window.dispatchEvent(new CustomEvent('planner:state',{detail:plannerState()}));refreshAutomaticReadiness();refreshFollowingPeriod($('import').disabled);});
 }
 function navigate(panel){
  if(window.PlannerUI?.navigate){window.PlannerUI.refresh?.(plannerState());window.PlannerUI.navigate(panel);}
@@ -90,6 +90,7 @@ function updateJobButtons(){
  $('cancel').disabled=!jobId||$('cancel').dataset.busy==='true';
  const switchIds=['demo','import','restore','restoreJob','applyJson','file'];
  const busy=projectBusy||solving||!!jobId||['save','saveDraft'].some(id=>$(id).dataset.busy==='true')||switchIds.some(id=>$(id).dataset.busy==='true');
+ refreshFollowingPeriod(busy);
  for(const id of switchIds)$(id).disabled=busy||(id==='restore'&&!$('saved').value)||(id==='restoreJob'&&!$('savedJobs').value);
  $('save').disabled=busy;$('saveDraft').disabled=busy;if($('addPerson'))$('addPerson').disabled=busy;
  for(const id of ['solve','recompute'])$(id).disabled=busy||$(id).dataset.busy==='true';
@@ -601,6 +602,23 @@ function historyDefaults(){
  from.setUTCDate(Math.min(date.getUTCDate(),new Date(Date.UTC(from.getUTCFullYear(),from.getUTCMonth()+1,0)).getUTCDate()));
  $('historyStart').value=from.toISOString().slice(0,10);$('historyEnd').value=before.toISOString().slice(0,10);
 }
+function refreshFollowingPeriod(busy=false){
+ const base=$('followPeriodBase'),preview=$('followPeriodPreview'),button=$('prepareNextPeriod'),mode=$('followPeriodMode');
+ base.textContent=snapshot?`Geöffnetes Projekt: ${snapshot.period_start} bis ${snapshot.period_end} · ${snapshot.timezone}`:'Zuerst das bisherige Projekt öffnen.';
+ button.disabled=true;mode.disabled=busy||!snapshot||jsonDirty||personDraft;
+ if(!snapshot){preview.textContent='';return;}
+ if(jsonDirty||personDraft){preview.textContent='Offene JSON- oder Abwesenheitsbearbeitung zuerst übernehmen oder verwerfen.';return;}
+ try{const next=SetupAssistant.followingPeriod(snapshot,mode.value);preview.textContent=`Vorschlag: ${next.start} bis ${next.end} · ${next.days} Kalendertage`;button.disabled=busy||button.dataset.busy==='true';}
+ catch(error){preview.textContent=error.message;}
+}
+action('prepareNextPeriod',()=>{
+ if(!snapshot||jsonDirty||personDraft)throw Error('Zuerst einen vollständig übernommenen Projektstand öffnen.');
+ const next=SetupAssistant.followingPeriod(snapshot,$('followPeriodMode').value);
+ $('start').value=next.start;$('end').value=next.end;$('timezone').value=snapshot.timezone;historyDefaults();
+ $('start').focus();$('start').scrollIntoView({block:'center'});
+ notice(`${next.start} bis ${next.end} und Historie vorbelegt. Quelle, Teams und Importoptionen prüfen; erst „Daten importieren“ startet den Import. Das geöffnete Projekt bleibt unverändert.`);
+});
+$('followPeriodMode').onchange=()=>updateJobButtons();
 function serviceMatrix(){return snapshot?.metadata?.service_matrix_version===1;}
 function relatedApproval(a,p){return a.function_id===p.function_id&&(serviceMatrix()&&p.workplace_id==='*'||a.workplace_id===p.workplace_id);}
 function samePosition(a,b){return a.function_id===b.function_id&&a.workplace_id===b.workplace_id;}

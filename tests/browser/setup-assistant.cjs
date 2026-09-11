@@ -47,3 +47,16 @@ const emptyGate=structuredClone(qualificationSource);emptyGate.positions[0].qual
 const stillEmpty=prepare(qualificationImport,emptyGate,{sameSource:true});
 assert.equal(stillEmpty.positions[0].qualifications_required,true);
 assert.deepEqual(stillEmpty.positions[0].qualification_ids,[]);
+
+// Calendar preparation is continuous across month lengths, leap years and DST.
+const {followingPeriod}=require('../../sp5generator/static/setup-assistant.js');
+const monthly={period_start:'2026-01-01',period_end:'2026-01-31'};
+assert.deepEqual(followingPeriod(monthly,'month'),{start:'2026-02-01',end:'2026-02-28',days:28});
+assert.deepEqual(followingPeriod(monthly,'same'),{start:'2026-02-01',end:'2026-03-03',days:31});
+assert.deepEqual(followingPeriod({period_start:'2028-01-01',period_end:'2028-01-31'},'month'),{start:'2028-02-01',end:'2028-02-29',days:29});
+assert.deepEqual(followingPeriod({period_start:'2026-12-01',period_end:'2026-12-31'},'month'),{start:'2027-01-01',end:'2027-01-31',days:31});
+assert.deepEqual(followingPeriod({period_start:'2026-03-23',period_end:'2026-03-29'},'same'),{start:'2026-03-30',end:'2026-04-05',days:7});
+assert.deepEqual(followingPeriod({period_start:'2026-02-02',period_end:'2026-02-08'},'month'),{start:'2026-02-09',end:'2026-02-28',days:20});
+const beforeNext=structuredClone(monthly);followingPeriod(monthly,'same');assert.deepEqual(monthly,beforeNext);
+for(const previous of [null,{period_start:'2026-02-30',period_end:'2026-03-03'},{period_start:'2026-03-02',period_end:'2026-03-01'},{period_start:'2025-01-01',period_end:'2026-12-31'},{period_start:'9999-12-01',period_end:'9999-12-31'}])assert.throws(()=>followingPeriod(previous,'month'));
+assert.throws(()=>followingPeriod(monthly,'unknown'));

@@ -74,8 +74,10 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   await page.locator('#details').getByRole('button',{name:'Abwesenheit hinzufügen',exact:true}).click();
   await page.locator('#details').getByLabel('Abwesend ab',{exact:true}).fill('2026-02-02T01:00');
   await page.waitForFunction(()=>document.querySelector('#metricBlockersLabel').textContent==='Bearbeitung offen');
+  assert(await page.locator('#prepareNextPeriod').isDisabled(),'Open absence draft blocks date preparation');
   await page.locator('#details').getByRole('button',{name:'Abbrechen',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#metricBlockersLabel').textContent==='noch nicht geprüft',null,{timeout:5000});
+  assert(await page.locator('#prepareNextPeriod').isEnabled(),'Cancelling absence restores date preparation');
   await page.locator('#details').getByRole('button',{name:'Abwesenheit hinzufügen',exact:true}).click();
   await page.locator('#details').getByLabel('Abwesend ab',{exact:true}).fill('2026-02-02T00:00');
   await page.locator('#details').getByLabel('Abwesend bis',{exact:true}).fill('2026-02-03T00:00');

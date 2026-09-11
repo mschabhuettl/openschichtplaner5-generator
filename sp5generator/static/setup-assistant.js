@@ -1,5 +1,16 @@
 /* Explicit reuse from a user-confirmed identical source; never extend validity. */
 (function(root){
+ function followingPeriod(previous,mode='same'){
+  const parse=value=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value??''))throw Error('Gültigen bisherigen Planungszeitraum öffnen.');const date=new Date(value+'T12:00:00Z');if(Number.isNaN(+date)||date.toISOString().slice(0,10)!==value)throw Error('Gültigen bisherigen Planungszeitraum öffnen.');return date;};
+  const start=parse(previous?.period_start),end=parse(previous?.period_end),days=Math.round((end-start)/86400000)+1;
+  if(days<1||days>366)throw Error('Der bisherige Planungszeitraum muss 1 bis 366 Tage umfassen.');
+  const from=new Date(end);from.setUTCDate(from.getUTCDate()+1);const until=new Date(from);
+  if(mode==='same')until.setUTCDate(until.getUTCDate()+days-1);
+  else if(mode==='month'){until.setUTCMonth(until.getUTCMonth()+1,0);}
+  else throw Error('Gleiche Tagesanzahl oder Monatsende auswählen.');
+  if(from.getUTCFullYear()>9999||until.getUTCFullYear()>9999)throw Error('Der nächste Zeitraum liegt außerhalb des unterstützten Datumsbereichs.');
+  return {start:from.toISOString().slice(0,10),end:until.toISOString().slice(0,10),days:Math.round((until-from)/86400000)+1};
+ }
  function prepare(imported,previous,options={}){
   const next=structuredClone(imported),report={newPeople:[],newServices:[],review:[],reusedPeople:0,classified:0};
   if(previous){
@@ -51,5 +62,5 @@
   if(previous)next.metadata.history_notice='Einstellungen vorhandener Personen aus dem bisherigen Projekt übernommen. Historienautomatik gilt nur für neue Personen; Gültigkeiten wurden nicht verlängert.';
   return next;
  }
- const api={prepare};if(typeof module!=='undefined'&&module.exports){root.ServiceGroups=require('./service-groups.js');module.exports=api;}else root.SetupAssistant=api;
+ const api={prepare,followingPeriod};if(typeof module!=='undefined'&&module.exports){root.ServiceGroups=require('./service-groups.js');module.exports=api;}else root.SetupAssistant=api;
 })(globalThis);
