@@ -232,3 +232,19 @@ body[data-active-panel=calculate] .project-header { border-bottom: 1px solid var
 #calendar { overflow: visible; }
 body[data-active-panel=plan] #calendar { max-height: none; }
 #calendar > .collection-content { overflow: auto; max-height: 72vh; }
+
+
+/* Full-width work areas: records are browsed by scrolling, never page controls. */
+main{max-width:none;width:100%;margin:0;padding-left:20px;padding-right:20px}
+.app-main,.workspace-section,.collection-content{min-width:0}
+.collection-count{padding:10px 14px;color:var(--muted);font-size:12px}
+.collection-content{max-height:72dvh;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:auto;scrollbar-color:#819c94 #edf2f0}
+.collection-content:focus-visible{outline:3px solid #4baca2;outline-offset:-3px}
+#matrix,#calendar,body[data-active-panel=plan] .sheet{max-height:none;overflow:hidden}
+#matrix>.collection-content,#calendar>.collection-content{max-height:max(300px,calc(100dvh - 270px))}
+#matrix>.collection-count{display:inline-block}
+#calendar>.collection-count{padding:10px 17px;align-self:center}
+#calendar>.collection-content,#calendar>.coverage-summary{grid-column:1/-1}
+#projectCards,#jobCards{max-height:72dvh;overflow:auto;scrollbar-gutter:stable}
+.project-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
+@media(max-width:720px){main{padding-left:12px;padding-right:12px}.collection-content{max-height:70dvh}#matrix>.collection-content,#calendar>.collection-content{max-height:max(280px,calc(100dvh - 235px))}#calendar>.collection-count{padding:6px 13px}}

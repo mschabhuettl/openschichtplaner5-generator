@@ -4,7 +4,7 @@ let groups=[], checkedTeams=new Set(), transposed=false, planMonth="", solving=f
 let dirty=false, jsonDirty=false, changeVersion=0, activePanel='projects', projectBusy=false, personDraft=false;
 let indexVersion=-1, indexes=null, matrixCache=null, stateFrame=null, jsonVersion=-1;
 const renderedPanels=new Map(), collections=new Map();
-let savedRequest=0,jobsRequest=0,paginationSerial=0;
+let savedRequest=0,jobsRequest=0;
 let readinessVersion=-1,readinessPending=-1,readinessRequest=0,readinessSummary=null;
 const fold=value=>String(value??'').toLocaleLowerCase('de-DE');
 function dataIndex(){
@@ -34,27 +34,18 @@ function syncJson(force=false){
 }
 function pageState(key,size=30){if(!collections.has(key))collections.set(key,{page:0,size,query:''});return collections.get(key);}
 function debounce(fn,delay=180){let pending;return (...args)=>{clearTimeout(pending);pending=setTimeout(()=>fn(...args),delay);};}
-function pagination(parent,state,count,redraw,label='Einträge'){
- const pages=Math.max(1,Math.ceil(count/state.size));state.page=Math.max(0,Math.min(state.page,pages-1));
- const bar=el('div',undefined,parent);bar.className='pagination';bar.setAttribute('role','navigation');bar.setAttribute('aria-label',label+' Seiten');
- state.paginationToken??=String(++paginationSerial);bar.dataset.paginationToken=state.paginationToken;
- if(pages===1){el('span',`${count} ${label}`,bar);return 0;}
- const start=count?state.page*state.size+1:0,end=Math.min(count,(state.page+1)*state.size);
- const status=el('span',`${start}–${end} von ${count} ${label}`,bar);status.dataset.pageStatus='';status.tabIndex=-1;status.setAttribute('role','status');
- const move=direction=>{state.page+=direction;redraw();const replacement=parent.querySelector(`[data-pagination-token="${state.paginationToken}"]`);const control=replacement?.querySelector(`[data-page-direction="${direction}"]`);if(control&&!control.disabled)control.focus({preventScroll:true});else replacement?.querySelector('[data-page-status]')?.focus({preventScroll:true});};
- const prev=button(bar,'Zurück',()=>move(-1));prev.dataset.pageDirection='-1';prev.disabled=state.page===0;prev.setAttribute('aria-label',label+': vorherige Seite');
- el('span',`Seite ${state.page+1} / ${pages}`,bar);
- const next=button(bar,'Weiter',()=>move(1));next.dataset.pageDirection='1';next.disabled=state.page>=pages-1;next.setAttribute('aria-label',label+': nächste Seite');
- return state.page*state.size;
+function collectionCount(parent,count,label='Einträge'){
+ const status=el('div',`${count} ${label}`,parent);status.className='collection-count';status.setAttribute('role','status');
 }
 function collection(parent,key,items,{label='Einträge',size=30,search=null,redraw}){
- const state=pageState(key,size);parent.replaceChildren();
+ const state=pageState(key,size),previous=parent.querySelector(':scope > .collection-content'),scroll=previous?.dataset.query===state.query?[previous.scrollLeft,previous.scrollTop]:[0,0];parent.replaceChildren();
  if(search){const bar=el('div',undefined,parent);bar.className='collection-toolbar';const l=el('label',`${label} suchen`,bar),input=el('input',undefined,l);input.type='search';input.placeholder='Name oder Suchbegriff';input.value=state.query;input.dataset.collectionSearch=key;
  input.oninput=debounce(()=>{const value=input.value,position=input.selectionStart;state.query=value;state.page=0;redraw();const replacement=document.querySelector(`[data-collection-search="${key}"]`);replacement?.focus({preventScroll:true});try{replacement?.setSelectionRange(position,position);}catch{};});
  if(state.query)items=items.filter(item=>fold(search(item)).includes(fold(state.query.trim())));
  }
- const offset=pagination(parent,state,items.length,redraw,label),content=el('div',undefined,parent);content.className='collection-content';
- return {items:items.slice(offset,offset+state.size),content,offset,total:items.length};
+ collectionCount(parent,items.length,label);const content=el('div',undefined,parent);content.className='collection-content';content.tabIndex=0;content.setAttribute('role','region');content.setAttribute('aria-label',label+' – scrollbare Liste');
+ content.dataset.query=state.query;requestAnimationFrame(()=>{if(content.isConnected)content.scrollTo(...scroll);});
+ return {items,content,offset:0,total:items.length};
 }
 function detailsVisible(id){const details=$(id)?.closest('details');return !details||details.open;}
 function renderActivePanel(force=false){
@@ -698,16 +689,12 @@ function matrixPositions(){
 function workplaceName(id){return dataIndex().workplaces.get(id)?.name??id;}
 function approvalPositions(){const positions=[...matrixPositions()];if(serviceMatrix())snapshot.positions.forEach(p=>positions.push({...p,name:`${p.name} · ${workplaceName(p.workplace_id)} (eingeschränkt)`}));return positions;}
 function matrixFiltered(){const q=fold($('matrixSearch').value.trim()),positions=matrixPositions();if(!q)return {employees:snapshot.employees,positions};const matchingPeople=snapshot.employees.filter(e=>fold(e.name).includes(q));const matchingPositions=positions.filter(p=>fold(p.name).includes(q));return {employees:matchingPositions.length?snapshot.employees:matchingPeople,positions:matchingPeople.length?positions:matchingPositions};}
-function matrixVisible(){
- const data=matrixFiltered(),people=pageState('matrixPeople',30),positions=pageState('matrixPositions',16);
- people.page=Math.min(people.page,Math.max(0,Math.ceil(data.employees.length/people.size)-1));positions.page=Math.min(positions.page,Math.max(0,Math.ceil(data.positions.length/positions.size)-1));
- return {employees:data.employees.slice(people.page*people.size,(people.page+1)*people.size),positions:data.positions.slice(positions.page*positions.size,(positions.page+1)*positions.size)};
-}
+function matrixVisible(){return matrixFiltered();}
 function renderMatrix(){
  updateHistoryApplyLabel();
  $('mappingWarning').hidden=serviceMatrix()||!snapshot.source.startsWith('sp5');
  const {employees,positions}=matrixVisible(),rows=transposed?positions:employees,cols=transposed?employees:positions;
- const box=$('matrix');box.replaceChildren();const filtered=matrixFiltered();pagination(box,pageState('matrixPeople',30),filtered.employees.length,renderMatrix,'Personen');if(filtered.positions.length>16)pagination(box,pageState('matrixPositions',16),filtered.positions.length,renderMatrix,'Dienste');const grid=el('div',undefined,box);grid.className='collection-content';
+ const box=$('matrix'),previous=box.querySelector('.collection-content'),scroll=[previous?.scrollLeft??0,previous?.scrollTop??0];box.replaceChildren();const filtered=matrixFiltered();collectionCount(box,filtered.employees.length,'Personen');collectionCount(box,filtered.positions.length,'Dienste');const grid=el('div',undefined,box);grid.className='collection-content';grid.tabIndex=0;grid.setAttribute('role','region');grid.setAttribute('aria-label','Freigabematrix – scrollbar');
  const body=table(grid,[transposed?(serviceMatrix()?'Dienst':'Funktion / Arbeitsplatz'):'Person',...cols.map(x=>x.name)]);const t=body.parentElement;t.className='matrix-table';t.setAttribute('aria-label','Freigabematrix für den Planungszeitraum');
  rows.forEach((row,ri)=>{const tr=el('tr',undefined,body);const h=el('th',undefined,tr);h.scope='row';if(!transposed)button(h,row.name||'Neue Person',()=>personDetails(row));else h.textContent=row.name;
  cols.forEach((col,ci)=>{const e=transposed?col:row,p=transposed?row:col,allowed=approved(e,p),history=suggested(e,p);
@@ -717,6 +704,7 @@ function renderMatrix(){
  const text=allowed?(mixedSupervision?'✓ Teils betreut':supervised?'✓ Betreut':'✓ Frei'):(workplacePartial?'◐ Einzelne Arbeitsplätze':partial?'◐ Teilzeitraum':history?'◇ Vorschlag':'− Keine Freigabe');const td=el('td',undefined,tr);
  const b=button(td,text,()=>{setApproval(e,p,!allowed);renderMatrix();renderHistory();$('matrix').querySelector(`[data-row="${ri}"][data-col="${ci}"]`)?.focus();});b.className='matrix-cell '+(allowed?'allowed':partial?'partial':history?'suggested':'prohibited');b.dataset.row=ri;b.dataset.col=ci;b.dataset.employeeId=e.id;b.dataset.functionId=p.function_id;b.dataset.workplaceId=p.workplace_id;b.setAttribute('aria-pressed',String(allowed));b.setAttribute('aria-label',`${e.name} · ${p.name}: ${text}. ${allowed?'Freigabe im Zeitraum entfernen':(serviceMatrix()?'Dienst an allen Arbeitsplätzen für ganzen Planungszeitraum freigeben':'Für ganzen Planungszeitraum freigeben')}`);b.title=`${snapshot.period_start} bis ${snapshot.period_end}. ${supervised?'Betreuung erforderlich. ':''}${p.qualifications_required?'Zusätzlicher Qualifikationsnachweis bleibt erforderlich.':''}`;
  b.onkeydown=event=>{const delta={ArrowRight:[0,1],ArrowLeft:[0,-1],ArrowDown:[1,0],ArrowUp:[-1,0]}[event.key];if(!delta)return;event.preventDefault();$('matrix').querySelector(`[data-row="${ri+delta[0]}"][data-col="${ci+delta[1]}"]`)?.focus();};});});
+ grid.scrollTo(...scroll);
  if(!rows.length||!cols.length)el('p','Keine passenden Personen oder Dienste. Suche leeren oder Teams und Planungszeitraum beim Import prüfen.',$('matrix'));
 }
 let dateFormatter,timeFormatter,formatterZone;

@@ -152,7 +152,7 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   assert.equal(workbookBytes.subarray(0,2).toString(),'PK');
   assert(workbookBytes.length>2000);
   await screenshot('created-project.png');
-  // Follow every summary page; searching can still reach a project beyond page one.
+  // Fetch every API summary page; display all project cards in a scroll region.
   const summaries=await(await fetch(base+'/api/snapshots?limit=1000')).json();
   const knownSummary=summaries.find(item=>item.id===saved.id);
   assert(knownSummary);
@@ -168,7 +168,10 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('#projectCount').textContent.replace(/\D/g,'')==='1001');
   assert(summaryRequests>=2,'Project summaries continue beyond the first API page');
-  assert(await page.locator('.project-card').count()<=24,'Project cards are paginated');
+  assert.equal(await page.locator('.project-card').count(),1001,'All projects are accessible without page buttons');
+  assert.equal(await page.locator('#projectPagination').isVisible(),false);
+  await page.evaluate(()=>window.PlannerUI.setJobs(Array.from({length:12},(_,i)=>({id:'synthetic-job-'+i,snapshot_id:'synthetic-project-0',state:'succeeded',created_at:1}))));
+  assert.equal(await page.locator('#jobCards .job-row').count(),12,'All returned jobs remain available without truncation');
   await page.fill('#projectSearch','Abschlussprojekt 1001');
   await page.waitForFunction(()=>document.querySelectorAll('.project-card').length===1);
   await page.locator(`.project-card[data-project-id="${saved.id}"]`).click();
@@ -191,26 +194,33 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   const input={name:'synthetic-large-project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(large))};
   const importMs=await measure(()=>uploadProject(input));
   await navigate('team');
+  assert.equal(await page.locator('#matrix tbody tr').count(),large.employees.length,'All people appear in matrix without paging');
   const matrixEditMs=await measure(()=>page.locator('.matrix-cell').first().click());
   const searchMs=await measure(async()=>{
     await page.fill('#matrixSearch','Testperson 120');
-    await page.waitForFunction(()=>document.querySelector('#matrix tbody').textContent.includes('Testperson 120'));
+    await page.waitForFunction(()=>document.querySelectorAll('#matrix tbody tr').length===1&&document.querySelector('#matrix tbody').textContent.includes('Testperson 120'));
   });
   assert.equal(await page.locator('#matrix tbody tr').count(),1);
   await page.fill('#matrixSearch','');
   const planMs=await measure(()=>navigate('plan'));
-  assert.equal(await page.locator('#calendar tbody tr').count(),30);
-  const firstPage=await page.locator('#calendar tbody').innerText();
-  const nextPageMs=await measure(()=>page.getByRole('button',{name:'Planzeilen: nächste Seite',exact:true}).click());
-  assert.notEqual(await page.locator('#calendar tbody').innerText(),firstPage);
-  assert.equal(await page.locator('#calendar tbody tr').count(),30);
+  await page.setViewportSize({width:2560,height:1000});
+  assert(await page.locator('main').evaluate(el=>el.getBoundingClientRect().right>=innerWidth-1),'Main uses full wide-screen width');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.setViewportSize({width:1440,height:1000});
+  assert.equal(await page.locator('#calendar tbody tr').count(),large.employees.length);
+  assert.equal(await page.locator('[data-page-direction]').count(),0);
+  const nextPageMs=await measure(()=>page.locator('#calendar .collection-content').evaluate(el=>{el.scrollTop=500;el.scrollLeft=500;}));
+  assert(await page.locator('#calendar .collection-content').evaluate(el=>el.scrollTop>0&&el.scrollLeft>0));
+  const headerTop=await page.locator('#calendar thead th').first().evaluate(el=>el.getBoundingClientRect().top);
+  const regionTop=await page.locator('#calendar .collection-content').evaluate(el=>el.getBoundingClientRect().top);
+  assert(Math.abs(headerTop-regionTop)<3,'Calendar day header stays visible during vertical scroll');
   assert.equal(await page.locator('#plan tbody tr').count(),0,'Assignment editor is built only when opened');
   const detailsMs=await measure(()=>page.locator('#assignmentDetails summary').click());
-  assert.equal(await page.locator('#plan tbody tr').count(),40);
+  assert.equal(await page.locator('#plan tbody tr').count(),large.assignments.length);
   const domNodes=await page.locator('*').count();
   const selects=await page.locator('#plan select').count();
   assert.equal(selects,0,'Employee pickers are created on demand, not per assignment');
-  assert(domNodes<15000,`Large project remains bounded in DOM (${domNodes} nodes)`);
+  assert(domNodes<100000,`Complete scrollable project remains bounded in DOM (${domNodes} nodes)`);
   for(const [name,value]of Object.entries({importMs,matrixEditMs,searchMs,planMs,nextPageMs,detailsMs}))assert(value<10000,`${name} stays responsive: ${value}ms`);
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
