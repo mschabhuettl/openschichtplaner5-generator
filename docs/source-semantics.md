@@ -2379,3 +2379,47 @@ PYTHONPATH=.:tests:../libopenschichtplaner5 .venv/bin/pytest -q \
 
 **147 passed**, davon acht neue Charakterisierungen. Keine Runtimeänderung,
 kein Release, kein Nachweis der Originalursache des fehlenden 600s-Jobs.
+
+### Isolierter Kandidat: Dienstsegmente tatsächlich messen
+
+`tools/work_segments_candidate.py:measure_duty` setzt den ersten begrenzten
+Korrekturschritt um, ohne API, Library oder Generatorlaufzeit zu ändern. Eingang
+ist **ein bereits fachlich ausgewählter Dienst**, nicht eine rohe gemischte
+Ist-/Soll-Liste. Dienstidentität und getrennte Fenster bleiben erhalten.
+Vorhandene Generatorfunktionen `_parse_native_windows`, `localize`, `minute`
+und `day_minutes` übernehmen striktes Parsing, UTC-Messung und Kalenderteilung;
+keine zusätzliche Intervallbibliothek. NOEXTRA und bezahlte DURATION beeinflussen
+in dieser Schicht die Zeitmessung nicht.
+
+14 synthetische Prüfungen belegen:
+
+- 08–12/16–20 bleibt acht Stunden Segmentarbeit, nicht zwölf Stunden Hülle.
+- 00–24 am Wiener Zeitumstellungstag ergibt 23 bzw. 25 reale Stunden.
+- Sonntag 20–Montag 08 verteilt vier/acht Stunden auf die richtigen ISO-Wochen;
+  auch 03./04.01.2027 wird als 2026-W53/2027-W01 aufgeteilt.
+- Fehlende Fenster, ungültige Teilstücke/Uhrzeiten und überlappende Teilfenster
+  brechen ausdrücklich ab, statt teilweise oder doppelt zu zählen.
+- Nicht existente oder mehrdeutige lokale Endpunkte werden nicht geraten.
+- 00–00 bleibt ein undefinierter Quellslot; 08–08 bleibt ein ganzer Diensttag.
+  Das ist Zeitsemantik, keine Aussage über dessen fachliche Zulässigkeit.
+
+Bewusste Grenzen: keine Quellenauswahl/Ersatzregel, keine Abwesenheitsauflösung,
+keine Regelprüfung, keine bezahlten Stunden, kein Laden von Randkontext und keine
+Konfliktprüfung zwischen verschiedenen Diensten. Der Aufrufer muss dieselbe
+explizite Kalenderzone verwenden. Überlappungen innerhalb eines Dienstes werden
+zur Klärung zurückgewiesen, nicht durch eine erfundene Vereinigungsregel geheilt.
+Der bestehende API-Unvollständigkeitsvertrag bleibt unverändert berechtigt.
+Als nächstes ist dieser Baustein mit dem bestehenden Quellenauswahlkandidaten
+zu verbinden: Dienstidentität und nicht messbare Datensätze sichtbar erhalten,
+keine Zeile auf dem Weg zum Prüfbericht stillschweigend verlieren.
+
+Nachweis:
+
+```sh
+PYTHONPATH=.:tests .venv/bin/pytest -q tools/test_work_segments_candidate.py \
+  tests/test_partial_limits.py tests/test_calendar_limits.py tests/test_spill_rest.py
+```
+
+**146 passed**, Ruff erfolgreich. Der erste Testaufruf ohne `PYTHONPATH=.`
+scheiterte bei der Modulauflösung; der dokumentierte Aufruf ist erfolgreich.
+Keine Runtimeänderung, kein Release und kein Original-600s-Reproduktionsnachweis.
