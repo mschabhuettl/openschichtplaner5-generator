@@ -263,6 +263,11 @@ function renderDemands(){
  const view=collection($('demands'),'demands',snapshot.demands,{label:'Bedarfe',size:40,search:d=>demandLabel(d)+' '+d.id,redraw:renderDemands});
  const body=table(view.content,['Dienst und Zeit','Mindestens Personen','Höchstens Personen','Details']);view.items.forEach(d=>{const tr=el('tr',undefined,body);el('td',demandLabel(d),tr);const min=field(el('td',undefined,tr),'Min',d.minimum,v=>d.minimum=v,'number');min.min='0';min.step='1';const maxInput=field(el('td',undefined,tr),'Max (leer = unbegrenzt)',d.maximum,v=>d.maximum=v,'number');maxInput.min='0';maxInput.step='1';maxInput.placeholder='Unbegrenzt';const details=el('details',undefined,el('td',undefined,tr));el('summary','Technische Details',details);el('p',d.id,details);el('p',d.source,details);el('p',workplaceName(dataIndex().positions.get(d.position_id)?.workplace_id??''),details);});
 }
+function openDemandReview(query){
+ const state=pageState('demands',40);state.query=query;state.page=0;navigate('rules');
+ const target=$('demands');target.closest('details').open=true;renderDemands();
+ target.querySelector('input[type="search"]')?.focus();target.scrollIntoView({block:'start'});
+}
 function renderServiceGroups(){
  let box=$('serviceGroups');if(!box){box=el('section');box.id='serviceGroups';box.className='surface padded';$('profiles').before(box);}box.replaceChildren();
  el('h3','Wiederkehrende Dienste gesammelt einstellen',box);
@@ -326,6 +331,12 @@ function renderReferenceImport(){
    el('strong',`${row?.date??'Datum unbekannt'} · ${person?.name??'Person nicht zugeordnet'} · ${service?.name??'Dienst nicht zugeordnet'}`,item);
    el('p',labels[status(row)],item);
    if(status(row)!=='matched')el('p',reasons[row?.resolution_reason]??'Konkrete Ursache im Import nicht dokumentiert. Datum, Dienst, Team, Arbeitsplatz und Bedarf fachlich prüfen.',item);
+   const actions=el('div',undefined,item);actions.className='actions';
+   if(person)button(actions,'Person prüfen',()=>{const current=dataIndex().employees.get(person.id);if(!current)throw Error('Diese Person ist im aktuellen Projekt nicht mehr vorhanden.');personDetails(current);$('details').querySelector('input')?.focus();$('details').scrollIntoView({block:'start'});});
+   const demand=dataIndex().demands.get(row?.demand_id);
+   if(demand){el('p',`Bedarf im aktuellen Projekt: ${demandLabel(demand)}`,item);button(actions,'Zugeordneten Bedarf prüfen',()=>{if(!dataIndex().demands.has(demand.id))throw Error('Dieser Bedarf ist im aktuellen Projekt nicht mehr vorhanden.');openDemandReview(demand.id);});}
+   else if(row?.demand_id)el('p','Der im Import genannte Bedarf ist im aktuellen Projekt nicht mehr vorhanden. Zuordnung erneut fachlich prüfen.',item);
+   if(/^\d{4}-\d{2}-\d{2}$/.test(row?.date??''))button(actions,'Bedarfe am Datum prüfen',()=>openDemandReview(row.date));
   }
  };
  details.addEventListener('toggle',()=>{if(details.open)render();});

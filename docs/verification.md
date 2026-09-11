@@ -277,3 +277,35 @@ erst nach diesem Rücklesen gemeldet werden.
 Die Herkunftsauswahl wird mit `node --test tests/release_source.test.cjs` geprüft;
 die Dateigrenzen mit `pytest tests/test_release_assets.py`. Diese synthetischen
 Tests ersetzen nicht den echten Download-/Upload-/Rückprüfungsablauf in GitHub.
+
+## Getrennte lokale Abnahme gegen eine autorisierte SP5-API
+
+Wenn eine lokale Quell-API zur Abnahme autorisiert ist, wird zuerst der aktuelle
+veröffentlichte Dockerstand geprüft. Die Prüfung wird für neue Releases und nach
+relevanten Import-, Mapping- oder Solveränderungen wiederholt. Unveränderte,
+bereits geprüfte Stände werden ohne neuen Anlass nicht sofort erneut getestet.
+Diese Abnahme ergänzt die synthetischen Gates, sie gehört nicht in öffentliche CI.
+
+Vor dem Start laufende Abnahmen prüfen und keinen konkurrierenden Tester starten.
+Ein separater Container bindet seine Anwendung nur an Loopback und nutzt isolierten,
+flüchtigen Zustand. Die produktive Benutzerinstallation bleibt unverändert. Der
+SP5-Adapter darf ausschließlich GET-Anfragen stellen. Rohdaten und Testskripte
+bleiben außerhalb Git in einem privaten Verzeichnis (0700, Dateien 0600); keine
+Quellinhalte in Containerlogs, Screenshots, CI oder Release-Artefakten ausgeben.
+
+Die Teststrecke umfasst Health und Quellverbindung, Ist- und Soll-Import für
+denselben Zeitraum und dieselbe Teamauswahl, lokales Speichern, fachliche
+Einrichtung mit tatsächlich bestätigten Regeln und persönlichen Freigaben,
+Generierungsversuch und unabhängige Validierung. Ein vorhandenes gültiges
+Ergebnis wird gegen die jeweils entsprechende Quellsicht verglichen: Datum,
+Dienst, Besetzung, Stunden und Zuordnung. Fehlende fachliche Voraussetzungen
+werden als Blocker festgehalten, niemals automatisch ersetzt oder abgeschaltet.
+
+HTTP-Erfolg und Jobstatus `succeeded` sind kein Planungsnachweis. Solverstatus,
+Ergebnisumfang und unabhängige Gültigkeit werden getrennt ausgewiesen. Ohne
+gültigen generierten Plan bleibt der Ergebnisvergleich ausdrücklich offen.
+Version, Image-Digest, Zeitpunkt, Zeitraum/Scope, anonymisierte Summen,
+Fehlerkategorien, Blocker und nächste Fälligkeit gehören in den privaten
+Automations-Arbeitsstand, nicht in eine zusätzliche Statusdatei im Repository.
+Ein Release darf erst mit diesem Beleg als lokal quellgeprüft bezeichnet werden;
+auch ein abgeschlossener Test mit fachlichem Blocker ist kein gültiger Dienstplan.
