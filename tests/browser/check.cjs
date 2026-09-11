@@ -258,13 +258,25 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal((await rejectedSetup).status(),422);
     assert.match(await page.locator('#notice').textContent(),/Einrichtungsübersicht.*beschädigt/);
     assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
-    for(const [key,value] of [['history_matrix',{}],['history_automation',{}]]){
+    for(const [key,value] of [['history_matrix',{}],['history_automation',{}],['workplaces',{}],['group_tree',[null]],['services',{}]]){
       const invalidHistory=structuredClone(backedUp);invalidHistory.metadata[key]=value;
       const rejectedHistory=page.waitForResponse(r=>r.url().endsWith('/api/snapshots/check')&&r.request().method()==='POST');
       await uploadProject({name:'invalid-history.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(invalidHistory))});
       assert.equal((await rejectedHistory).status(),422);
       assert.match(await page.locator('#notice').textContent(),new RegExp(key));
       assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
+    }
+    // Older saved projects and job inputs must pass the same preflight as files.
+    for(const [endpoint,method] of [['snapshots/legacy-broken','openSavedProject'],['jobs/legacy-broken/snapshot','openJob']]){
+      const damaged=structuredClone(backedUp);damaged.metadata.workplaces={};
+      const pattern='**/api/'+endpoint;
+      await page.route(pattern,route=>route.fulfill({json:damaged}));
+      const before=await page.evaluate(()=>JSON.stringify(window.PlannerApp.getState()));
+      const failure=await page.evaluate(async method=>{try{await window.PlannerApp[method]('legacy-broken');return null;}catch(error){return error.message;}},method);
+      assert.match(failure??'',/workplaces/);
+      assert.equal(await page.evaluate(()=>JSON.stringify(window.PlannerApp.getState())),before);
+      assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
+      await page.unroute(pattern);
     }
     acceptDiscard=false;
     await reveal('#demo');

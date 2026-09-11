@@ -196,6 +196,34 @@ def test_valid_setup_review_and_custom_metadata_are_preserved(tmp_path):
         assert checked.json()['metadata'] == snapshot['metadata']
 
 
+@pytest.mark.parametrize('key', ['workplaces', 'group_tree', 'services'])
+@pytest.mark.parametrize('value', [{}, [None], ['broken']])
+def test_invalid_display_catalog_is_rejected_without_replacing_project(tmp_path, key, value):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        saved = client.put('/api/snapshots', json=client.get('/api/demo').json()).json()
+        imported = {**saved, 'metadata': {**saved['metadata'], key: value}}
+        for method, url in [('post', '/api/snapshots/check'), ('put', '/api/snapshots')]:
+            rejected = getattr(client, method)(url, json=imported)
+            assert rejected.status_code == 422
+            assert key in rejected.json()['detail']
+        assert client.get('/api/snapshots/' + saved['id']).json() == saved
+
+
+def test_optional_and_legacy_display_catalogs_are_preserved(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        snapshot = client.get('/api/demo').json()
+        for metadata in [
+            dict.fromkeys(['workplaces', 'group_tree', 'services', 'history_matrix', 'history_automation']),
+            {'workplaces': [{'id': 'synthetic', 'name': None, 'future': True}],
+             'group_tree': [{'id': 1, 'name': 'Synthetic'}],
+             'services': [{'id': 1, 'name': 'Synthetic legacy'}, {'function_id': 'synthetic-service'}]},
+        ]:
+            snapshot['metadata'].update(metadata)
+            checked = client.post('/api/snapshots/check', json=snapshot)
+            assert checked.status_code == 200
+            assert checked.json()['metadata'] == snapshot['metadata']
+
+
 def test_job_history_recovers_exact_input_and_rejects_stale_submission(tmp_path):
     with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
         snapshot = c.put('/api/snapshots', json=c.get('/api/demo').json()).json()

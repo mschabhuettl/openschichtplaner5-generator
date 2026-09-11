@@ -434,11 +434,11 @@ action('save',save);action('saveDraft',save);
 function projectSwitchBusy(){return projectBusy||solving||!!jobId||['save','saveDraft','demo','import','applyJson','file'].some(id=>$(id).dataset.busy==='true');}
 async function openSavedProject(id){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');if(!id||!canReplace())return false;
- projectBusy=true;updateJobButtons();try{load(await api('/api/snapshots/'+encodeURIComponent(id)),true);return true;}finally{projectBusy=false;updateJobButtons();}
+ projectBusy=true;updateJobButtons();try{const original=await api('/api/snapshots/'+encodeURIComponent(id));const checked=await api('/api/snapshots/check','POST',original);load(checked,true);return true;}finally{projectBusy=false;updateJobButtons();}
 }
 async function openJob(id){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');if(!id||!canReplace())return false;
- projectBusy=true;updateJobButtons();try{const original=await api('/api/jobs/'+encodeURIComponent(id)+'/snapshot');original.id=projectId();original.revision='0';original.metadata={...original.metadata,restored_from_job:id};load(original);jobId=id;updateJobButtons();navigate('calculate');await poll();return true;}finally{projectBusy=false;updateJobButtons();}
+ projectBusy=true;updateJobButtons();try{const stored=await api('/api/jobs/'+encodeURIComponent(id)+'/snapshot');const original=await api('/api/snapshots/check','POST',stored);original.id=projectId();original.revision='0';original.metadata={...original.metadata,restored_from_job:id};load(original);jobId=id;updateJobButtons();navigate('calculate');await poll();return true;}finally{projectBusy=false;updateJobButtons();}
 }
 action('restore',()=>openSavedProject($('saved').value));action('refreshJobs',savedJobs);action('restoreJob',()=>openJob($('savedJobs').value));
 action('solve',solve);

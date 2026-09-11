@@ -104,10 +104,25 @@ class HistoryAutomationMetadata(BaseModel):
     applied: list[HistoryAppliedMetadata]
 
 
+class NamedCatalogMetadata(BaseModel):
+    id: str | int
+    name: str | None = None
+
+
+class ServiceCatalogMetadata(BaseModel):
+    id: str | int | None = None
+    function_id: str | None = None
+    name: str | None = None
+    qualifications_required: bool = False
+
+
 DISPLAY_METADATA = {
     'setup_review': ('Einrichtungsübersicht', TypeAdapter(SetupReviewMetadata)),
     'history_matrix': ('Historische Dienstvorschläge', TypeAdapter(list[HistoryRowMetadata])),
     'history_automation': ('Historische Freigabeübersicht', TypeAdapter(HistoryAutomationMetadata)),
+    'workplaces': ('Arbeitsplatzkatalog', TypeAdapter(list[NamedCatalogMetadata])),
+    'group_tree': ('Teamkatalog', TypeAdapter(list[NamedCatalogMetadata])),
+    'services': ('Dienstkatalog', TypeAdapter(list[ServiceCatalogMetadata])),
 }
 
 
