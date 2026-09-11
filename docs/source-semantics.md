@@ -4979,13 +4979,13 @@ otherwise eligible person; the latter has reason
 ### Time-budget bottleneck: coverage before hours and blocks
 
 `solver.solve` builds the existing weighted terms, but initially minimizes only
-`sum(vacancies)` for partial planning. Its final phase transition currently
-requires `phase == "vacancies" and status == cp_model.OPTIMAL`. A first-phase
-`FEASIBLE` result returns without running the hours/block objective. Computing
+`sum(vacancies)` for partial planning. Before the zero-vacancy correction, its final phase transition
+required `phase == "vacancies" and status == cp_model.OPTIMAL`. A first-phase
+`FEASIBLE` result returned without running the hours/block objective. Computing
 and reporting weighted contributions does not mean those terms were optimized.
 This is separate from hard-rule validation and from missing approvals.
 
-`tests/test_partial_limits.py::test_equal_coverage_timeout_can_leave_avoidable_hours_deviation`
+`tests/test_partial_limits.py::test_equal_coverage_feasible_incumbent_reaches_quality_only_with_coverage_proof`
 quantifies the consequence using two synthetic eligible workers, one eight-hour
 demand, and targets of zero and eight hours. A controlled first-phase incumbent
 assigns the zero-target worker: total absolute target deviation is 960 minutes.
@@ -5013,3 +5013,31 @@ dependency needed):
 Merely increasing hours weights cannot address a search that never reaches
 the weighted phase. Neither turning nominal hours into hard weekly caps nor
 inventing approvals is an acceptable remedy.
+
+### Zero-vacancy coverage certificate and remaining quality budget
+
+`solver.solve` now also transitions from coverage to quality when an independently
+validated FEASIBLE incumbent has exactly zero vacancies. Vacancy variables are
+nonnegative and exact, so this reaches a known global lower bound without relying
+on CP-SAT's termination status. The existing equality fixes coverage at zero;
+only the existing weighted objective changes. No hard constraint, approval,
+profile, hours target, or time budget is relaxed. A subsequent OPTIMAL quality
+result is globally justified because coverage was already proven optimal.
+
+The updated equal-coverage regression forces the same 960-minute-deviation
+incumbent as before. With zero vacancies, remaining quality search now reduces
+the deviation to zero; with one unfillable demand and no coverage proof, the
+existing conservative FEASIBLE behavior remains. Three test cases failed on the
+previous implementation and pass after this branch correction.
+`test_objective_and_bound_remain_in_their_search_phase` additionally checks
+FEASIBLE coverage followed by successful or UNKNOWN quality search, for full and
+partial planning, including JSON round-trip and independent validation. UNKNOWN
+retains the valid incumbent and its coverage-phase objective/bound, never a
+fabricated quality gap or OPTIMAL claim.
+
+This is a narrowly bounded fix, **not** an anytime optimizer for incomplete
+coverage. It does not interrupt an ongoing coverage search and cannot recover
+budget already consumed there. The measured configured 600-second case with
+hundreds of vacancies therefore still needs the separately prioritized bounded
+incumbent-quality strategy. Merely proving this zero-vacancy branch correct does
+not establish improved performance on that real case.

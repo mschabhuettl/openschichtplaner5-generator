@@ -1142,7 +1142,13 @@ def solve(snapshot, time_limit=30, partial=False):
             for key, x in xs.items():
                 model.add_hint(x, solver.value(x))
             continue
-        if phase == "vacancies" and status == cp_model.OPTIMAL:
+        if phase == "vacancies" and (
+            status == cp_model.OPTIMAL or solver.value(sum(vacancies)) == 0
+        ):
+            # Vacancies are nonnegative: zero certifies globally best coverage
+            # even when CP-SAT stops at FEASIBLE. Keep that coverage fixed while
+            # using any remaining time for hours/blocks; UNKNOWN still returns
+            # the independently validated coverage incumbent above.
             optimum = solver.value(sum(vacancies))
             model.add(sum(vacancies) == optimum)
             model.minimize(weighted)

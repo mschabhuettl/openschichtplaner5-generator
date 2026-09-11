@@ -344,7 +344,7 @@ def test_unknown_without_incumbent_never_returns_unchecked_assignments(monkeypat
 
 
 @pytest.mark.parametrize("unavoidable_vacancy", [False, True])
-def test_equal_coverage_timeout_can_leave_avoidable_hours_deviation(monkeypatch, unavoidable_vacancy):
+def test_equal_coverage_feasible_incumbent_reaches_quality_only_with_coverage_proof(monkeypatch, unavoidable_vacancy):
     """Characterize quality starvation, not a breach of a hard hours limit."""
     from sp5generator.models import Objectives
 
@@ -368,6 +368,9 @@ def test_equal_coverage_timeout_can_leave_avoidable_hours_deviation(monkeypatch,
     def first_coverage_incumbent(self, model, *args, **kwargs):
         # Force one valid incumbent in a COPY, preserving the production model
         # and both workers' genuine eligibility. Emulate a timeout before proof.
+        if calls:
+            calls.append(1)
+            return original(self, model, *args, **kwargs)
         restricted = model.clone()
         index = next(i for i, var in enumerate(restricted.proto.variables)
                      if var.name == "assign:e0:s")
@@ -380,17 +383,19 @@ def test_equal_coverage_timeout_can_leave_avoidable_hours_deviation(monkeypatch,
         patch.setattr(cp_model.CpSolver, "solve", first_coverage_incumbent)
         timed = solver.solve(snapshot, 3, partial=True)
     optimized = solver.solve(snapshot, 3, partial=True)
-    assert len(calls) == 1
-    assert timed.solver_status == "FEASIBLE"
-    assert timed.metrics["objective_phase"] == "vacancies"
-    assert timed.metrics["objective_contributions"]["hours"] == 960
+    assert len(calls) == (1 if unavoidable_vacancy else 2)
+    assert timed.solver_status == ("FEASIBLE" if unavoidable_vacancy else "OPTIMAL")
+    assert timed.metrics["objective_phase"] == ("vacancies" if unavoidable_vacancy else "quality")
+    assert timed.metrics["objective_contributions"]["hours"] == (960 if unavoidable_vacancy else 0)
     assert optimized.metrics["objective_phase"] == "quality"
     assert optimized.metrics["objective_contributions"]["hours"] == 0
     assert timed.vacancies == optimized.vacancies == ({"unfillable": 1} if unavoidable_vacancy else {})
     for result in (timed, optimized):
         checked = validate(snapshot, result.assignments)
         assert checked.valid and checked.complete is (not unavoidable_vacancy)
-    assert timed.metrics["planning_diagnostics"]["employees"]["e1"]["reason"] == "not_selected_with_candidates"
+    assert timed.metrics["planning_diagnostics"]["employees"]["e1"]["reason"] == (
+        "not_selected_with_candidates" if unavoidable_vacancy else "assigned"
+    )
 
 
 @pytest.mark.parametrize('certified', [False, True])
@@ -873,7 +878,10 @@ def test_account_adjustments_never_offset_elapsed_hard_limits(partial, limit, co
 
 @pytest.mark.parametrize("partial", [False, True])
 @pytest.mark.parametrize("quality_finishes", [False, True])
-def test_objective_and_bound_remain_in_their_search_phase(monkeypatch, partial, quality_finishes):
+@pytest.mark.parametrize("coverage_feasible", [False, True])
+def test_objective_and_bound_remain_in_their_search_phase(
+    monkeypatch, partial, quality_finishes, coverage_feasible,
+):
     """No quality gap may be inferred from a feasibility/vacancy fallback."""
     from sp5generator.models import Objectives, Result
 
@@ -890,7 +898,11 @@ def test_objective_and_bound_remain_in_their_search_phase(monkeypatch, partial, 
         calls.append(1)
         if len(calls) == 2 and not quality_finishes:
             return cp_model.UNKNOWN
-        return original(self, model, *args, **kwargs)
+        status = original(self, model, *args, **kwargs)
+        if len(calls) == 1 and coverage_feasible:
+            assert status == cp_model.OPTIMAL
+            return cp_model.FEASIBLE
+        return status
 
     monkeypatch.setattr(cp_model.CpSolver, "solve", controlled_quality)
     result = solver.solve(snapshot, 3, partial=partial)
