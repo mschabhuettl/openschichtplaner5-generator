@@ -510,3 +510,33 @@ def test_import_uses_personal_approval_without_implicit_qualification_gate():
     assert eligibility(s, employee, demand) == []
     s.positions[0].qualifications_required = True
     assert "qualification" in eligibility(s, employee, demand)
+
+
+@pytest.mark.parametrize(
+    "basis,start,end,expected_hours",
+    [
+        (0, "2026-02-02", "2026-02-08", 35),
+        (1, "2026-02-02", "2026-02-08", 36),
+        (2, "2026-02-01", "2026-02-28", 156),
+        (2, "2026-02-02", "2026-02-08", 35),
+        (2, "2026-02-01", "2026-03-31", 312),
+        (3, "2026-01-01", "2026-12-31", 1800),
+    ],
+)
+def test_nominal_hours_respect_source_basis_and_selected_period(basis, start, end, expected_hours):
+    class NominalDatabase(SyntheticDatabase):
+        def get_employees(self, **kw):
+            return [{**super().get_employees(**kw)[0], "CALCBASE": basis,
+                     "HRSDAY": 7, "HRSWEEK": 36, "HRSMONTH": 156, "HRSTOTAL": 1800}]
+
+    snapshot = import_snapshot(NominalDatabase(), date.fromisoformat(start), date.fromisoformat(end), "1", "UTC")
+    person = snapshot.employees[0]
+    assert person.target_minutes == expected_hours * 60
+    origin = snapshot.metadata["provenance"][person.id]["nominal_hours"]
+    assert origin == {
+        "calcbase": basis, "hours_day": 7.0, "hours_week": 36.0,
+        "hours_month": 156.0, "hours_total": 1800.0,
+        "period_start": start, "period_end": end,
+        "target_minutes": expected_hours * 60, "bookings_included": False,
+    }
+    assert any("Sollbuchungen" in item for item in snapshot.unresolved)

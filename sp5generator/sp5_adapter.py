@@ -234,6 +234,17 @@ def import_snapshot(
             "table": "EMPL",
             "id": e["ID"],
             "target": "sp5lib.calculations.get_nominal_hours; bookings not included",
+            "nominal_hours": {
+                "calcbase": ctx.calcbase,
+                "hours_day": ctx.hrs_day,
+                "hours_week": ctx.hrs_week,
+                "hours_month": ctx.hrs_month,
+                "hours_total": ctx.hrs_total,
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "target_minutes": employees[-1].target_minutes,
+                "bookings_included": False,
+            },
         }
     unresolved.append(
         "Sollbuchungen, Zeitgutschriften und Anfangssalden für den gewählten Zeitraum ergänzen."

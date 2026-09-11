@@ -177,7 +177,18 @@ function personDetails(e){
  const grid=el('div',undefined,box);grid.className='grid';
  const name=field(grid,'Name',e.name,v=>{e.name=v.trim();title.textContent=e.name;});name.required=true;name.maxLength=160;
  const fraction=field(grid,'Beschäftigung in %',e.employment_fraction,v=>e.employment_fraction=v,'number');fraction.min='1';fraction.max='100';fraction.step='1';
- const hours=field(grid,'Sollstunden im Planungszeitraum',e.target_minutes==null?'':e.target_minutes/60,v=>setTargetHours(e,v),'number');hours.dataset.employeeHours=e.id;hours.min='0';hours.required=true;hours.placeholder='Sollstunden festlegen';
+ const hoursGroup=el('div',undefined,grid);
+ const hours=field(hoursGroup,'Sollstunden im Planungszeitraum',e.target_minutes==null?'':e.target_minutes/60,v=>setTargetHours(e,v),'number');hours.dataset.employeeHours=e.id;hours.min='0';hours.required=true;hours.placeholder='Sollstunden festlegen';
+ const hoursHelp=el('p','Das Soll gilt für den gesamten Planungszeitraum, nicht pro Woche. Maximale Wochenstunden sind eine separate verbindliche Regel.',hoursGroup);hoursHelp.id='personHoursHelp';hoursHelp.className='helper-text';hours.setAttribute('aria-describedby',hoursHelp.id);
+ const origin=snapshot.metadata?.provenance?.[e.id]?.nominal_hours;
+ const bases={0:['Tagesbasis','hours_day','Tag'],1:['Wochenbasis','hours_week','Woche'],2:['Monatsbasis','hours_month','Monat'],3:['Gesamtbasis','hours_total','Beschäftigungszeitraum']};
+ if(origin&&Number.isInteger(origin.calcbase)&&Object.hasOwn(bases,origin.calcbase)){
+  const [basis,key,unit]=bases[origin.calcbase];
+  if(Number.isFinite(origin[key])&&Number.isFinite(origin.target_minutes)&&/^\d{4}-\d{2}-\d{2}$/.test(origin.period_start)&&/^\d{4}-\d{2}-\d{2}$/.test(origin.period_end)){
+   const imported=el('p',`SP5-Importstand: ${basis} mit ${origin[key].toLocaleString('de-DE')} Stunden je ${unit}. Berechnetes Soll für ${origin.period_start} bis ${origin.period_end}: ${(origin.target_minutes/60).toLocaleString('de-DE')} Stunden. Teilzeiträume werden nach der SP5-Quellenformel berechnet, nicht pauschal umgerechnet. Das oben bearbeitbare Soll kann inzwischen abweichen.`,hoursGroup);imported.className='helper-text';imported.id='personHoursOrigin';hours.setAttribute('aria-describedby',`${hoursHelp.id} ${imported.id}`);
+   if(origin.bookings_included===false)imported.append(document.createTextNode(' Sollbuchungen sind im Importwert nicht enthalten; separat prüfen.'));
+  }
+ }
  field(grid,'Beschäftigt ab',e.employment_start,v=>e.employment_start=v,'date');field(grid,'Beschäftigt bis',e.employment_end,v=>e.employment_end=v,'date');
  field(grid,'Saldo Minuten',e.balance_minutes,v=>e.balance_minutes=v,'number');
  select(grid,'Erlaubte Dienstart',e.allowed_kinds.join(','),[['day','Nur Tag'],['night','Nur Nacht'],['day,night','Tag und Nacht']],v=>e.allowed_kinds=v.split(','));

@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 def employee(number):
     return {'ID': number, 'NAME': f'Testperson {number - 100:03}', 'EMPSTART': '2025-01-01',
-            'EMPEND': '2027-12-31', 'HRSDAY': 8, 'HRSWEEK': 40, 'WORKDAYS': '1111100'}
+            'EMPEND': '2027-12-31', 'HRSDAY': 8, 'HRSWEEK': 40, 'HRSMONTH': 156, 'CALCBASE': 2, 'WORKDAYS': '1111100'}
 
 
 people = [employee(n) for n in (101, 102, 103)]

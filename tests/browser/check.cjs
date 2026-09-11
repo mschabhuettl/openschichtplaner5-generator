@@ -108,6 +108,23 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const selector = '.matrix-cell[data-employee-id="sp5:employee:101"][data-function-id="sp5:service:201"][data-workplace-id="*"]';
     assert.match(await page.locator(selector).innerText(), /Vorschlag/);
     assert.equal(snapshot.employees[0].approvals.length, 0);
+    await reveal('#people');
+    await page.locator('#people tbody tr').first().getByRole('button',{name:'Bearbeiten',exact:true}).click();
+    const nominal=page.locator('#details').getByLabel('Sollstunden im Planungszeitraum',{exact:true});
+    assert.equal(await nominal.inputValue(),'40');
+    assert.match(await page.locator('#personHoursOrigin').innerText(),/Monatsbasis mit 156 Stunden je Monat/);
+    assert.match(await page.locator('#personHoursOrigin').innerText(),/2026-02-02 bis 2026-02-08: 40 Stunden/);
+    assert.match(await page.locator('#personHoursOrigin').innerText(),/Sollbuchungen sind im Importwert nicht enthalten/);
+    assert.equal(await nominal.getAttribute('aria-describedby'),'personHoursHelp personHoursOrigin');
+    await nominal.fill('48');await nominal.blur();
+    assert.match(await page.locator('#personHoursOrigin').innerText(),/: 40 Stunden/,'Import provenance does not become the edited target');
+    await nominal.fill('40');await nominal.blur();
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      await screenshot(`nominal-source-${width}.png`);
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    }
+    await page.setViewportSize({width:1440,height:1000});
     await screenshot('matrix.png');
     await page.click(selector);
     assert.equal(await page.locator(selector).getAttribute('aria-pressed'), 'true');
