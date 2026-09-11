@@ -589,6 +589,74 @@ Bestätigungsfragen. Historie darf keine zukünftige Freigabe erzeugen. Das
 pauschale Löschen von `unresolved`, Umbenennen von `unconfirmed` oder Umgehen
 von `eligibility` für beliebige Fixierungen ist kein geeigneter Fix.
 
+### Sicherheitsvertrag für die Entkopplung der Randarbeit
+
+`tests/test_boundary_time_contract.py` ergänzt 22 synthetische Gegenproben
+in Voll- und Teilplanung. Ausgangspunkt sind ausschließlich ausdrücklich
+freigegebene Testdienste, keine bereinigten Realdatenimporte. Jede Gegenprobe
+prüft zuerst den unabhängigen Validator und dann den Solver. Anschließend
+ersetzt sie **nur im Test** fixe Randarbeit durch dieselben Intervalle als
+`Employee.unavailable`. Diese vermeintlich einfache Entkopplung verliert
+nachweislich wesentliche Regeln:
+
+| Regel | Synthetischer Konflikt mit neuer Arbeit | Ergebnis nach verlustbehaftetem Abwesenheitsersatz |
+| --- | --- | --- |
+| tägliche Ruhe | Randdienst endet Montag 04:00, neuer Dienst beginnt 08:00; 11h konfiguriert | neuer Dienst fälschlich möglich |
+| zusätzliche Nachtruhe | Nacht endet 04:00, neuer Tagdienst beginnt 16:00; ausdrücklich synthetische 16h Nachtruhe | neuer Dienst fälschlich möglich |
+| Tageshöchstzeit | 8h Randüberhang am Montag plus 8h neuer Dienst; 12h konfiguriert | nur 8h gezählt |
+| Wochenhöchstzeit | Montag 8h Randarbeit plus Mittwoch 8h neuer Dienst; 12h konfiguriert | nur 8h gezählt |
+| Periodenhöchstzeit | 8h Randüberhang innerhalb der Ein-Tages-Periode plus 8h neuer Dienst; 12h konfiguriert | nur 8h gezählt |
+| Arbeits-/Nachtserie | zwei fixe Vor-Tage/-Nächte plus neuer dritter Tag; Maximum 2 konfiguriert | Serie verschwindet |
+| Kalenderwochenruhe | neuer Sonntagsüberhang verkürzt mit fixen Folgezeiten die längste Pause von 40h auf 32h; 36h konfiguriert | Folgearbeit zählt nicht mehr als Arbeit |
+| verschachtelter geteilter Dienst | neuer Dienst liegt zwischen zwei Segmenten derselben Randarbeit | Abwesenheit schützt nur Segmente, nicht die Unvereinbarkeit verschachtelter Dienste |
+
+Alle neun Gegenfälle ergeben mit echter Randarbeit eine gezielte harte
+Diagnose; Vollplanung ist `INFEASIBLE`, Teilplanung lässt nur den neuen Bedarf
+offen. Nach dem absichtlich verlustbehafteten Testumbau wird der neue Dienst
+jeweils `OPTIMAL/complete` akzeptiert. Die Randarbeit allein ist in allen
+Fällen zulässig. Es handelt sich deshalb nicht um eine nachträgliche
+Sanktionierung unbeteiligter Historie. Zwei Kontrolltests zeigen, dass der
+Abwesenheitsersatz direkte Überschneidungen tatsächlich verhindert – dieser
+einzelne erfolgreiche Test wäre somit kein hinreichender Sicherheitsnachweis.
+
+Zwei weitere Kontrollen sichern die Zeitsorten: 8h fixe Randarbeit mit 6000
+bezahlten Minuten und 8h neue Arbeit mit 60 bezahlten Minuten passen exakt
+unter ein synthetisches 16h-Wochenmaximum. Das neue Periodensoll von 60 Minuten
+ist trotzdem exakt erfüllt; Randbezahlung zählt nicht erneut ins Periodensoll.
+Eine Absenkung des Wochenmaximums um eine reale Minute führt zur Ablehnung.
+Die zusätzlichen Höchstwerte/Nachtregeln sind **nur Testkonfigurationen**,
+keine neuen Defaults oder aus dem Nutzerauftrag abgeleiteten Grenzen.
+
+**Konkrete Integrationsgrenzen des nächsten Modellschritts:**
+
+1. Personenbezogene Arbeitsintervalle benötigen eine eigene Eingabekollektion
+   mit stabiler Quellidentität, Person, Segmenten und belegter Nachtart. Keine
+   Pflichtreferenz auf künstlichen Arbeitsplatz, Einsatzteam oder Bedarf.
+   Zeitabweichungen, unbekannte Nachtart und Quellvollständigkeit bleiben
+   explizite offene Fragen; die neue Kollektion ist keine pauschale Freigabe.
+2. Solver `by_employee`, Konfliktgraph, `daily/work/night` und Wochenruhezeugen
+   müssen diese Zeiten als unveränderliche Arbeit berücksichtigen. Die neue
+   Kollektion darf dagegen nicht in `xs`, Bedarfsbesetzung, Kandidatenzählung,
+   Mentorplätze oder neu erzeugte Ergebnis-Einteilungen geraten.
+3. Validator `_validate` benötigt dieselben Randzeiten direkt aus dem Snapshot,
+   unabhängig vom Ergebnis. Sonst könnte das Weglassen aus dem Ergebnis harte
+   Grenzen umgehen. Zeitprüfungen bleiben von `eligibility` der **neuen**
+   Einteilungen getrennt; alte fixe Bedarfszuweisungen dürfen nicht über ein
+   frei setzbares `source`-Kennzeichen von Freigaben befreit werden.
+4. Die personenbezogenen `PreparedValidator`-Kopien der Warmstartheuristik
+   (`solver.local_validator`) müssen die neue Kollektion mitfiltern. Beide
+   Ergebnispfade müssen weiterhin ausschließlich Periodendienste als neue
+   bezahlte Minuten ausweisen. Snapshot-Hash, JSON-Speicherung und Workerpfad
+   müssen die Randdaten unverändert erhalten.
+5. Der Import darf nur eindeutig bekannte normale Randzeiten übernehmen,
+   niemals ungeklärte Sonderzeitabweichungen ersetzen oder dieselbe Quelle
+   gleichzeitig als alte fixe Einteilung und neue Randarbeit zählen.
+
+Diese Gegenproben und Integrationsgrenzen sind implementierter Prüfumfang,
+**noch keine eingeführte neue Randdatenkollektion und keine Behebung des
+Original-600s-Laufs**. Ein neuer Datentyp allein ohne Solver, unabhängigen
+Validator, Import und Persistenz würde diese Anforderungen nicht erfüllen.
+
 ### Durchgängiger Importbeleg statt nur handgebauter Solver-Eingabe
 
 `tests/test_hierarchy.py:test_single_direct_membership_does_not_prove_context_assignment_team`
