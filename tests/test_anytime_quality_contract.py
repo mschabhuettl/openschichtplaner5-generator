@@ -299,3 +299,43 @@ def test_certified_hint_allows_real_fixed_coverage_quality_gain(
         # Better target distribution alone would worsen this objective.
         assert 2 * change_weight > hours_cost
     assert all(not a.fixed for a in snapshot.assignments)
+
+
+@pytest.mark.parametrize('maximum', [1, 2])
+def test_fixed_coverage_quality_can_add_only_configured_optional_staffing(monkeypatch, maximum):
+    snapshot = case(2, [shift('a', 5, 8, 8)])
+    for employee in snapshot.employees:
+        employee.target_minutes = 480
+    snapshot.demands[0].maximum = maximum
+    snapshot.objectives = Objectives(
+        hours=1, changes=100, nights=0, weekends=0, holidays=0, wishes=0,
+        workday_transitions=0,
+    )
+    snapshot.assignments = [Assignment(employee_id='e0', demand_id=snapshot.demands[0].id)]
+    assert validate(snapshot, snapshot.assignments).valid
+    original = cp_model.CpSolver.solve
+    calls = []
+
+    def controlled_search(self, model, *args, **kwargs):
+        calls.append(True)
+        if len(calls) == 2:
+            self.parameters.stop_after_first_solution = True
+        elif len(calls) == 3:
+            self.parameters.stop_after_first_solution = False
+        return original(self, model, *args, **kwargs)
+
+    monkeypatch.setattr(cp_model.CpSolver, 'solve', controlled_search)
+    result = solver.solve(snapshot, 5, partial=True)
+    assert len(calls) == 3
+    coverage, quality = result.parameters['search_trace']
+    assert coverage['vacancy_count'] == quality['vacancy_count'] == 0
+    assert coverage['weighted_quality_cost'] == 480
+    assert quality['weighted_quality_cost'] == (100 if maximum == 2 else 480)
+    assert quality['native_status'] == 'OPTIMAL'
+    assert len(result.assignments) == maximum
+    assert validate(snapshot, result.assignments).valid
+    # Extra staffing is allowed only by the configured maximum, not invented
+    # from employee targets. Removing that capacity keeps one person unassigned.
+    assert {a.employee_id for a in result.assignments} == (
+        {'e0', 'e1'} if maximum == 2 else {'e0'}
+    )

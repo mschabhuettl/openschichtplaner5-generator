@@ -5358,3 +5358,14 @@ case is a concrete reason that an unchanged personnel distribution need not be a
 solver defect. It is not evidence that change costs explain any specific private
 plan, nor permission to change the user's objective weights or require every
 employee to be assigned.
+
+`test_fixed_coverage_quality_can_add_only_configured_optional_staffing` covers
+another distinct mechanism with real production CP-SAT phases: a demand with
+minimum one and maximum two already has its minimum filled by the saved plan.
+Both approved employees target eight hours. Adding the second employee preserves
+zero vacancies and reduces the complete active cost from 480 to 100 (hours plus
+one added assignment). The paired maximum-one case retains the original single
+assignment and cost 480. Both results independently validate. Thus fixed coverage
+means fixed *missing minimum staffing*, not a fixed assignment count; optional
+staffing may improve configured quality only within the existing maximum. Neither
+an employee target nor a quality weight creates additional demand capacity.
