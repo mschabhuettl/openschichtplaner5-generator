@@ -1469,3 +1469,44 @@ Mapping. Es wurde kein Generatorfehler in diesen vier Fällen gefunden und
 keine produktive API oder OSP5-Installation verändert. Die API-Lücke ist als
 separater Korrekturpunkt vorgemerkt; sie beweist nicht die Ursache des originalen
 0.9.29-Laufs. Die unabhängige Generatorprüfung bleibt für die Abnahme notwendig.
+
+### API-Arbeitszeitprüfung addiert Ist und Soll statt einer ausgewählten Sicht
+
+Weiterer isolierter Quellenbefund am selben API-Stand `d578f21`:
+`work_time_rules._employee_plan` liest `MASHI` über `_dated` und filtert dabei
+nur Person und Datum, nicht `TYPE`. `_collect_day_data` summiert anschließend
+alle zurückgegebenen regulären Dienste. Demgegenüber definiert die Library
+`Database.get_schedule` `TYPE=0` als Ist und `TYPE=1` als Soll und trennt die
+Sichten über `plan` / `schedule_type` (database.py:545–575, 704–712).
+Zwei alternative Sichten sind damit in dieser API-Arbeitszeitprüfung nicht
+automatisch zwei tatsächlich geleistete Dienste.
+
+OSP5 `WorkTimeRules.tsx:runCheck` und `runCheckAll` übergeben Person/Gruppe,
+Zeitraum und Grenzparameter, aber keine Ist-/Soll-Auswahl. Der eigenständige
+Generator-Import folgt dagegen `api_adapter.import_api_snapshot(reference_plan)`
+→ `_Database.get_schedule(plan=...)` → API-Schedule-Sicht. Die gemeinsame
+Stundensumme des Arbeitszeitprüfrouters ist kein Generator-Abnahmenachweis.
+
+Synthetische Gegenprobe vom 11.09.2026: Die Originalfunktionen `_employee_plan`,
+`_collect_day_data` und `_check_employee` unverändert per AST geladen und mit
+der echten Library `calculations` ausgeführt. Ausschließlich künstliche
+`_read`-Tabellen: eine Person, 07.09.2026, Dienst 08–16 Uhr, DURATION=8,
+keine Zyklen/Sonderdienste/Feiertage. Prüfgrenzen ausschließlich für diese
+Gegenprobe: 10h täglich, 12h wöchentlich, 11h Ruhe, sechs aufeinanderfolgende
+Arbeitstage; dies sind keine neuen Generator- oder Nutzerdefaults.
+
+| MASHI-Typen | API-Stunden | API-Zeitblöcke | gemeldete Verletzungen |
+| --- | --- | --- | --- |
+| nur 0 (Ist) | 8 | 1 | keine |
+| nur 1 (Soll) | 8 | 1 | keine |
+| 0 und 1 am selben Tag | 16 | 2 | Tages- und Wochenmaximum |
+
+Alle drei erwarteten Stundensummen und Verletzungsanzahlen wurden per Assertion
+bestätigt. Die vorhandenen API-Tests `tests/test_work_time_rules.py` enthalten
+keine Ist-/Soll-Gegenprobe; die Library trennt diese Semantik in
+`tests/test_soll_ist_plan.py` und `tests/test_conflict_soll_ist.py`.
+Dies ist ein weiterer belegter Vergleichsfehlerpfad im separaten API-Werkzeug,
+keine bewiesene Ursache des originalen Generator-600s-Laufs und keine neue
+Generator-Runtimekorrektur. Keine produktive API geändert, kein Live-POST,
+keine Originaldaten verwendet. Ein künftiger Upstream-Fix muss die gewünschte
+Prüfsicht explizit festlegen und Zyklen/Sonderersatz konsistent dazu behandeln.
