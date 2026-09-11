@@ -5070,3 +5070,16 @@ comparing vacancy objectives against weighted quality objectives. Preserve
 independent validation/separation in both searches and a shared wall-clock
 deadline. Budget allocation and actual same-input performance remain open;
 these counterexamples are contract evidence, not a delivered anytime strategy.
+
+The same production-model clone contract now additionally exercises four
+configured restrictions: an eight-hour weekly cap, an eight-hour daily cap
+against a nine-hour duty, eleven-hour inter-duty rest against a ten-hour gap,
+and an approval expiring before the second duty. Both primary and fixed-coverage
+quality models choose one valid eight-hour duty; forcing zero vacancies remains
+INFEASIBLE in both. In the approval case, the forbidden assignment variable is
+absent entirely (candidate filtering), rather than merely penalized. These are
+synthetic explicit configurations, not inferred limits for the user's project.
+`test_quality_clone_preserves_configured_hard_constraints` independently validates
+each chosen plan. This evidence covers cloning these constraints, not the future
+scheduler's deadline handling or its validator-driven separation loop; those
+still require runtime integration and timeout tests before enabling anytime search.
