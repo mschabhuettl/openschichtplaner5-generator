@@ -7,6 +7,58 @@ Library `0dac4438c0be02c1ad612f54d4aba75a3e4d6335`, API
 Dies ist eine eingegrenzte Datenflussanalyse, keine vollständige fachliche
 Abnahme aller Originaltabellen. Keine realen Datensätze sind enthalten.
 
+## Aktueller Korrekturstand gegenüber 0.9.29
+
+Konsolidierter Code-/Teststand: `7f05dee` (11.09.2026). Die nachfolgenden
+Detailabschnitte dokumentieren auch **historische** Fehlerzustände; offene
+Formulierungen dort sind nicht automatisch offene Fehler im aktuellen Code.
+Diese Übersicht ist keine Release- oder Echtdatenfreigabe.
+
+| Fehler oder Beobachtung | Aktueller Zustand und Codepfad | Synthetischer Nachweis |
+| --- | --- | --- |
+| Eingetragenes Wochenmaximum verliert durch Sammelzuordnung seine Wirkung | **Behoben** (`fbe2c1a`): `ProfileGroups.apply` erhält bereits konfigurierte Profilzuordnungen, ohne sie zu bestätigen. Bereits früher verlorene Zuordnungen werden nicht rekonstruiert. | `tests/browser/profile-groups.cjs`; Formular/Speichern/Neuladen in `tests/browser/check.cjs` |
+| Dienst läuft über das Periodenende: Tages-/Wochenzeit und folgende Kalenderwochenruhe ungeprüft | **Behoben** (`4d3d645`, `6ca9271`, `3a29b25`): `solver.solve` und `validator.validate` prüfen ausgewählten Überhang mit gültigen zugeordneten Profilen; reale lokale Tages-/ISO-Wochenteile statt bezahlter Minuten. | `tests/test_partial_limits.py:test_hard_limits_cover_spill_after_period_end`; `tests/test_spill_rest.py` einschließlich 36h-Grenze, DST und Profilgültigkeit |
+| Historische Randzeit benötigt künstlichen Bedarf und damalige Freigabe | **Behoben für importierte personenbezogene Randarbeit** (`47ebff2`, `0580aa9`): `import_snapshot` → `Snapshot.boundary_work` → Solver/Validator; keine Besetzung und kein Periodensoll aus Randzeit. Explizite alte Fixierungen behalten ihren strengeren Einteilungsvertrag. | `tests/test_boundary_work.py`; `tests/test_hierarchy.py:test_imported_boundary_counts_real_weekly_time_without_historical_approval` |
+| Normaldienst und tagbezogener Sonderersatz doppelt gezählt | **Behoben** (`dd8c7b3`, `d2748ab`): `import_snapshot` normalisiert Ist-Randarbeit und Ist-Referenzen gemäß Library-Personentagsersetzung. Sollreferenzen sowie echte Zusatzdienste werden nicht pauschal gelöscht. Ungeklärte Ersatzzeiten bleiben Blocker. | `tests/test_api_adapter.py:test_special_replacement_boundary_matches_library_person_day`, `test_in_period_replacement_reference_respects_selected_plan`, `test_in_period_unresolved_special_never_becomes_free_time` |
+| Teilplan oder Zeitbudget lockert harte Fixierung/Wochengrenze | **In den geprüften Fällen nicht bestätigt**: Solver-Fixierung und unabhängige Validierung bleiben erhalten. FEASIBLE ist kein Optimalitätsbeweis; UNKNOWN ohne Incumbent liefert keinen gültigen Plan. | `test_replacement_fixed_import_enforces_hard_limits_through_solver` und `test_imported_fixed_replacement_timeout_preserves_only_valid_incumbent` in `tests/test_api_adapter.py`; kontrollierte Statuszweige, **kein** 600s-Lasttest |
+| Nicht alle geeigneten Personen eingeplant | **Kein pauschaler Regelverstoß**: `solver.solve` diagnostiziert individuelle Kandidaten/Ausschlüsse. Lineare Sollabweichung kann bei verschiedenen Verteilungen gleich sein; das weiche Blockziel kann Arbeit konzentrieren. Keine erfundene Pflicht zur Einteilung jeder Person. | `tests/test_partial_limits.py:test_linear_hours_target_can_tie_while_block_goal_concentrates_work` und Ausschlussdiagnosen derselben Datei |
+| 24h-Dienst trotz 11h/36h-Ruhe | **Nicht allein daraus verboten**: tägliche Höchstzeit gilt für aufsummierte reale Zeit je Kalendertag, nicht automatisch für die Länge eines einzelnen Dienstes. Tatsächlich zugeordnete Grenzen und angrenzende Ruhe sind entscheidend. | `tests/test_partial_limits.py:test_24_hour_duties_are_not_forbidden_by_11_36_rest_alone`, `test_daily_limit_is_not_a_single_duty_length_limit` |
+| Sollbuchungen / DADEM-Teamfilter / optionale Vergleichsblocker | **Behoben** (`f945180`, `889909b`, `e02a05a`): `_nominal_bookings` normalisiert signierte Typ-1-Buchungen; `import_snapshot` respektiert native DADEM-Teamfelder und trennt nicht fixierte Vergleichsdiagnosen von Pflichtdaten. Keine Umdeutung von Sollstunden zum Wochenmaximum. | `tests/test_nominal_bookings.py`, DADEM-Scope in `tests/test_sp5_adapter.py`, `tests/test_reference_blockers.py` |
+
+### Noch offen: Originalreproduktion und fachliche Abnahme
+
+- Der exakte gespeicherte Projekt-/Jobeingang und das Ergebnis des gemeldeten
+  0.9.29-Laufs mit 600 Sekunden liegen für diese Analyse weiterhin nicht vor.
+  Die gefundenen synthetischen Fehlerpfade beweisen nicht dessen Ursache.
+- Positive persönliche Freigaben, tatsächlich wirksame Höchstgrenzen und
+  bestätigter Randkontext dürfen nicht aus Historie oder Sollstunden geraten
+  werden. Der Nutzer hat 11h tägliche und 36h wöchentliche Ruhe vorgegeben,
+  aber kein konkretes hartes Wochenmaximum.
+- Mehrdeutige Team-/Arbeitsplatzzuordnung echter Referenzen bleibt sichtbar:
+  Quellmitgliedschaft ist kein eindeutiger Einsatzteamnachweis. Die Korrekturen
+  erfinden keine Bedarfe, Freigaben oder Zuordnungen.
+- Die letzte private Abnahme des veröffentlichten Runtime-Stands `d2748ab`
+  belegt Import/Speicherung, nicht erfolgreiche Neuplanung: beide Plansichten
+  bleiben wegen fehlender Einrichtung MODEL_INVALID, ohne generierte
+  Einteilungen. Kein unabhängig gültiger realer Vergleichsplan liegt vor.
+
+### Geschlossener Korrekturumfang und verbleibende Gates
+
+Die drei zusammengehörigen Sicherheitsbereiche sind Profilzuordnung,
+Zeitgrenzen einschließlich Randarbeit sowie Ist-Sonderersetzung. Die obigen
+Tests decken ihre Einzelverträge und den HTTP-Import bis Teilplan/Validator ab.
+Lokaler Gesamttest am Stand `7f05dee`: 663 bestanden, zwei bekannte
+Deprecation-Warnungen. Der CI-Stand ist separat zu prüfen; ein lokaler
+Python-Test ersetzt Paket-, Browser- und Container-Gates nicht.
+
+Vor einer Freigabe dieses gesamten Umfangs: abschließende CI des ausgewählten
+Commits prüfen, erforderliche veröffentlichte Docker-Abnahme privat und lesend
+nachweisen und verbleibende echte Einrichtungsblocker ausdrücklich erhalten.
+Ein neuer Tag ist weder Originalreproduktion noch Migration bereits verlorener
+Projektangaben. Die nächste fachliche Gegenprüfung benötigt den exakten
+Originaleingang, sobald er privat verfügbar ist; bis dahin bleiben weitere
+unabhängige Gegenproben möglich. Keine neue UI-/Feature-Serie daraus ableiten.
+
 ## Zusammenhängender Abgleich: Ursachen und Korrekturfolge
 
 Vertiefter Lesestand: Generator `267ad4e71e4cff70f28709a5cc83983ea3fe6973`.
@@ -92,15 +144,17 @@ belegt insbesondere SPDEM-Vorrang und „kein Bedarf“ als eigene Kategorie.
 
 ### Konkrete Mappinglücken und priorisierte Korrekturen
 
-1. **Nachgewiesener Fehler: DADEM-Teamfilter.** Die Library liefert rohe
+1. **Historischer, inzwischen behobener Fehler: DADEM-Teamfilter** (`889909b`). Die Library liefert rohe
    `GROUPID`-Felder, Generator `sp5_adapter.py:196–200` prüft `group_id`.
    Dadurch wird jede solche Zeile als `None` behandelt und zugelassen.
    Synthetische Quelle: Auswahl Team 1, einzige DADEM-Zeile `GROUPID=99`;
    eine fremde Zeile bleibt in `unresolved_native.daily_requirements`.
    Korrektur: Quellfeld korrekt lesen, ausgewählte und globale/ungeklärte
    Werte erhalten, fremde Teams ausschließen; kein DADEM-Soll erfinden.
-   Bestehender Test `test_special_and_zero_preserved_not_summed` deckt nur
-   das Erhalten einer ausgewählten Zeile ab, nicht den Fremdteamfall.
+   Der damalige Test `test_special_and_zero_preserved_not_summed` deckte nur
+   das Erhalten einer ausgewählten Zeile ab. Die inzwischen ergänzten
+   DADEM-Scope-Gegenproben in `tests/test_sp5_adapter.py` prüfen auch fremde,
+   ausgewählte und ungeklärte Teams.
 2. **Nachgewiesene und inzwischen korrigierte Lücke: Sollbuchungen.** `get_bookings` liefert
    `employee_id/date/type/value`; `booking_sum` erwartet `DATE/TYPE/VALUE`.
    Ein bloßes Durchreichen wäre wirkungslos. Der Generator rief im untersuchten Stand
