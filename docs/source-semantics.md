@@ -903,3 +903,66 @@ Unverändert offen: abweichende Sonderdienste, Quellvollständigkeit,
 wirksame bestätigte Profile und tatsächliche neue persönliche Freigaben.
 Bestehende gespeicherte Projekte werden **nicht** automatisch migriert.
 Der Original-600s-Job ist weiterhin nicht reproduziert.
+
+### Sonderzeiten: vorhandener Live-Datenpfad statt ORM-Fallback
+
+Nachprüfung 2026-09-11 nach `0580aa9`: Die Aussage, der Library-
+Schedule-Export enthalte keine SPSHI-Zeiten, gilt für `get_schedule` allein,
+**nicht für den vollständigen Generatorimport**. Der vorhandene ergänzende
+Leseweg ist:
+
+1. `5SPSHI.STARTEND/DURATION/TYPE/ID` → Library
+   `Database.get_spshi_entries_for_day` (`sp5lib/database.py:2626`): direktes
+   `_read("SPSHI")`, Datum und optionale Gruppenmitgliedschaft als Filter.
+2. API `schedule.get_einsatzplan` (`sp5api/routers/schedule.py:1480`):
+   `GET /api/einsatzplan`, delegiert an dieselbe Library-Methode. Kein
+   ORM-Spiegel, keine Synchronisierung und kein Schreibaufruf erforderlich.
+3. OSP5 `frontend/src/api/client.ts:1630` deklariert `getEinsatzplan`
+   über `/api/v1/einsatzplan`. Im untersuchten Frontend ist kein Aufrufer
+   dieser Clientfunktion gefunden; eine tatsächliche Anzeige dieser Daten
+   ist damit **nicht** belegt.
+4. Generator `api_adapter._Database.get_spshi_entries_for_day` → `_scope_schedule`:
+   Details werden pro Datum/ausgewählter Gruppe gelesen. Übernahme nur bei
+   genau einem Treffer für Person, Dienst, Arbeitsplatz und SPSHI-Typ.
+5. `import_snapshot`: Nur Typ 0 mit exakt gleichen realen Zeitsegmenten
+   **und** gleichen bezahlten Minuten darf als nominaler Dienst behandelt
+   werden. Fehlende Details, Mehrdeutigkeit, abweichende Zeiten oder bezahlte
+   Dauer sowie Typ 1 bleiben Sonderdienst-/Quellklärungsblocker. Historische
+   Einteilungen bestätigen dabei keine persönliche Freigabe.
+
+Damit ist „fehlender API-Endpunkt“ keine belegte Ursache für die noch offenen
+Sonderdienste. Die Mappinglücke ist die weiterhin fehlende eigenständige
+Repräsentation abweichender Sonderdienste; nominale Ersatzzeiten wären keine
+zulässige Reparatur. Insbesondere dürfen längere reale Zeiten bei identischer
+bezahlter Dauer nicht verschwinden. Vor einer Erweiterung müssen Ersatz- versus
+Zusatzsemantik und Typ-1-Abweichungen anhand der Library-Arbeitszeitberechnung
+abgeglichen werden; weder Dienstzeiten noch Höchstgrenzen werden geraten.
+
+Synthetischer HTTP-Nachweis:
+`test_special_duty_details_use_live_read_only_endpoint_and_never_guess`
+mit sechs Gegenproben (nominal, längere reale Zeit bei gleicher Bezahlung,
+andere Bezahlung bei gleicher Zeit, fehlende Zeit, mehrere Detailtreffer,
+Typ 1). Alle sichern ausschließlich GET, exakten Datum-/Gruppenfilter,
+keinen ORM-Zugriff und unverändert fehlende persönliche Freigaben.
+
+**Weiterer konkreter Semantikunterschied:** Die Library entscheidet Ersatz
+nicht anhand von `SPSHI.TYPE`, sondern in `calculations._replaced_days`
+(`calculations.py:436`) anhand einer gesetzten `SHIFTID`: Alle normalen
+Dienste dieses Personentags werden in `get_work_hours` ausgenommen; die
+Sonderzeile trägt ihre eigene `DURATION`. Ohne `SHIFTID` wird sie zusätzlich
+gerechnet. Vorhandene Library-Tests `test_special_shift_replaces_duty` und
+`test_pure_special_shift_adds` belegen 5 statt 8+5 bzw. 8+3 Stunden.
+`daily_work_intervals` verwendet dieselbe Ersatzentscheidung, berücksichtigt
+aber auch `NOEXTRA` für Zuschläge; diese Zuschlagsintervalle dürfen deshalb
+nicht ungeprüft als vollständige Arbeitszeit für Ruhegrenzen wiederverwendet
+werden.
+
+Demgegenüber exportiert `Database.get_schedule` zunächst die manuellen
+MASHI-Zeilen unverändert und unterdrückt mit `replaced_by_spshi` nur
+Zykluszeilen; danach kommen die SPSHI-Zeilen hinzu. Ein API-Raster ist daher
+keine bereits normalisierte Liste tatsächlich addierbarer Arbeitszeiten.
+Der Generator kennt bislang nur die oben beschriebene nominal-identische
+Sonderersetzung, keine vollständige tagbezogene Ersatzauflösung. Das ist
+vor einer Freigabe abweichender Sonderzeiten zu korrigieren, insbesondere
+bei abweichender Dienst-/Arbeitsplatzidentität. Dieser Quellcodebefund ist
+noch **keine** Reproduktion der gemeldeten 24h-Dienste des Originaljobs.

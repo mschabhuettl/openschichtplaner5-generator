@@ -332,3 +332,35 @@ def test_api_reference_view_is_separate_from_history_and_actual_context(transpor
     assert any(q['plan'] == ['ist'] for q in schedules)
     with pytest.raises(APIImportError, match='Referenzplansicht'):
         import_api(date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC', reference_plan='both')
+
+
+@pytest.mark.parametrize("case", ["nominal", "longer", "paid_only", "missing_time", "ambiguous", "deviation"])
+def test_special_duty_details_use_live_read_only_endpoint_and_never_guess(transport, case):
+    """SPSHI time and paid duration must both agree before nominal substitution."""
+    responses, calls = transport
+    special = {"employee_id": 101, "date": "2026-01-06", "kind": "special_shift",
+               "shift_id": 201, "workplace_id": 301,
+               "spshi_type": 1 if case == "deviation" else 0}
+    responses[("schedule", "2026", "1", "ist")] = [special]
+    detail = {"id": 901, "employee_id": 101, "date": "2026-01-06",
+              "shift_id": 201, "workplace_id": 301, "type": special["spshi_type"],
+              "startend": "08:00-10:00;11:00-13:00", "duration": 4}
+    if case == "longer":
+        detail["startend"] = "08:00-10:00;11:00-14:00"
+    elif case == "paid_only":
+        detail["duration"] = 5
+    elif case == "missing_time":
+        detail.pop("startend")
+    responses["/api/einsatzplan"] = [detail]
+    if case == "ambiguous":
+        responses["/api/einsatzplan"].append({**detail, "id": 902, "duration": 5})
+
+    snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+
+    assert bool(snapshot.assignments) == (case == "nominal")
+    assert any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved) == (case != "nominal")
+    assert snapshot.employees[0].approvals == []
+    detail_calls = [urlsplit(c.full_url) for c in calls if urlsplit(c.full_url).path == "/api/einsatzplan"]
+    assert detail_calls
+    assert all(parse_qs(c.query) == {"date": ["2026-01-06"], "group_id": ["1"]} for c in detail_calls)
+    assert all(c.get_method() == "GET" and "/admin/orm" not in c.full_url for c in calls)
