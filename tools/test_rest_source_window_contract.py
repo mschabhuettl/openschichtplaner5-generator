@@ -130,3 +130,44 @@ def test_night_block_context_depends_on_selected_bridge_not_arbitrary_pairs(brid
     assert result.solver_status == 'OPTIMAL'
     assert len(result.assignments) == (3 if bridge else 1)
     assert result.validation.valid
+
+
+@pytest.mark.parametrize('assigned', [False, True])
+@pytest.mark.parametrize('profile_day', [5, 6, 7])
+def test_exhaustive_selected_nights_cannot_bridge_dated_daily_rest(assigned, profile_day):
+    """Check every subset against an explicit fixture oracle, not solver output."""
+    from itertools import combinations
+
+    from sp5generator.solver import solve
+    from sp5generator.validator import validate
+    from test_core_rules import assignment, case, shift
+
+    snapshot = case(1, [shift(name, day, 22, 8, 'night')
+                        for name, day in [('a', 5), ('b', 6), ('c', 7)]])
+    snapshot.profiles[0].min_rest_minutes = 660
+    snapshot.profiles[0].after_night_block_rest_minutes = 2880
+    snapshot.profiles.append(snapshot.profiles[0].model_copy(update={
+        'id': 'dated', 'valid_from': date(2026, 1, profile_day),
+        'valid_until': date(2026, 1, profile_day), 'min_rest_minutes': 1020,
+    }))
+    if assigned:
+        snapshot.employees[0].profile_ids.append('dated')
+    # Adjacent nights have 16h rest; separated outer nights have 40h.
+    # All three bridge the 48h block rule, but never an assigned 17h daily rule.
+    allowed = {frozenset(), frozenset('a'), frozenset('b'), frozenset('c')}
+    if not assigned or profile_day == 7:
+        allowed.add(frozenset('ab'))
+    if not assigned or profile_day == 5:
+        allowed.add(frozenset('bc'))
+    if not assigned:
+        allowed.add(frozenset('abc'))
+    for size in range(4):
+        for subset in combinations('abc', size):
+            checked = validate(snapshot, [assignment(d=name) for name in subset])
+            assert checked.valid is (frozenset(subset) in allowed), subset
+    result = solve(snapshot, 3, partial=True)
+    assert result.solver_status == 'OPTIMAL'
+    selected = frozenset(a.demand_id for a in result.assignments)
+    assert selected in allowed
+    assert len(selected) == max(map(len, allowed))
+    assert result.validation.valid

@@ -3097,3 +3097,23 @@ Die bereits vorhandenen DST-Regressionen prüfen zusätzlich reale statt lokale
 Uhrzeitabstände. Alle 45 Tests der kombinierten Ruhe-/Paardiagnose-/Kalenderlimit-
 Suite bestanden. Kein produktiver Code, keine Quelldaten und keine Defaults
 wurden geändert; daraus folgt kein Nachweis über den fehlenden Originaljob.
+
+### Kombinierte Ruhebedingungen: vollständiger synthetischer Auswahlvergleich
+
+`test_exhaustive_selected_nights_cannot_bridge_dated_daily_rest` erweitert den
+vorstehenden Vertrag um sechs Kombinationen aus Profilzuordnung und Gültigkeit
+am ersten, mittleren oder letzten Nachtstart. Für jede Kombination werden alle
+acht Teilmengen der drei Dienste gegen eine explizit vorgegebene Zulässigkeitsliste
+geprüft (48 Validatorprüfungen), anschließend die maximale Besetzung des
+Teilplansolvers gegen diese Liste. Die erwartete Liste wird nicht aus Solver-
+oder Validatorfunktionen abgeleitet.
+
+Befund: Die ausgewählte mittlere Nacht überbrückt die synthetische
+48h-Nachtblockbedingung, aber nicht die zugleich geltende datierte 17h-Tagesruhe.
+Bei Zuordnung des strengeren Profils am mittleren Start ist nur eine Nacht
+zulässig; bei Zuordnung am äußeren Start sind zwei zulässig. Ohne Zuordnung
+bleiben alle drei zulässig. `domain.pair_conflict` und die harten Paarbedingungen
+in `solver.solve` bleiben somit neben der auswahlabhängigen Nachtblockbedingung
+wirksam. Der Vergleich bestätigt diese Kombination im aktuellen Stand, belegt
+keinen weiteren Runtimefehler und reproduziert nicht den fehlenden 600s-Originaljob.
+Keine neuen fachlichen Defaults, kein produktiver Code geändert.
