@@ -2934,3 +2934,71 @@ und weiter Stunden/Überlappungen verursachen. Dieser Nachweis betrifft
 synthetische Quelldaten, nicht den fehlenden originalen 0.9.29-600s-Job. Vorrang
 für dessen Reproduktion und harte Generatorgrenzen bleibt bestehen; keine
 produktive UI-Änderung und kein Release aus dieser Quellencharakterisierung.
+
+### Direkter Versionsvergleich zur 0.9.29-Teilplanmeldung (11.09.2026)
+
+Zur Konsolidierung wurde `sp5generator/` aus dem unveränderten Git-Tag
+`v0.9.29` per `git archive` in ein temporäres Verzeichnis extrahiert. Dieselben
+heutigen synthetischen Tests liefen dort und gegen `fc10e59`, mit demselben
+Python-/OR-Tools-Environment. Keine Installation, Quelldaten oder Runtime
+wurden geändert. Das ist ein kontrollierter Codevergleich, kein Nachbau des
+ursprünglichen Docker-Environments und kein 600-Sekunden-Lasttest.
+
+Aus `test_partial_limits.py`, `test_calendar_limits.py`, `test_spill_rest.py`
+wurden diese Testfunktionen samt Parametrisierungen ausgewählt:
+
+- `test_daily_limit_sums_separate_duties_not_paid_minutes`
+- `test_weekly_limit_uses_fixed_context_and_not_target_or_paid_minutes`
+- `test_24_hour_duties_are_not_forbidden_by_11_36_rest_alone`
+- `test_spill_limits_include_fixed_following_context`
+- `test_spill_uses_assigned_profile_valid_on_tail_date`
+- `test_overnight_spill_requires_confirmed_profile_coverage`
+- `test_calendar_spill_rest_exact_36_hour_boundary`
+- `test_partial_never_keeps_conflicting_assignments`
+- `test_no_rule_requires_every_eligible_employee_to_receive_a_duty`
+
+Ergebnis: **aktuell 39 bestanden; 0.9.29 29 bestanden / 10 fehlgeschlagen**.
+Neun Altfehler sind unzulässige `Validation(valid=True, complete=True)` für
+Überhanglimits, Folgeprofilabdeckung oder Kalenderwochenruhe. Der zehnte ist
+**kein zusätzlicher Regelverstoß**: `planning_diagnostics` fehlte damals.
+Die davor geprüfte Aussage, dass ein Bedarf mit Maximum 1 bei drei geeigneten
+Personen zwei Personen ohne Einteilung lässt, besteht auch unter 0.9.29.
+Die Zahl zehn darf deshalb nicht als zehn unabhängige Sicherheitsfehler gelten.
+
+Da fehlgeschlagene Validator-Assertions den Solverteil eines Tests abbrechen,
+wurden drei Fälle zusätzlich unmittelbar durch `solve(..., 3, partial=True)`
+und anschließendes `validate` geführt:
+
+| Synthetischer Fall | 0.9.29 | Aktueller Stand |
+| --- | --- | --- |
+| Sonntag 23–Montag 08 plus Montag 12–14; Tagesmaximum 599 Minuten | Überhang gewählt, OPTIMAL, Validator gültig trotz 600 Minuten Montag | Überhang offen, Fixdienst erhalten, OPTIMAL, Validator gültig |
+| Gleiche Dienste, Wochenmaximum 599 Minuten | Überhang gewählt, OPTIMAL, Validator gültig trotz 600 Minuten neuer ISO-Woche | Überhang offen, Fixdienst erhalten, OPTIMAL, Validator gültig |
+| `spill_case()`: 11h tägliche / 36h Kalenderwochenruhe; Überhang reduziert längste Folgewochenruhe von 40h auf 32h | Überhang gewählt, OPTIMAL, Validator gültig | Überhang offen, vier Fixdienste erhalten, OPTIMAL, Validator gültig |
+
+**Damit waren diese Altfehler nicht erst Folge eines Zeitlimits:** Sie treten
+bereits mit OPTIMAL auf. OPTIMAL zertifiziert das damalige Modell, nicht dessen
+fachliche Vollständigkeit. Die Korrekturen liegen in `solver.solve` (aktive
+Überhangtage, datierte Profile, ISO-Wochensummen, bedingte Folgewochenruhe),
+`validator.validate`/`weekly_windows` und der Profilabdeckung in `domain`;
+sie sind in 0.9.30/0.9.31 beschrieben, nicht erst auf dem Analysebranch behoben.
+
+Priorisierte verbleibende Abgrenzung:
+
+1. Originales 0.9.29-Projekt/Job/Ergebnis fehlt weiterhin laut privater
+   Artefaktprüfung. Keine Aussage, welcher der synthetisch belegten Fehler dort
+   tatsächlich wirksam war. Verlorene Profilzuordnungen müssen aus tatsächlicher
+   Einrichtung rekonstruiert werden, nicht aus angenommenen Höchststunden.
+2. 11h/36h allein verbieten keinen 24h-Dienst; Soll-/bezahlte Stunden sind keine
+   harten Wochenmaxima. Die entsprechenden Kontrollen bestehen auch unter
+   0.9.29. Keine Pflicht zur Einplanung aller Personen hinzufügen.
+3. Der produktive Import setzt `context_complete=False`; Kalenderabdeckung ist
+   kein Nachweis vollständiger Quelldaten. `validate` unterscheidet weiterhin
+   `valid` von `complete`: ein Kontextdiagnostikum verhindert Vollständigkeit,
+   ist aber kein nachgewiesener persönlicher Regelverstoß. Der isolierte
+   Library/API-Diagnosekandidat benötigt weiter atomaren Quellenstand und einen
+   eigenständigen Ruhekontextvertrag; Tages-/Wochenlimitfenster reichen dafür
+   nicht aus.
+4. Unveränderte private 0.9.31-Abnahme nicht redundant wiederholt: beide Sichten
+   MODEL_INVALID wegen offener Einrichtung, kein realer generierter Vergleich.
+   Nächste Abnahme bei relevanter Runtimeänderung oder neuem Release. Dieser
+   Versionsvergleich fügt keine fachlichen Regeln hinzu und benötigt kein Release.
