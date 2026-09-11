@@ -920,3 +920,43 @@ def test_person_integral_dbf_float_identity_normalizes_without_losing_person():
     db.get_group_members = lambda group: [101.0, 101]
     snapshot = import_snapshot(db, date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
     assert [e.id for e in snapshot.employees] == ["sp5:employee:101"]
+
+
+@pytest.mark.parametrize("period_end", [date(2026, 1, 6), date(2026, 2, 26)])
+@pytest.mark.parametrize("window, spills", [("20:00-00:00", False), ("20:00-08:00", True)])
+def test_final_context_day_overnight_import_exposes_extent_mismatch(period_end, window, spills):
+    """Characterize the importer blocker without dropping work or weakening validation.
+
+    The second period puts the last context day on the Vienna DST transition.
+    This is an importer extent bug, not evidence that overnight duties are illegal.
+    """
+    from datetime import timedelta
+    from sp5generator.domain import input_diagnostics
+
+    last_source_day = period_end + timedelta(days=31)
+
+    class Source(SyntheticDatabase):
+        def get_shifts(self, **kw):
+            rows = super().get_shifts(**kw)
+            rows[0].update({f"STARTEND{i}": window for i in range(8)})
+            return rows
+
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (last_source_day.year, last_source_day.month):
+                return []
+            return [{"employee_id": 101, "date": last_source_day.isoformat(),
+                     "kind": "shift", "shift_id": 201, "workplace_id": 301}]
+
+    snapshot = import_snapshot(Source(), period_end, period_end, "1", "Europe/Vienna")
+    work, = snapshot.boundary_work
+    assert work.segments[0].start.date() == last_source_day
+    assert work.segments[0].end.date() == last_source_day + timedelta(days=1)
+    assert work.segments[0].end.hour == (8 if spills else 0)
+    assert not snapshot.context_complete
+    assert not snapshot.employees[0].approvals
+    assert snapshot.context_end == last_source_day
+    assert snapshot.profiles[0].valid_until == last_source_day
+    context_errors = [d for d in input_diagnostics(snapshot) if d.code == "context"]
+    assert len(context_errors) == int(spills)
+    if spills:
+        assert work.id in context_errors[0].message

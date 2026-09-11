@@ -5154,3 +5154,33 @@ These are deterministic synthetic assertions, not evidence of improved coverage
 or runtime on the private project. The fixed 80/20 policy remains a candidate;
 phase-level measurements on the private 600-second case are still needed before
 choosing a better coverage/quality scheduling policy.
+
+### Reproduced outer context overnight mismatch (2026-09-11)
+
+`sp5_adapter.import_snapshot` sets both the queried schedule-date interval and
+`Snapshot.context_end` to `period_end + 31 days`. Its monthly schedule loop
+includes rows starting on that final day. The boundary branch parses
+`SHIFT.STARTEND{day_index}`, carries overnight ends to the following day, and
+preserves the entire interval in `BoundaryWork`. However, the generated profile's
+`valid_until` and snapshot context still end on the starting day.
+`domain.input_diagnostics` correctly rejects work ending after midnight following
+`context_end`. Thus a normal 20:00–08:00 duty on the last queried date produces
+`context` and can block model construction even though the imported interval
+itself is valid. A 20:00–00:00 control is accepted by that specific check.
+
+`test_final_context_day_overnight_import_exposes_extent_mismatch` characterizes
+both outcomes at two calendar dates (including a context end on the Vienna DST
+transition date): four synthetic cases, with duties preserved, no invented
+approvals and context completeness still false. These passing characterization
+tests document an **unfixed importer extent defect**, not a corrected runtime or
+evidence that overnight/24-hour work is categorically forbidden. The existing
+181 adapter cases pass. An initial test-only attribute typo (`rule_profiles`
+instead of `profiles`) was corrected before obtaining this result.
+
+The next correction must distinguish the source **start-date query window**
+from the extent of the actual imported intervals, cover profile applicability,
+and preserve explicit incomplete-context diagnostics. Simply fetching one more
+day recreates the same issue at the new outer edge; merely extending a declared
+complete context would claim unqueried coverage. No validator relaxation or
+removal/truncation of boundary work is justified. This evidence concerns the
+fresh-import MODEL_INVALID path, not proof of the original 0.9.29 report's cause.
