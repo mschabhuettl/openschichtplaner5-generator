@@ -4188,3 +4188,37 @@ existing upstream checkouts. No production source or Generator runtime changed;
 no identical private API recheck or release was performed. Next source-contract
 work remains identity/scope fields; the original 0.9.29 job/project/result and
 its 600-second causal reproduction remain unavailable.
+
+### Missing staffing identity can be filtered away (2026-09-11)
+
+Synthetic DBF evidence now distinguishes structural identity loss from valid
+MIN/MAX values. `test_missing_staffing_identity_survives_count_contract` removes
+one of GROUPID, SHIFTID, WORKPLACID, keeping present values and both counts at 1:
+
+* Library `SP5Database.get_staffing_requirements` maps absent descriptors with
+  `r.get(...)` to null `group_id`, `shift_id` or `workplace_id`. The API regular
+  staffing route explicitly retains null group IDs even with `group_id=1`.
+* Library `SP5Database.get_special_staffing` also maps absent identities to null,
+  but applies `r.get("GROUPID") != group_id` **before** returning rows. With a
+  missing GROUPID descriptor, the same special source gives one unfiltered row
+  but **HTTP 200 with an empty list** for `group_id=1`.
+* Generator `api_adapter._Database.get_special_staffing` forwards the selected team as
+  `group_id`; this source row can therefore disappear before Generator validation.
+  The regular import's null-group diagnostic cannot repair a special row it
+  never receives. Existing OSP5 error handling cannot display a source error
+  when the API returns success (its error path is separately tested above).
+
+The count-only strict activation candidate does not close this gap. A paired
+synthetic test enables the existing reader's `required_fields` for those three
+identity descriptors: both routes then return the categorized `structure` error,
+with and without the team filter. This proves a bounded correction mechanism
+without inventing global-team or zero-ID semantics. It is **test opt-in only**;
+the activation patch has not yet been expanded. Next: incorporate that structural
+contract into the isolated activation candidate and verify full-app/cache paths,
+including valid empty tables and explicit identity values. DATE/WEEKDAY and
+identity value/type contracts still require separate investigation.
+
+Combined source-contract and hard partial-limit suite: **301 passed**, two known
+dependency warnings. No runtime, production API or installation changed. This
+is a demonstrated synthetic data-loss path, **not evidence that the user's
+0.9.29 source had missing descriptors**, nor the cause of the 600-second result.

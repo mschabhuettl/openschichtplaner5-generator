@@ -293,6 +293,58 @@ def staffing_columns(fields, records=()):
 
 
 @pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('require_identity', [False, True])
+@pytest.mark.parametrize('missing,output', [('GROUPID', 'group_id'),
+                                           ('SHIFTID', 'shift_id'),
+                                           ('WORKPLACID', 'workplace_id')])
+def test_missing_staffing_identity_survives_count_contract(
+        source, client, monkeypatch, table, url, method, missing, output, require_identity):
+    """Characterization: missing scope can disappear before Generator sees it.
+
+    This is not permission to treat missing team identity as global staffing.
+    Keep all present identity values valid; only remove one DBF descriptor.
+    """
+    db, reader, path = source
+    fields = tuple(name for name in ('MIN', 'MAX', 'GROUPID', 'SHIFTID', 'WORKPLACID')
+                   if name != missing)
+    (path / f'5{table}.DBF').write_bytes(
+        staffing_columns(fields, [b' ' + b'0001' * len(fields)]))
+    original_read = db._read
+
+    def read(name):
+        if name == table:
+            return reader.read_dbf(db._table(name), strict=True,
+                                   numeric_fields=('MIN', 'MAX'),
+                                   required_fields=(('GROUPID', 'SHIFTID', 'WORKPLACID')
+                                                    if require_identity else ()))
+        return original_read(name)
+
+    monkeypatch.setattr(db, '_read', read)
+    http, sanitized = client
+    unfiltered = http.get(url)
+    if require_identity:
+        # Existing required_fields mechanism rejects the malformed source before
+        # Library mapping/filtering; no interpretation of zero/global IDs needed.
+        for response in (unfiltered, http.get(url + '?group_id=1')):
+            assert response.status_code == 500
+            assert_source_error(response, 'structure')
+        assert sanitized == []
+        return
+    assert unfiltered.status_code == 200
+    rows = (unfiltered.json()['shift_requirements'] if table == 'SHDEM'
+            else unfiltered.json())
+    assert len(rows) == 1 and rows[0][output] is None
+    assert rows[0]['min'] == rows[0]['max'] == 1
+    scoped = http.get(url + '?group_id=1')
+    assert scoped.status_code == 200
+    scoped_rows = (scoped.json()['shift_requirements'] if table == 'SHDEM'
+                   else scoped.json())
+    # Regular API preserves unknown scope; special Library filters it away.
+    assert scoped_rows == ([] if table == 'SPDEM' and missing == 'GROUPID' else rows)
+    assert sanitized == []
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
 @pytest.mark.parametrize('fields', [('MIN',), ('MAX',), ('MIN', 'MAX', 'MAX'), ('MIN', 'MAX')])
 @pytest.mark.parametrize('state', ['empty', 'deleted', 'zero'])
 def test_explicit_staffing_column_contract(source, client, monkeypatch, table, url, method,
