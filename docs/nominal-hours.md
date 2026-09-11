@@ -50,3 +50,32 @@ Die Importtests prüfen diese Fälle mit künstlichen Quellwerten.
 Sie belegen die Adapterverwendung, keine Vollständigkeit unbekannter
 Originalbestände. Zusätzliche Buchungstests prüfen Typtrennung,
 Vorzeichen, Beschäftigungsränder und Jahreswechsel.
+
+## Warum trotz passender Freigabe keine Einteilung entstehen kann
+
+Das Stunden-Ziel bewertet den Betrag von
+`bezahlte Planminuten + bestätigte Gutschrift + Anfangssaldo − Zeitraum-Soll`
+(`solver.solve`: `model.add_abs_equality` für `hours:<employee>`). Eine Person,
+deren Soll bereits durch ausdrücklich konfigurierte Gutschriften oder Salden
+abgedeckt ist, kann deshalb ohne Dienst bleiben, während eine andere Person
+mit offenem Soll den vorhandenen Bedarf übernimmt. Das ist keine fehlende
+Freigabe und keine Pflichtverletzung zur Einplanung aller Personen.
+Die Ergebniskennzahlen geben diese Komponenten getrennt aus; die Diagnose
+`not_selected_with_candidates` behauptet bewusst keine eindeutige Ursache
+für einen beliebigen zeitbegrenzten Lauf mit mehreren Optimierungszielen.
+
+Die synthetischen Gegenproben
+`test_confirmed_account_adjustments_can_explain_nonselection` belegen die
+Auswahl bei isoliertem Stunden-Ziel für Gutschrift, positiven Saldo und eine
+Kombination mit negativem Saldo. Weitere zwölf Fälle in
+`test_account_adjustments_never_offset_elapsed_hard_limits` prüfen: Auch
+sehr hohe positive Gutschriften oder negative Salden kompensieren keine
+Überschreitung tatsächlicher Tages-/Wochenminuten, weder in vollständiger
+noch in Teilplanung. Unabhängige Validierung und Solver lehnen dieselbe
+achtstündige Einteilung bei einer Grenze von 479 Minuten ab, selbst wenn
+nur 60 Minuten bezahlt werden.
+
+Diese Nachweise autorisieren **keine** Übernahme importierter Ist-Summen,
+Buchungsnachweise oder Abwesenheitsbewertungen als Gutschrift/Anfangssaldo.
+Sie reproduzieren nicht den bislang fehlenden Originalstand des gemeldeten
+600-Sekunden-Laufs aus 0.9.29.

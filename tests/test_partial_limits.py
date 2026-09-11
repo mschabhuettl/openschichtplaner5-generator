@@ -483,3 +483,59 @@ def test_weekly_violation_does_not_hide_later_daily_or_weekly_diagnostics(partia
     if partial:
         assert result.validation.valid
         assert sum(result.vacancies.values()) == 2
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("credit,balance", [(480, 0), (0, 480), (720, -240)])
+def test_confirmed_account_adjustments_can_explain_nonselection(partial, credit, balance):
+    """A person whose target is covered need not receive a duty.
+
+    These are explicitly configured synthetic values, never imported actual
+    account totals or an inference of personal approval.
+    """
+    from sp5generator.models import Objectives
+
+    snapshot = case(2)
+    snapshot.objectives = Objectives(
+        hours=1, changes=0, nights=0, weekends=0, holidays=0, wishes=0,
+        workday_transitions=0,
+    )
+    for employee in snapshot.employees:
+        employee.target_minutes = 480
+    snapshot.employees[0].credit_minutes = credit
+    snapshot.employees[0].balance_minutes = balance
+    result = solver.solve(snapshot, 3, partial=partial)
+    assert result.solver_status == "OPTIMAL" and result.validation.complete
+    assert [a.employee_id for a in result.assignments] == ["e1"]
+    assert result.metrics["employees"]["e0"]["paid_minutes"] == 0
+    assert result.metrics["employees"]["e0"]["deviation_minutes"] == 0
+    assert result.metrics["objective_contributions"]["hours"] == 0
+    diagnostic = result.metrics["planning_diagnostics"]["employees"]["e0"]
+    assert diagnostic["eligible_demands"] == 1
+    assert diagnostic["reason"] == "not_selected_with_candidates"
+    assert validate(snapshot, result.assignments).complete
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("limit,code", [
+    ("max_daily_minutes", "daily_limit"), ("max_weekly_minutes", "weekly_limit"),
+])
+@pytest.mark.parametrize("credit,balance", [(0, -6000), (6000, 0), (6000, -6000)])
+def test_account_adjustments_never_offset_elapsed_hard_limits(partial, limit, code, credit, balance):
+    snapshot = case(1)
+    employee = snapshot.employees[0]
+    employee.target_minutes = 6000
+    employee.credit_minutes = credit
+    employee.balance_minutes = balance
+    setattr(snapshot.profiles[0], limit, 479)
+    snapshot.shifts[0].paid_minutes = 60  # Eight hours present, only one paid.
+    checked = validate(snapshot, plan(snapshot))
+    assert not checked.valid
+    assert code in {d.code for d in checked.diagnostics}
+    result = solver.solve(snapshot, 3, partial=partial)
+    assert result.solver_status == ("OPTIMAL" if partial else "INFEASIBLE")
+    assert not result.assignments
+    if partial:
+        assert result.validation.valid
+        assert result.vacancies == {"s": 1}
+        assert result.metrics["employees"]["e0"]["deviation_minutes"] == credit + balance - 6000
