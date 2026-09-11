@@ -26,7 +26,7 @@ from .timeutils import (
 )
 
 
-def weekly_windows(snapshot, profile, spans, employee=None):
+def weekly_windows(snapshot, profile, spans, employee=None, planning_duty_days=()):
     """All critical minute-aligned windows, not a weekday sampling.
 
     Elapsed windows use endpoints at each free-gap's coverage boundary. Local
@@ -60,13 +60,17 @@ def weekly_windows(snapshot, profile, spans, employee=None):
 
     if profile.weekly_rest_frame == "calendar_week":
         first = snapshot.period_start - timedelta(days=snapshot.period_start.weekday())
-        for day in dates(first, snapshot.period_end):
-            if day.weekday() == 0:
-                a, b = (
-                    midnight(day, snapshot.timezone),
-                    midnight(day + timedelta(days=7), snapshot.timezone),
-                )
-                yield a, b, required_at(a, b)
+        weeks = {day for day in dates(first, snapshot.period_end) if day.weekday() == 0}
+        weeks.update(
+            day - timedelta(days=day.weekday()) for day in planning_duty_days
+            if profile.valid_from <= day <= profile.valid_until
+        )
+        for day in sorted(weeks):
+            a, b = (
+                midnight(day, snapshot.timezone),
+                midnight(day + timedelta(days=7), snapshot.timezone),
+            )
+            yield a, b, required_at(a, b)
     elif profile.weekly_rest_frame == "rolling_elapsed":
         length = profile.weekly_rest_window_days * 1440
         lo, hi = start - length + 1, end - 1
@@ -329,7 +333,7 @@ def _validate(snapshot, assignments, input_errors=None):
                             )
                             break
             if p.weekly_rest_minutes:
-                for a, b, required in weekly_windows(snapshot, p, spans, e):
+                for a, b, required in weekly_windows(snapshot, p, spans, e, planning_duty_days):
                     if (
                         local_day(b - 1, snapshot.timezone) < p.valid_from
                         or local_day(a, snapshot.timezone) > p.valid_until

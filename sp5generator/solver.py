@@ -445,7 +445,15 @@ def solve(snapshot, time_limit=30, partial=False):
                 required = p.weekly_rest_minutes + (
                     p.min_rest_minutes if p.weekly_rest_add_daily else 0
                 )
-                for week in {day - timedelta(days=day.weekday()) for day in active}:
+                tail_week_triggers = defaultdict(list)
+                for x, tail in planning_tails:
+                    weeks = {
+                        day - timedelta(days=day.weekday()) for day in tail
+                        if p.valid_from <= day <= p.valid_until
+                    }
+                    for week in weeks - active_weeks:
+                        tail_week_triggers[week].append(x)
+                for week in sorted(active_weeks | tail_week_triggers.keys()):
                     wa, wb = (
                         midnight(week, snapshot.timezone),
                         midnight(week + timedelta(days=7), snapshot.timezone),
@@ -490,7 +498,13 @@ def solve(snapshot, time_limit=30, partial=False):
                         )
                         model.add(sum(blocking) == 0).only_enforce_if(y)
                         witnesses.append(y)
-                    model.add_bool_or(witnesses)
+                    if week in active_weeks:
+                        model.add_bool_or(witnesses)
+                    else:
+                        # Same conditional scope as daily/weekly hour limits:
+                        # the selected duty activates its affected future week.
+                        for trigger in tail_week_triggers[week]:
+                            model.add_bool_or(witnesses).only_enforce_if(trigger)
             if p.max_period_minutes is not None:
                 model.add(
                     sum(sum(daily[day]) for day in active) <= p.max_period_minutes

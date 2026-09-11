@@ -45,6 +45,9 @@ Arbeitstagen, soweit das jeweilige Profil dort gültig ist. Dabei zählen fixe
 Folgedienste desselben Tages bzw. derselben ISO-Woche mit. Ein nicht gewählter
 Kandidat erweitert den Prüfzeitraum nicht. Periodenmaxima bleiben dagegen auf
 die Planungsperiode begrenzt; bezahlte Minuten behalten ihren eigenen Bezug.
+Auch eine konfigurierte Kalenderwochenruhe gilt in den durch einen gewählten
+Dienstüberhang zusätzlich betroffenen Wochen. Fixe Folgezeiten zählen dabei
+mit; die vollständige Woche muss im bestätigten Randkontext enthalten sein.
 
 Lokale Verfügbarkeitsfenster werden mit IANA-Zeitzonen aufgelöst. Nicht existierende
 Uhrzeiten und mehrdeutige Uhrzeiten ohne explizite Auswahl werden als Eingabefehler

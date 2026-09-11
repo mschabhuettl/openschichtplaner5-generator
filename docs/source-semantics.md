@@ -638,3 +638,36 @@ summiert dagegen `shift_hours_on_day`/DURATION auf dem Quelldatum; OSP5
 Nachweis für die realminutenbasierte Generator-Grenze. Die genauen Eingaben
 und das Ergebnis des gemeldeten 600-Sekunden-Laufs fehlen weiterhin; dieser
 Grenzfehler allein erklärt noch nicht den konkreten Nutzerplan.
+
+## Anschlussbefund: 36h-Kalenderwochenruhe im Dienstüberhang
+
+Die gezielte Folgeprüfung wies denselben zu engen Prüfbereich auch bei
+`weekly_rest_frame=calendar_week` nach: `validator.weekly_windows` erzeugte
+nur Kalenderwochen der Planungsperiode, `solver.solve` ebenso nur deren
+Wochenruhe-Zeugen. Ein sonntags beginnender Dienst konnte daher die einzige
+ausreichende Ruhe der nächsten Woche verkürzen, ohne beanstandet zu werden.
+
+Rein synthetische Reproduktion mit den ausdrücklich beauftragten 11h/36h:
+Sonntag 23:00–Montag 08:00, fixe Folgedienste Dienstag 16:00–24:00,
+Donnerstag 08:00–16:00, Samstag 00:00–08:00 und Sonntag 16:00–24:00.
+Ohne neuen Dienst sind am Wochenanfang 40h frei, mit ihm bleibt als längste
+Pause nur 32h. Alle täglichen Abstände erfüllen weiterhin 11h. Dennoch
+lieferten Voll- und Teilplanung vor dieser Korrektur fünf Einteilungen mit
+`OPTIMAL`, `valid=true` und `complete=true`.
+
+Die Kalenderwochenprüfung umfasst jetzt zusätzlich die tatsächlich durch
+gewählte In-Perioden-Dienste belegten Überhangwochen. Im Solver aktivieren
+nur die entsprechenden Auswahlvariablen die zusätzliche Wochenbedingung;
+im unabhängigen Validator stammen die Wochen aus gewählten Diensten. Es
+wird keine Freigabe geändert und keine Pflicht erzeugt, einen ansonsten
+nicht betroffenen zukünftigen Kontext neu zu planen. Ein fehlender
+vollständiger Wochenkontext bleibt eine Unvollständigkeitsdiagnose.
+
+`tests/test_spill_rest.py` enthält 17 Regressionen: Voll-/Teilplanung,
+exakt 35/36/37h freie Zeit, fixe Folgezeiten, nicht gewählter Überhang,
+Profilzuordnung/-gültigkeit, beide Wiener Zeitumstellungssonntage und
+explizite additive Ruhe. Der Default bleibt **36h einschließlich täglicher
+Ruhe**, nicht 47h. Die beiden rollierenden Bezugsrahmen erkannten genau
+diese Reproduktion bereits vorher; ihre Algorithmen wurden hier nicht
+verändert. Daraus folgt keine vollständige Abnahme beliebig langer
+Überhänge bei rollierenden Regeln.
