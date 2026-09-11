@@ -3293,3 +3293,40 @@ nicht gültig, null persönliche Freigaben und kein bestätigtes Profil. Keine
 Freigaben oder zusätzlichen Regeln erfunden. Keine erfolgreiche reale Neuplanung
 und kein Originaljob-Nachweis. Privater Prüfcontainer anschließend gestoppt;
 keine Benutzerinstallation verändert. Kein neues Release.
+
+### Datierter Überhang: rollierende Ruhe und Statussicherheit
+
+Zusätzliche synthetische Absicherung 2026-09-11 nach der Kalenderkorrektur:
+`test_spill_rest_respects_profile_assignment_and_validity` prüft 24 Kombinationen
+(Kalenderwoche/rolling_elapsed/rolling_local, Voll-/Teilplanung, zugeordnet/nicht
+zugeordnet, Profil ausschließlich am 12. oder 19. Januar). Planung bleibt nur
+Sonntag 11. Januar, ein möglicher Dienst reicht bis Montag; feste Folgedienste
+bleiben unverändert. Tägliche Ruhe 11h, Wochenruhe 36h, keine neuen Stundenmaxima.
+Das zugeordnete Montagprofil sperrt den Überhang, das spätere oder nicht
+zugeordnete Profil nicht. Ohne ausgewählten Überhang ist der Randkontext gültig.
+Vollplanung ist im gesperrten Fall INFEASIBLE; Teilplanung liefert nur den gültigen
+Fixkontext. Unabhängige Validierung bestätigt alle ausgegebenen Teilpläne.
+
+`solver.solve` modelliert Kalenderwochenruhe direkt, rollierende Wochenruhe
+weiterhin über Kandidatennachprüfung und Ausschluss. Im geprüften datierten Fall
+benötigt die Kalenderregel null, jede rollierende Variante eine Separationrunde.
+Das ist eine belegte Abdeckungseigenschaft, kein neuer durchgelassener Regelbruch
+und keine Messung am fehlenden Originaljob. `validator.weekly_windows` erzeugt
+die jeweiligen Fenster; `validate` filtert anhand der Profilgültigkeit und der
+persönlichen Profilzuordnung. Gültigkeit nur am Folgetag darf daher nicht mit
+„Profil am Planungsstart nicht aktiv, also irrelevant“ verwechselt werden.
+
+`test_unknown_after_rejected_rolling_candidate_never_publishes_it` deckt nun beide
+rollierenden Varianten mit einem nur am Montag gültigen Profil ab. Ein echter,
+regelverletzender Modellkandidat wird über die OPTIMAL- beziehungsweise FEASIBLE-
+Statusverzweigung nachgeprüft; die nächste Solverantwort wird kontrolliert auf
+UNKNOWN gesetzt. In allen vier Fällen: zwei Solveraufrufe, UNKNOWN, keine
+Einteilungen, Validierung nicht gültig. FEASIBLE wird hier bewusst simuliert bei
+erhaltenen echten Kandidatenwerten; dies ist kein echter Zeitlimitversuch.
+
+Verifikation: 219 gezielte Tests bestanden, Ruff und `git diff --check` grün.
+Nur synthetische Tests und Analyse geändert, keine Runtime-/Importänderung,
+kein Release. Die unveränderte private Kandidatenabnahme 896b3cc wurde deshalb
+nicht nochmals wiederholt. Fehlende Originalartefakte, Freigaben und bestätigte
+Profile bleiben unverändert offene Voraussetzungen; keine fachlichen Angaben
+aus Library-/API-Statistiken ergänzt.

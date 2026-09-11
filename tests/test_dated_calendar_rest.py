@@ -59,18 +59,31 @@ def test_dated_weekly_rest_is_enforced_directly_for_entire_planning_week(profile
     assert result.metrics['separation_rounds'] == 0
 
 
-def test_unknown_after_rejected_rolling_candidate_never_publishes_it(monkeypatch):
+@pytest.mark.parametrize("frame", ["rolling_elapsed", "rolling_local"])
+@pytest.mark.parametrize("first_status", [cp_model.OPTIMAL, cp_model.FEASIBLE])
+def test_unknown_after_rejected_rolling_candidate_never_publishes_it(monkeypatch, frame, first_status):
     # Rolling windows still use independent separation; calendar weeks now have
     # direct coverage. Exercise a real rejected candidate, not a fake validator.
     from test_spill_rest import spill_case
-    snapshot = spill_case("rolling_elapsed")
+    snapshot = spill_case(frame)
+    weekly = snapshot.profiles[0].model_copy(update={
+        "id": "dated-weekly", "valid_from": date(2026, 1, 12),
+        "valid_until": date(2026, 1, 12),
+    })
+    snapshot.profiles[0].weekly_rest_minutes = 0
+    snapshot.profiles.append(weekly)
+    snapshot.employees[0].profile_ids.append(weekly.id)
     real_solve = cp_model.CpSolver.solve
     calls = []
 
     def interrupted(self, model, *args, **kwargs):
         calls.append(model)
         if len(calls) == 1:
-            return real_solve(self, model, *args, **kwargs)
+            actual = real_solve(self, model, *args, **kwargs)
+            assert actual == cp_model.OPTIMAL
+            # Retain real candidate values; characterize both accepted CP-SAT
+            # status branches without pretending to run a 600-second timeout.
+            return first_status
         return cp_model.UNKNOWN
 
     monkeypatch.setattr(cp_model.CpSolver, 'solve', interrupted)

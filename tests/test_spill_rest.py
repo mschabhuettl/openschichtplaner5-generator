@@ -79,12 +79,15 @@ def test_unselected_spill_does_not_activate_unrelated_future_rest_violation():
     assert result.validation.valid
 
 
-@pytest.mark.parametrize("assigned,active", [(True, True), (False, True), (True, False)])
-def test_calendar_spill_rest_respects_profile_assignment_and_validity(assigned, active):
-    snapshot = spill_case()
+@pytest.mark.parametrize("frame", ["calendar_week", "rolling_elapsed", "rolling_local"])
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("assigned,active", [(True, True), (False, True), (True, False), (False, False)])
+def test_spill_rest_respects_profile_assignment_and_validity(assigned, active, partial, frame):
+    snapshot = spill_case(frame)
     profile = snapshot.profiles[0]
     future = profile.model_copy(update={
         "id": "future-rest", "valid_from": date(2026, 1, 12 if active else 19),
+        "valid_until": date(2026, 1, 12 if active else 19),
     })
     profile.weekly_rest_minutes = 0
     snapshot.profiles.append(future)
@@ -93,9 +96,17 @@ def test_calendar_spill_rest_respects_profile_assignment_and_validity(assigned, 
     accepted = not (assigned and active)
     proposed = snapshot.assignments + [Assignment(employee_id="e0", demand_id="spill")]
     assert validate(snapshot, proposed).valid is accepted
-    result = solve(snapshot, 5, partial=True)
+    assert validate(snapshot, snapshot.assignments).valid
+    result = solve(snapshot, 5, partial=partial)
+    if not partial and not accepted:
+        assert result.solver_status == "INFEASIBLE"
+        assert result.assignments == []
+        return
+    assert result.solver_status == "OPTIMAL"
     assert len(result.assignments) == 4 + int(accepted)
     assert result.validation.valid
+    assert validate(snapshot, result.assignments).valid
+    assert result.metrics["separation_rounds"] == int(not accepted and frame != "calendar_week")
 
 
 @pytest.mark.parametrize("sunday", [date(2026, 3, 29), date(2026, 10, 25)])
