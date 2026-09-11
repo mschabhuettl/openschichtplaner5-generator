@@ -1,0 +1,195 @@
+--- a/sp5api/routers/work_time_rules.py
++++ b/sp5api/routers/work_time_rules.py
+@@ -12,8 +12,9 @@
+ ``week_limit_mode=model``: die Grenze ist dann je Kalenderwoche das
+ Wochenstundenmodell des Mitarbeiters (CALCBASE-Sollstunden der lib für
+ Mo–So, ohne 5BOOK-Korrekturen) mal ``week_limit_factor``. Wochen ohne
+-hinterlegtes Modell (Soll <= 0) werden im Modell-Modus übersprungen.
+-Ohne Parameter bleibt das Verhalten unverändert (Rückwärtskompatibilität).
++positiven Modellwert werden als unvollständig diagnostiziert.
++Ohne plan-Parameter bleibt die gemischte Quellenauswahl erhalten.
++Überlappungs-/Modellwarnungen und der unvollständige Prüfumfang gelten auch dort.
+
+ Endpoints:
+   GET  /api/v1/work-time-rules          — get current rules config
+@@ -106,7 +107,7 @@
+
+
+ def _employee_plan(
+-    db, employee_id: int, from_date: date, to_date: date
++    db, employee_id: int, from_date: date, to_date: date, plan: str | None = None
+ ) -> tuple[list[tuple[date, dict]], list[tuple[date, dict]], list[tuple[date, dict]]]:
+     """Plan-Quellen eines Mitarbeiters (Spec 3.4.2): 5MASHI, 5CYASS, 5SPSHI.
+
+@@ -127,9 +128,13 @@
+                 out.append((d, r))
+         return out
+
+-    manual = _dated(db._read("MASHI"))
+-    special = _dated(db._read("SPSHI"))
+-    cycle_recs = calc.expand_cycle_assignments(
++    if plan not in (None, "ist", "soll"):
++        raise ValueError("Select ist or soll; alternative plans cannot be added")
++    # Filter BEFORE cycle materialization; SPSHI.TYPE is not a plan selector.
++    manual = _dated(r for r in db._read("MASHI")
++                    if plan is None or (int(r.get("TYPE") or 0) == 1) == (plan == "soll"))
++    special = _dated(db._read("SPSHI")) if plan != "soll" else []
++    cycle_recs = [] if plan == "soll" else calc.expand_cycle_assignments(
+         [r for r in db._read("CYASS") if r.get("EMPLOYEEID") == employee_id],
+         cycles=db._read("CYCLE"),
+         cycle_entries=db._read("CYENT"),
+@@ -147,7 +152,7 @@
+
+
+ def _collect_day_data(
+-    db, employee_id: int, from_date: date, to_date: date
++    db, employee_id: int, from_date: date, to_date: date, plan: str | None = None
+ ) -> tuple[dict[date, float], list[dict]]:
+     """Tagesstunden und Dienstblöcke (echte Zeiten) eines Mitarbeiters.
+
+@@ -163,7 +168,7 @@
+     shifts_by_id = {
+         int(s["ID"]): s for s in db._read("SHIFT") if s.get("ID") is not None
+     }
+-    manual, cycle, special = _employee_plan(db, employee_id, from_date, to_date)
++    manual, cycle, special = _employee_plan(db, employee_id, from_date, to_date, plan)
+     replaced = {d for d, r in special if int(r.get("SHIFTID") or 0)}
+
+     day_hours: dict[date, float] = {}
+@@ -221,7 +226,7 @@
+     week_mode = str(rules.get("week_limit_mode", "fixed"))
+     week_factor = float(rules.get("week_limit_factor", 1.0))
+
+-    day_hours, shift_blocks = _collect_day_data(db, employee_id, from_date, to_date)
++    day_hours, shift_blocks = _collect_day_data(db, employee_id, from_date, to_date, rules.get("plan"))
+
+     # ── Max hours per day ─────────────────────────────────────────
+     for d, hrs in sorted(day_hours.items()):
+@@ -261,7 +266,22 @@
+                 model_ctx, mon, mon + timedelta(days=6), holidays=model_holidays
+             )
+             if week_limit <= 0:
+-                continue  # kein Wochenmodell hinterlegt → keine relative Grenze
++                # Missing/zero nominal hours cannot certify a weekly limit.
++                # Do not invent a fixed fallback or label this an excess.
++                violations.append({
++                    "type": "weekly_model_unresolved",
++                    "date": mon.isoformat(),
++                    "employee_id": employee_id,
++                    "description": (
++                        "Weekly model check incomplete: calculated nominal limit "
++                        "is not positive; review CALCBASE, daily/weekly/monthly "
++                        "hours and employment dates. No fallback limit was applied."
++                    ),
++                    "severity": "warning",
++                    "value": week_limit,
++                    "limit": 0.0,
++                })
++                continue
+             desc = (
+                 f"Worked {hrs:.1f}h in week {yr}-W{wk:02d} "
+                 f"(max {week_limit:.1f}h = weekly model x {week_factor:g})"
+@@ -281,10 +301,22 @@
+             })
+
+     # ── Min rest between shifts ───────────────────────────────────
+-    for prev, curr in zip(shift_blocks, shift_blocks[1:], strict=False):
++    # Keep the furthest previous end: nested duties must not hide conflicts.
++    prev = shift_blocks[0] if shift_blocks else None
++    for curr in shift_blocks[1:]:
+         # Tatsächliche Ruhezeit in Stunden zwischen Vor-Ende und Ist-Beginn
+         rest_hours = (curr["start"] - prev["end"]).total_seconds() / 3600
+-        if 0 < rest_hours < min_rest:
++        if rest_hours < 0:
++            violations.append({
++                "type": "shift_overlap",
++                "date": curr["date"].isoformat(),
++                "employee_id": employee_id,
++                "description": "Shift starts before a previous duty has ended",
++                "severity": "error",
++                "value": round(-rest_hours, 2),
++                "limit": 0.0,
++            })
++        elif rest_hours < min_rest:
+             violations.append({
+                 "type": "min_rest_hours_between_shifts",
+                 "date": curr["date"].isoformat(),
+@@ -297,6 +329,9 @@
+                 "value": round(rest_hours, 2),
+                 "limit": min_rest,
+             })
++
++        if curr["end"] > prev["end"]:
++            prev = curr
+
+     # ── Max consecutive working days ──────────────────────────────
+     worked_dates = sorted(day_hours.keys())
+@@ -361,6 +396,30 @@
+     }
+
+
++def _build_check_result(violations, plan, from_date, to_date, rules):
++    """Explicitly bounded diagnostic, NEVER a complete planning certificate.
++
++    Reasons describe known checker capabilities, not employee violations.
++    Keep them out of the violation counter and never invent fallback rules.
++    """
++    result = _build_result(violations)
++    reasons = ["paid_hours_not_elapsed_work", "unsplit_calendar_totals",
++               "timezone_unresolved", "boundary_context_not_loaded",
++               "effective_segments_unresolved"]
++    if plan is None:
++        reasons.append("legacy_mixed_plan_sources")
++    if not rules.get("enabled", True):
++        reasons.append("rules_disabled")
++    if any(v["type"] == "weekly_model_unresolved" for v in violations):
++        reasons.append("weekly_model_unresolved")
++    result["coverage"] = {
++        "contract": "work-time-diagnostic-v1",
++        "plan": plan or "legacy_mixed", "from": from_date.isoformat(),
++        "to": to_date.isoformat(), "complete": False, "reasons": reasons,
++    }
++    return result
++
++
+ # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@@ -382,6 +441,7 @@
+
+ @router.post("/check", summary="Check work time rule violations for one employee")
+ def check_employee(
++    plan: Literal["ist", "soll"] | None = Query(default=None, description="Explicit alternative plan; omission retains legacy mixed sources"),
+     employee_id: int = Query(...),
+     from_date: date = Query(..., alias="from"),
+     to_date: date = Query(..., alias="to"),
+@@ -415,12 +475,14 @@
+         week_limit_mode,
+         week_limit_factor,
+     )
++    rules["plan"] = plan
+     violations = _check_employee(db, employee_id, from_date, to_date, rules)
+-    return _build_result(violations)
++    return _build_check_result(violations, plan, from_date, to_date, rules)
+
+
+ @router.post("/check-all", summary="Check work time rule violations for all employees in a group")
+ def check_all(
++    plan: Literal["ist", "soll"] | None = Query(default=None, description="Explicit alternative plan; omission retains legacy mixed sources"),
+     group_id: int | None = Query(default=None),
+     from_date: date = Query(..., alias="from"),
+     to_date: date = Query(..., alias="to"),
+@@ -455,6 +517,7 @@
+         week_limit_mode,
+         week_limit_factor,
+     )
++    rules["plan"] = plan
+     all_violations: list[dict] = []
+     for emp in employees:
+         eid = emp.get("ID")
+@@ -463,4 +526,4 @@
+         violations = _check_employee(db, int(eid), from_date, to_date, rules)
+         all_violations.extend(violations)
+
+-    return _build_result(all_violations)
++    return _build_check_result(all_violations, plan, from_date, to_date, rules)

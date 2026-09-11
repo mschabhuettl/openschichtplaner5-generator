@@ -1,0 +1,227 @@
+--- a/frontend/src/pages/WorkTimeRules.tsx
++++ b/frontend/src/pages/WorkTimeRules.tsx
+@@ -48,6 +48,8 @@
+ }
+
+ const VIOLATION_LABELS: Record<string, string> = {
++  weekly_model_unresolved: 'Wochenprüfung unvollständig: Sollmodell prüfen',
++  shift_overlap:               'Dienstüberschneidung',
+   max_hours_per_day:             'Tägliche Höchstarbeitszeit überschritten',
+   max_hours_per_week:            'Wöchentliche Höchstarbeitszeit überschritten',
+   min_rest_hours_between_shifts: 'Mindestruhezeit zwischen Schichten unterschritten',
+@@ -68,8 +70,8 @@
+ function ViolationList({ violations, label }: ViolationListProps) {
+   if (violations.length === 0) {
+     return (
+-      <div className="mt-3 p-3 rounded bg-green-50 border border-green-200 text-green-700 text-sm">
+-        ✅ Keine Verstöße gefunden{label ? ` für ${label}` : ''}.
++      <div className="mt-3 p-3 rounded bg-amber-50 border border-amber-200 text-amber-800 text-sm">
++        Keine Auffälligkeiten im begrenzten Prüfumfang gefunden{label ? ` für ${label}` : ''}.
+       </div>
+     );
+   }
+@@ -142,6 +144,7 @@
+   const [rulesEnabled, setRulesEnabled]         = useState<boolean>(true);
+
+   // ── Prüfoptionen (pro Aufruf, ohne Änderung = gespeicherte Konfiguration) ──
++  const [checkPlan, setCheckPlan] = useState<'ist' | 'soll'>('ist');
+   const [weekLimitMode, setWeekLimitMode]   = useState<'fixed' | 'model'>('fixed');
+   const [weekLimitFactor, setWeekLimitFactor] = useState<number>(1);
+   const [overrideLimits, setOverrideLimits] = useState<boolean>(false);
+@@ -170,10 +173,9 @@
+       .finally(() => setConfigLoading(false));
+   }, []);
+
+-  /** Nur tatsächlich abweichende Prüfoptionen als Parameter senden —
+-   *  im Default-Zustand geht KEIN Parameter mit (Verhalten wie bisher). */
++  /** Plansicht immer ausdrücklich senden; Regelgrenzen nur bei Überschreibung. */
+   const limitParams = useCallback((): WorkTimeCheckLimits => {
+-    const p: WorkTimeCheckLimits = {};
++    const p: WorkTimeCheckLimits = { plan: checkPlan };
+     if (overrideLimits) {
+       p.max_hours_per_day = ovMaxDay;
+       p.max_hours_per_week = ovMaxWeek;
+@@ -185,7 +187,7 @@
+       p.week_limit_factor = weekLimitFactor;
+     }
+     return p;
+-  }, [overrideLimits, ovMaxDay, ovMaxWeek, ovMinRest, ovMaxConsec, weekLimitMode, weekLimitFactor]);
++  }, [checkPlan, overrideLimits, ovMaxDay, ovMaxWeek, ovMinRest, ovMaxConsec, weekLimitMode, weekLimitFactor]);
+
+   const saveConfig = useCallback(async () => {
+     setConfigSaving(true);
+@@ -236,13 +238,16 @@
+         to: checkTo,
+         ...limitParams(),
+       });
++      if (result.coverage?.contract !== 'work-time-diagnostic-v1' ||
++          result.coverage.plan !== checkPlan || result.coverage.from !== checkFrom ||
++          result.coverage.to !== checkTo) throw new Error('API bestätigt die angeforderte Plansicht/Periode nicht. Ergebnis nicht übernommen.');
+       setCheckResult(result);
+     } catch (e) {
+       setCheckError(String(e));
+     } finally {
+       setCheckLoading(false);
+     }
+-  }, [checkEmpId, checkFrom, checkTo, limitParams]);
++  }, [checkEmpId, checkFrom, checkTo, limitParams, checkPlan]);
+
+   // ── Group Check ─────────────────────────────────────────────────────────
+   const [checkAllGroupId, setCheckAllGroupId]   = useState<number | ''>('');
+@@ -263,13 +268,16 @@
+         to: checkAllTo,
+         ...limitParams(),
+       });
++      if (result.coverage?.contract !== 'work-time-diagnostic-v1' ||
++          result.coverage.plan !== checkPlan || result.coverage.from !== checkAllFrom ||
++          result.coverage.to !== checkAllTo) throw new Error('API bestätigt die angeforderte Plansicht/Periode nicht. Ergebnis nicht übernommen.');
+       setCheckAllResult(result);
+     } catch (e) {
+       setCheckAllError(String(e));
+     } finally {
+       setCheckAllLoading(false);
+     }
+-  }, [checkAllGroupId, checkAllFrom, checkAllTo, limitParams]);
++  }, [checkAllGroupId, checkAllFrom, checkAllTo, limitParams, checkPlan]);
+
+   const employeeName = (id: number): string => {
+     const emp = employees.find(e => e.ID === id);
+@@ -430,6 +438,20 @@
+         </p>
+
+         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
++          <div>
++            <label htmlFor="check-plan" className="block text-sm font-medium mb-1">Plansicht der Arbeitszeitdiagnose</label>
++            <select id="check-plan" value={checkPlan} disabled={checkLoading || checkAllLoading}
++              onChange={e => {
++                setCheckPlan(e.target.value === 'soll' ? 'soll' : 'ist');
++                setCheckResult(null); setCheckAllResult(null);
++              }} className="w-full border rounded px-3 py-2">
++              <option value="ist">Ist – einschließlich Zyklus und Sonderdiensten</option>
++              <option value="soll">Soll – gespeicherte Soll-Dienste</option>
++            </select>
++            <p className="text-sm mt-2" role="note">Begrenzte Diagnose, keine Planfreigabe:
++              Reale Zeitsegmente, Zeitzone und Randkontext sind noch nicht vollständig geprüft.
++              Ist und Soll werden nicht addiert. Grenzwerte bleiben unverändert.</p>
++          </div>
+           {/* Wochengrenzen-Modus: fest | relativ zum Wochenmodell */}
+           <div>
+             <label className="block text-sm font-medium text-gray-600 mb-1" htmlFor="week-limit-mode">
+@@ -463,7 +485,7 @@
+                 aria-label="Faktor Wochenstundenmodell"
+               />
+               <p className="text-xs text-gray-400 mt-1">
+-                Grenze je Woche = Vertrags-Wochenstunden des Mitarbeiters × Faktor.
++                Grenze je Woche = CALCBASE-Sollstunden für Montag–Sonntag × Faktor; ersetzt die Festgrenze, nicht zusätzlich.
+               </p>
+             </div>
+           )}
+@@ -570,7 +592,8 @@
+             <select
+               id="check-employee"
+               value={checkEmpId}
+-              onChange={e => setCheckEmpId(e.target.value === '' ? '' : Number(e.target.value))}
++              disabled={checkLoading}
++              onChange={e => { setCheckEmpId(e.target.value === '' ? '' : Number(e.target.value)); setCheckResult(null); }}
+               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               aria-label="Mitarbeiter auswählen"
+             >
+@@ -591,7 +614,8 @@
+               id="check-from"
+               type="date"
+               value={checkFrom}
+-              onChange={e => setCheckFrom(e.target.value)}
++              disabled={checkLoading}
++              onChange={e => { setCheckFrom(e.target.value); setCheckResult(null); }}
+               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               aria-label="Startdatum"
+             />
+@@ -605,7 +629,8 @@
+               id="check-to"
+               type="date"
+               value={checkTo}
+-              onChange={e => setCheckTo(e.target.value)}
++              disabled={checkLoading}
++              onChange={e => { setCheckTo(e.target.value); setCheckResult(null); }}
+               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               aria-label="Enddatum"
+             />
+@@ -632,7 +657,7 @@
+             <div className="text-sm text-gray-500 mb-1">
+               Mitarbeiter: <strong>{checkEmpId !== '' ? employeeName(Number(checkEmpId)) : '–'}</strong> — Zeitraum:{' '}
+               {checkFrom} bis {checkTo} —{' '}
+-              <span className={checkResult.summary.total > 0 ? 'text-red-600 font-semibold' : 'text-green-600'}>
++              <span className={checkResult.summary.total > 0 ? 'text-red-600 font-semibold' : 'text-amber-700'}>
+                 {checkResult.summary.total} Verstoß{checkResult.summary.total !== 1 ? 'e' : ''}
+               </span>
+             </div>
+@@ -659,7 +684,8 @@
+             <select
+               id="check-all-group"
+               value={checkAllGroupId}
+-              onChange={e => setCheckAllGroupId(e.target.value === '' ? '' : Number(e.target.value))}
++              disabled={checkAllLoading}
++              onChange={e => { setCheckAllGroupId(e.target.value === '' ? '' : Number(e.target.value)); setCheckAllResult(null); }}
+               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               aria-label="Gruppe auswählen"
+             >
+@@ -676,7 +702,8 @@
+               id="check-all-from"
+               type="date"
+               value={checkAllFrom}
+-              onChange={e => setCheckAllFrom(e.target.value)}
++              disabled={checkAllLoading}
++              onChange={e => { setCheckAllFrom(e.target.value); setCheckAllResult(null); }}
+               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               aria-label="Startdatum Gruppe"
+             />
+@@ -690,7 +717,8 @@
+               id="check-all-to"
+               type="date"
+               value={checkAllTo}
+-              onChange={e => setCheckAllTo(e.target.value)}
++              disabled={checkAllLoading}
++              onChange={e => { setCheckAllTo(e.target.value); setCheckAllResult(null); }}
+               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               aria-label="Enddatum Gruppe"
+             />
+@@ -716,15 +744,15 @@
+           <div className="mt-4">
+             <div className="text-sm text-gray-500 mb-2">
+               Verstöße gesamt:{' '}
+-              <span className={checkAllResult.summary.total > 0 ? 'text-red-600 font-semibold' : 'text-green-600'}>
++              <span className={checkAllResult.summary.total > 0 ? 'text-red-600 font-semibold' : 'text-amber-700'}>
+                 {checkAllResult.summary.total}
+               </span>
+               {' '}(⛔ {checkAllResult.summary.errors} / ⚠️ {checkAllResult.summary.warnings})
+             </div>
+
+             {checkAllResult.summary.total === 0 ? (
+-              <div className="p-3 rounded bg-green-50 border border-green-200 text-green-700 text-sm">
+-                ✅ Keine Verstöße in der gesamten Gruppe gefunden.
++              <div className="p-3 rounded bg-amber-50 border border-amber-200 text-amber-800 text-sm">
++                Keine Auffälligkeiten im begrenzten Prüfumfang der Gruppe gefunden – kein Nachweis vollständiger Regelkonformität.
+               </div>
+             ) : (
+               <div className="overflow-x-auto">
+--- a/frontend/src/api/client.ts
++++ b/frontend/src/api/client.ts
+@@ -2443,6 +2443,7 @@
+  * (CALCBASE-Sollstunden × `week_limit_factor`).
+  */
+ export interface WorkTimeCheckLimits {
++  plan?: 'ist' | 'soll';
+   max_hours_per_day?: number;
+   max_hours_per_week?: number;
+   min_rest_hours_between_shifts?: number;
+@@ -2470,6 +2471,10 @@
+ }
+
+ export interface WorkTimeCheckResult {
++  coverage?: {
++    contract: string; plan: 'ist' | 'soll' | 'legacy_mixed';
++    from: string; to: string; complete: boolean; reasons: string[];
++  };
+   violations: WorkTimeViolation[];
+   summary: { total: number; warnings: number; errors: number };
+ }

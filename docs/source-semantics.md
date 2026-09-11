@@ -2250,3 +2250,83 @@ PYTHONPATH=.:tests:../libopenschichtplaner5 .venv/bin/pytest -q \
 
 Ergebnis: **136 passed**, davon vier neue API-Zeitzonenfälle. Keine
 Server-/HTTP-Abnahme und keine Runtimeänderung.
+
+### Konsolidierter Arbeitszeit-Prüfvertrag: API → OSP5, ausdrücklich unvollständig
+
+`tools/upstream-api-worktime-contract-candidate.patch` und
+`tools/upstream-osp5-worktime-contract-candidate.patch` verbinden die früheren
+Ist-, Überlappungs- und Wochenmodellkandidaten in **einem isolierten Vertrag**.
+Sie gelten gegen die unveränderten Originalcheckouts. Die früheren Einzelpatches
+nicht zusätzlich anwenden. Keine Produktionsinstallation oder Generatorruntime
+ist damit geändert; dies ist kein freigegebener vollständiger Arbeitszeitprüfer.
+
+Datenfluss und abgegrenzte Semantik:
+
+1. OSP5 `WorkTimeRules.limitParams` sendet ausdrücklich `plan=ist|soll` über
+   `api/client.ts` / `workTimeCheckQuery` an beide bestehenden Prüfendpunkte.
+   Ohne bewusste Grenzüberschreibung werden keine neuen Stundenlimits gesendet.
+2. API `check_employee` / `check_all` validieren die Alternative mit `Literal`;
+   `both` ist kein addierbarer Arbeitsplan und wird mit HTTP 422 zurückgewiesen.
+   Beschäftigten-/Gruppen-/Sichtbarkeitsfilter bleiben erhalten.
+3. `_check_employee` → `_collect_day_data` → `_employee_plan`: Auswahl erfolgt
+   **vor** der Verdrängung des Library-Zyklus durch materialisierte MASHI-Tage.
+   Ist enthält MASHI außerhalb TYPE 1 und gegebenenfalls CYASS-Expansion sowie
+   SPSHI; Soll enthält die gespeicherten MASHI-TYPE-1-Dienste, keinen erfundenen
+   Soll-Zyklus und keine SPSHI-Istarbeit. SPSHI.TYPE ist nicht MASHI.TYPE.
+   Diese Quellenentscheidung entspricht den zuvor belegten Library-Sichten;
+   sie macht Quelleneinträge ausdrücklich noch nicht zu effektiven Arbeitssegmenten.
+4. Vorhandene Überlappungs-/Nullruhekorrektur und `weekly_model_unresolved`
+   laufen auf **derselben** gewählten Sicht. Sollmodell und Festgrenze bleiben
+   alternative API-Prüfmodi; keine neue Generator-Wochenhöchstgrenze entsteht.
+5. `_build_check_result` ergänzt `coverage` mit Vertragskennung, Plansicht,
+   Zeitraum und `complete=false`. Gründe kennzeichnen bekannte Fähigkeitenlücken,
+   nicht neue Mitarbeiterverstöße: bezahlte statt reale Stunden, fehlende
+   Kalenderaufteilung, ungelöste Zeitzone, nicht geladener Randkontext und
+   ungeklärte effektive Segmente. Abgeschaltete Regeln und fehlendes positives
+   Wochenmodell werden zusätzlich benannt. Auch eine leere Beschäftigtenmenge
+   oder null Auffälligkeiten ergeben **keinen** Vollständigkeitsnachweis.
+6. OSP5 akzeptiert nur Antworten, die Vertrag, Sicht und Zeitraum bestätigen.
+   Eine alte API ohne Metadaten wird nicht stillschweigend als ausgewählte Sicht
+   ausgegeben. Sichtwechsel löscht beide bisherigen Ergebnisse; Perioden- und
+   Beschäftigten-/Gruppenwechsel löschen das betroffene Ergebnis. Während eines
+   Aufrufs sind dessen Scopefelder und die gemeinsame Plansicht gesperrt.
+   Null Auffälligkeiten wird ohne grünes Prüfsiegel als begrenzte Diagnose gezeigt.
+
+Kompatibilitätsgrenze: API-Aufrufer ohne `plan` behalten die alte gemischte
+Quellenauswahl (`coverage.plan=legacy_mixed`), **nicht** die fehlerhafte
+Überlappungs-/Nullmodellbehandlung. OSP5 verwendet diesen Legacy-Modus nicht.
+Die neue OSP5-Prüfseite benötigt den neuen API-Vertrag; sie behauptet bei einem
+alten Backend keine erfolgreiche Prüfung. Die bekannten Stunden-/Zeitzonenfehler
+bleiben ausdrücklich offen. Die reine Quellansicht aus dem früheren
+Library/API/OSP5-Kandidaten ist keine Ersatzimplementierung dieser Zeitmessung.
+
+Reproduktion in isolierten Kopien (keine echten API-Aufrufe):
+
+```sh
+# Original-API kopieren und nur upstream-api-worktime-contract-candidate.patch anwenden.
+SP5_WORK_TIME_ROUTER=/tmp/sp5-worktime-contract/sp5api/routers/work_time_rules.py \
+SP5_REST_ROUTER=/tmp/sp5-worktime-contract/sp5api/routers/work_time_rules.py \
+SP5_WEEK_MODEL_CANDIDATE=1 PYTHONPATH=.:tests:../libopenschichtplaner5 \
+.venv/bin/pytest -q tools/test_upstream_worktime_contract.py \
+  tools/test_upstream_week_model.py tools/test_upstream_rest_candidate.py \
+  tests/test_partial_limits.py tests/test_calendar_limits.py tests/test_spill_rest.py
+# OSP5 kopieren, nur upstream-osp5-worktime-contract-candidate.patch anwenden.
+# tools/upstream-worktime-contract.test.tsx nach frontend/src/__tests__/ kopieren.
+# Dort: vitest run src/__tests__/upstream-worktime-contract.test.tsx; tsc -b
+```
+
+Nachweis: **162 Python-Tests**, darunter 14 neue synthetische ASGI-Verträge;
+**7 neue Frontend-Komponententests**, TypeScript-Buildprüfung, gezieltes ESLint,
+Ruff und Anwendbarkeit beider Gesamtpatches. ASGI-Harness extrahiert die echten
+Routerfunktionen mit Dependency-Stubs: kein vollständiger API-Start/Auth-Test.
+Frontend verwendet synthetische API-Mocks: kein vollständiger Browser-/Login-
+oder gemeinsamer Serverabnahmetest. Initiale Testaufrufe hatten einen fehlenden
+Resttest-Umgebungsparameter bzw. falschen Testselektor/Matcher; korrigierte
+Aufrufe sind maßgeblich, keine Produktfehler daraus abgeleitet.
+
+Nächster zusammenhängender Korrekturschritt bleibt die effektive Arbeitszeit:
+Quellansicht → tatsächliche Segmente unter Sonderdiensten/Abwesenheiten → explizite
+Zone/Fold → UTC-Dauer → lokale Tages-/ISO-Wochenteilung mit Randkontext. Erst
+nach belegter Umsetzung dürfen entsprechende Unvollständigkeitsgründe entfallen.
+Der fehlende Original-0.9.29-600s-Job ist weiterhin nicht reproduziert. Unveränderte
+veröffentlichte 0.9.31 nicht erneut ohne neue Laufzeitänderung realgetestet.
