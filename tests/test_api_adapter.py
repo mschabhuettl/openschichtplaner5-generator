@@ -540,7 +540,6 @@ def test_library_special_replacement_is_day_wide_and_not_type_selected(special_t
 @pytest.mark.parametrize("weekly_limit", [239, 240])
 def test_replacement_fixed_import_enforces_hard_limits_through_solver(transport, plan, partial, weekly_limit):
     """Explicit synthetic setup only: imported history never grants permission."""
-    from sp5generator.models import Approval
     from sp5generator.solver import solve
     from sp5generator.validator import validate
 
@@ -548,6 +547,29 @@ def test_replacement_fixed_import_enforces_hard_limits_through_solver(transport,
     assert not snapshot.employees[0].approvals
     assert not snapshot.profiles[0].confirmed
     assert solve(snapshot, 3, partial=partial).solver_status == "MODEL_INVALID"
+    _configure_synthetic_replacement(snapshot, weekly_limit)
+    employee = snapshot.employees[0]
+    fixed = [(a.employee_id, a.demand_id) for a in snapshot.assignments]
+    checked = validate(snapshot, snapshot.assignments)
+    codes = {d.code for d in checked.diagnostics}
+    assert ("weekly_limit" in codes) is (weekly_limit == 239 or plan == "soll")
+    result = solve(snapshot, 3, partial=partial)
+    if plan == "ist" and partial and weekly_limit == 240:
+        assert result.solver_status == "OPTIMAL", (checked.diagnostics, result.validation.diagnostics)
+        assert [(a.employee_id, a.demand_id) for a in result.assignments] == fixed
+        assert all(a.fixed for a in result.assignments)
+        assert sum(result.vacancies.values()) == 1
+        assert result.validation.valid and not result.validation.complete
+        assert validate(snapshot, result.assignments).valid
+        assert result.metrics["employees"][employee.id]["paid_minutes"] == 240
+    else:
+        # Partial relaxes demand coverage, never fixed work or a hard cap.
+        assert result.solver_status == "INFEASIBLE"
+
+
+def _configure_synthetic_replacement(snapshot, weekly_limit):
+    from sp5generator.models import Approval
+
     # Fixture declares complete context, zero credits/balances and exact
     # workplace permissions. No real import is confirmed by this test.
     snapshot.context_complete = True
@@ -566,19 +588,50 @@ def test_replacement_fixed_import_enforces_hard_limits_through_solver(transport,
         function_id=p.function_id, workplace_id=p.workplace_id,
         valid_from=snapshot.context_start, valid_until=snapshot.context_end,
     ) for p in snapshot.positions]
+
+
+@pytest.mark.parametrize("termination", ["first_feasible", "quality_unknown", "first_unknown"])
+def test_imported_fixed_replacement_timeout_preserves_only_valid_incumbent(transport, monkeypatch, termination):
+    from ortools.sat.python import cp_model
+    from sp5generator.solver import solve
+    from sp5generator.validator import validate
+
+    snapshot, _ = _import_in_period_replacement(transport, "ist", False, "fixed")
+    _configure_synthetic_replacement(snapshot, 240)
     fixed = [(a.employee_id, a.demand_id) for a in snapshot.assignments]
-    checked = validate(snapshot, snapshot.assignments)
-    codes = {d.code for d in checked.diagnostics}
-    assert ("weekly_limit" in codes) is (weekly_limit == 239 or plan == "soll")
-    result = solve(snapshot, 3, partial=partial)
-    if plan == "ist" and partial and weekly_limit == 240:
-        assert result.solver_status == "OPTIMAL", (checked.diagnostics, result.validation.diagnostics)
-        assert [(a.employee_id, a.demand_id) for a in result.assignments] == fixed
-        assert all(a.fixed for a in result.assignments)
-        assert sum(result.vacancies.values()) == 1
-        assert result.validation.valid and not result.validation.complete
-        assert validate(snapshot, result.assignments).valid
-        assert result.metrics["employees"][employee.id]["paid_minutes"] == 240
+    original = cp_model.CpSolver.solve
+    calls = []
+
+    def controlled_status(self, model, *args, **kwargs):
+        calls.append(1)
+        if termination == "first_unknown" or (termination == "quality_unknown" and len(calls) == 2):
+            return cp_model.UNKNOWN
+        status = original(self, model, *args, **kwargs)
+        assert status == cp_model.OPTIMAL
+        return cp_model.FEASIBLE if termination == "first_feasible" else status
+
+    monkeypatch.setattr(cp_model.CpSolver, "solve", controlled_status)
+    result = solve(snapshot, 3, partial=True)
+    assert len(calls) == (2 if termination == "quality_unknown" else 1)
+    if termination == "first_unknown":
+        assert result.solver_status == "UNKNOWN"
+        assert not result.assignments
+        assert not result.validation.valid
+        assert result.metrics["planning_diagnostics"]["employees"][snapshot.employees[0].id]["reason"] == "no_valid_plan"
+        return
+    assert result.solver_status == "FEASIBLE"
+    if termination == "quality_unknown":
+        assert result.parameters["last_optimization_status"] == "UNKNOWN"
     else:
-        # Partial relaxes demand coverage, never fixed work or a hard cap.
-        assert result.solver_status == "INFEASIBLE"
+        assert result.metrics["objective_phase"] == "vacancies"
+    assert [(a.employee_id, a.demand_id) for a in result.assignments] == fixed
+    assert all(a.fixed for a in result.assignments)
+    assert sum(result.vacancies.values()) == 1
+    assert result.validation.valid and not result.validation.complete
+    assert validate(snapshot, result.assignments).valid
+    # The independent check must reject the same incumbent against a tighter
+    # real-time cap; time-limited status cannot authorize a relaxed hard rule.
+    snapshot.profiles[0].max_weekly_minutes = 239
+    checked = validate(snapshot, result.assignments)
+    assert not checked.valid
+    assert any(d.code == "weekly_limit" for d in checked.diagnostics)

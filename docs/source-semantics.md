@@ -1126,3 +1126,18 @@ Dies ist eine Absicherung der vorhandenen Korrektur, kein neuer Runtime-Fix und
 kein Nachweis für den fehlenden Original-600s-Job. Insbesondere ist das hier
 gewählte Vierstunden-Wochenmaximum ausschließlich ein synthetischer Grenzwert,
 keine aus Sollstunden abgeleitete oder für den Nutzer eingeführte Regel.
+
+Die drei HTTP-Import-Abbruchgegenproben
+`test_imported_fixed_replacement_timeout_preserves_only_valid_incumbent`
+verwenden dieselbe synthetische Einrichtung und echte CP-SAT-Lösungen mit
+gezielt kontrolliertem Rückgabestatus (keinen 600-Sekunden-Wartetest):
+`FEASIBLE` in der Bedarfsphase und `UNKNOWN` in der anschließenden
+Qualitätsphase erhalten genau die fixierte Ersatzschicht und eine Vakanz.
+Beide Ergebnisse sind unabhängig gültig, unvollständig und ohne
+Optimalitätsbehauptung. Bei `UNKNOWN` bereits vor dem ersten Incumbent
+werden keine importierten Fixierungen als vermeintlich berechneter Plan
+zurückgegeben; Ergebnisvalidität bleibt falsch und die Personendiagnose
+lautet `no_valid_plan`. Eine unabhängige Gegenprüfung derselben gefundenen
+Schicht mit 239 statt 240 realen Wochenminuten meldet `weekly_limit`.
+Dies prüft die Statusbehandlung und Importintegration, nicht das reale
+Laufzeitverhalten oder den weiterhin fehlenden Originaljob.
