@@ -1,0 +1,70 @@
+"""Bridge the explicit-plan source candidate to measurement, not rule approval.
+
+The injected selector is the patched API _employee_plan. Its source/date filtering
+is a separate coverage limitation. Identities below are request-local, not DB keys.
+"""
+from dataclasses import dataclass
+from datetime import date
+
+from sp5lib import calculations as calc
+
+from tools.work_segments_candidate import Duty, measure_duty
+
+
+@dataclass(frozen=True)
+class SelectedDuty:
+    source_id: str
+    day: date
+    status: str
+    duty: Duty | None = None
+    issues: tuple[str, ...] = ()
+
+
+def measure_selected(db, selector, employee_id, start, end, plan, zone):
+    """Account for every selected row, including replacement and measurement gaps.
+
+    Absence coexistence stays unresolved; do not subtract or discard work. No
+    total is supplied: missing rows must not look like zero-hour validated work.
+    """
+    if plan not in ('ist', 'soll'):
+        raise ValueError('Explicit ist or soll required')
+    manual, cycle, special = selector(db, employee_id, start, end, plan)
+    holidays = calc.holiday_calendar(db._read('HOLID'))
+    shifts = {int(row['ID']): row for row in db._read('SHIFT')}
+    replaced = {day for day, row in special if int(row.get('SHIFTID') or 0)}
+    absence_days = set()
+    for row in db._read('ABSEN'):
+        if row.get('EMPLOYEEID') != employee_id:
+            continue
+        # Invalid relevant source dates deliberately fail; never certify omission.
+        day = calc.to_date(row.get('DATE'))
+        if day is None:
+            raise ValueError('Unresolved absence date')
+        absence_days.add(day)
+    result = []
+    for source, rows in [('MASHI', manual), ('CYCLE', cycle), ('SPSHI', special)]:
+        for ordinal, (day, row) in enumerate(rows):
+            identity = f'{source}:{ordinal}'
+            if source != 'SPSHI' and day in replaced:
+                result.append(SelectedDuty(identity, day, 'replaced'))
+                continue
+            issues = ('absence_coexists_unresolved',) if day in absence_days else ()
+            if source == 'SPSHI':
+                windows = row.get('STARTEND')
+            else:
+                shift = shifts.get(int(row.get('SHIFTID') or 0))
+                if shift is None:
+                    result.append(SelectedDuty(identity, day, 'unmeasurable',
+                                               issues=issues + ('shift_missing',)))
+                    continue
+                windows = shift.get(f'STARTEND{calc.day_index(day, holidays)}')
+            try:
+                duty = measure_duty(identity, day, str(windows or ''), zone)
+            except ValueError:
+                result.append(SelectedDuty(identity, day, 'unmeasurable',
+                                           issues=issues + ('segments_unresolved',)))
+            else:
+                if absence_days.intersection(duty.calendar_minutes(zone)):
+                    issues = ('absence_coexists_unresolved',)
+                result.append(SelectedDuty(identity, day, 'measured', duty, issues))
+    return tuple(result)

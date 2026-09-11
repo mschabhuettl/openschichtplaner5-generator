@@ -2423,3 +2423,46 @@ PYTHONPATH=.:tests .venv/bin/pytest -q tools/test_work_segments_candidate.py \
 **146 passed**, Ruff erfolgreich. Der erste Testaufruf ohne `PYTHONPATH=.`
 scheiterte bei der Modulauflösung; der dokumentierte Aufruf ist erfolgreich.
 Keine Runtimeänderung, kein Release und kein Original-600s-Reproduktionsnachweis.
+
+### Quellenauswahl mit strikter Segmentmessung verbunden
+
+`tools/selected_work_segments_candidate.py:measure_selected` verbindet den
+vorhandenen expliziten `_employee_plan`-Kandidaten aus
+`tools/upstream-api-worktime-contract-candidate.patch` mit `measure_duty`.
+Keine neue Quellenauswahlbibliothek, keine Änderung der Originalcheckouts oder
+Generatorlaufzeit. Der Selektor wird injiziert; die Integrationstests extrahieren
+seine tatsächliche gepatchte Implementierung mit dem bestehenden AST-Testhelfer.
+
+16 synthetische Tests belegen getrennte Ist-/Soll-Auswahl, Ist-Zyklus trotz
+vorhandenem Soll-Handeintrag, SPSHI-Ersatz versus Addition (TYPE ist hier kein
+Planschalter), unveränderte Arbeit trotz NOEXTRA/DURATION, Feiertagsslot der
+Library, getrennte Identitäten doppelter Dienste und explizite nicht messbare
+Zeilen bei fehlender Schicht/fehlenden oder beschädigten Fenstern. Ersetzte
+Normaldienste bleiben als `replaced` sichtbar. Abwesenheiten aller vier
+Intervallarten werden nicht abgezogen: auch am übernächtigen Folgetag steht
+`absence_coexists_unresolved`. Die messbaren Minuten sind keine Bestätigung
+geleisteter Arbeit oder fachlicher Zulässigkeit.
+
+Identitäten sind **anfragelokale Quellart/Ordinal-Schlüssel**, keine stabilen
+DB-Schlüssel. Der Baustein bilanziert alle vom Selektor gelieferten Zeilen,
+nicht sämtliche Rohdatensätze: dessen Datumsfilter, Zyklusverdrängung und bislang
+übersprungene defekte Datumswerte bleiben separate Deckungslücken. Fehlerhafte
+Abwesenheitsdaten führen zum Abbruch. Keine Summenfreigabe, keine Intervallunion,
+keine übergreifende Überlappungs-/Ruheprüfung und kein automatisch nachgeladener
+Randkontext. Der unvollständige API-Prüfvertrag bleibt deshalb erforderlich.
+
+Reproduktion nach Anwendung des konsolidierten API-Patches auf eine temporäre
+Kopie des Originalcheckouts (hier `/tmp/sp5-worktime-contract`):
+
+```sh
+SP5_WORK_TIME_ROUTER=/tmp/sp5-worktime-contract/sp5api/routers/work_time_rules.py \
+PYTHONPATH=.:tests:../libopenschichtplaner5 .venv/bin/pytest -q \
+  tools/test_selected_work_segments_candidate.py tools/test_work_segments_candidate.py \
+  tests/test_partial_limits.py tests/test_calendar_limits.py tests/test_spill_rest.py
+```
+
+**162 passed**, Ruff erfolgreich. Nächster fachlicher Schritt: ausgewählte
+Dienstsegmente gegeneinander auf Überlappung und Ruhe prüfen, ohne gesplittete
+Dienste zu verschmelzen; fehlenden Randkontext weiterhin explizit ausweisen.
+Kein Release, keine neue private Abnahme unveränderter 0.9.31 und weiterhin kein
+Reproduktionsnachweis des fehlenden Original-0.9.29-600s-Jobs.
