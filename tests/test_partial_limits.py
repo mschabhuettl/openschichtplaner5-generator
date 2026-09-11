@@ -343,6 +343,70 @@ def test_unknown_without_incumbent_never_returns_unchecked_assignments(monkeypat
     assert result.metrics["planning_diagnostics"]["employees"]["e0"]["reason"] == "no_valid_plan"
 
 
+@pytest.mark.parametrize('certified', [False, True])
+def test_saved_partial_plan_is_certified_before_timeout_fallback(monkeypatch, certified):
+    snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
+    snapshot.assignments = [Assignment(employee_id='e0', demand_id='a')]
+    original = cp_model.CpSolver.solve
+    calls = []
+
+    def certificate_then_unknown(self, model, *args, **kwargs):
+        calls.append(bool(self.parameters.fix_variables_to_their_hinted_value))
+        if len(calls) == 1 and certified:
+            return original(self, model, *args, **kwargs)
+        return cp_model.UNKNOWN
+
+    monkeypatch.setattr(cp_model.CpSolver, 'solve', certificate_then_unknown)
+    result = solver.solve(snapshot, 3, partial=True)
+    assert calls == [True, False]
+    assert result.parameters['last_optimization_status'] == 'UNKNOWN'
+    if not certified:
+        assert result.solver_status == 'UNKNOWN' and not result.assignments
+        return
+    assert result.solver_status == 'FEASIBLE'
+    assert validate(snapshot, result.assignments).valid
+    assert not result.validation.complete
+    assert len(result.assignments) == 1 and not result.assignments[0].fixed
+    assert sum(result.vacancies.values()) == 1
+    assert result.metrics['vacancy_count'] == 1
+    assert result.metrics['objective_phase'] == 'vacancies'
+    assert result.objective_value == 1
+    assert result.best_bound is None
+
+
+def test_saved_partial_plan_does_not_freeze_coverage_at_initial_value():
+    snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
+    snapshot.assignments = [Assignment(employee_id='e0', demand_id='a')]
+    result = solver.solve(snapshot, 3, partial=True)
+    assert result.parameters['warm_start_certificate_status'] == 'OPTIMAL'
+    assert result.solver_status == 'OPTIMAL'
+    assert len(result.assignments) == 2
+    assert result.validation.valid and result.validation.complete
+    assert not any(a.fixed for a in result.assignments)
+
+
+def test_saved_partial_assignment_can_move_to_cover_required_demand():
+    snapshot = case(1, [shift('optional', 5, 8, 8), shift('required', 6, 8, 8)])
+    snapshot.demands[0].minimum = 0
+    snapshot.profiles[0].max_weekly_minutes = 480
+    snapshot.assignments = [Assignment(employee_id='e0', demand_id='optional')]
+    result = solver.solve(snapshot, 3, partial=True)
+    assert result.parameters['warm_start_certificate_status'] == 'OPTIMAL'
+    assert result.solver_status == 'OPTIMAL'
+    assert [a.demand_id for a in result.assignments] == ['required']
+    assert result.validation.valid and result.validation.complete
+
+
+def test_invalid_saved_partial_plan_is_not_a_timeout_fallback(monkeypatch):
+    snapshot = case(1, [shift('a', 5, 8, 8)])
+    snapshot.profiles[0].max_daily_minutes = 60
+    snapshot.assignments = [Assignment(employee_id='e0', demand_id='a')]
+    monkeypatch.setattr(cp_model.CpSolver, 'solve', lambda *args, **kwargs: cp_model.UNKNOWN)
+    result = solver.solve(snapshot, 3, partial=True)
+    assert 'warm_start_certificate_status' not in result.parameters
+    assert result.solver_status == 'UNKNOWN' and not result.assignments
+
+
 @pytest.mark.parametrize("credit,balance", [(480, 0), (0, 480), (720, -240)])
 @pytest.mark.parametrize("certified", [False, True])
 def test_initial_plan_timeout_requires_certificate_and_keeps_account_balance(

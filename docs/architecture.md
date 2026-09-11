@@ -11,4 +11,17 @@ Der HTTP-Prozess führt keine langen Solverläufe aus. Er schreibt Jobs in einen
 
 Der Validator erzeugt sein Urteil aus Snapshot und Einteilungen neu, ohne Variablenwerte oder Status des Solvers zu übernehmen. Reine Zeit-/Eignungsfunktionen werden geteilt. Komplexe Ruheprüfungen können ungültige Kandidaten während der Optimierung ausschließen; nur unabhängig geprüfte Kandidaten werden als Lösung ausgegeben.
 
+Bei einer Teilplanung können bereits gespeicherte, nicht fixierte Einteilungen
+als Ausgangslösung dienen. Dafür rekonstruiert der Solver die aktuellen
+Dienstintervalle, prüft den Vorschlag unabhängig und lässt alle
+Einteilungsvariablen in einem separaten CP-SAT-Zertifikatslauf auf diesen
+Vorschlag setzen. Nur ein erfolgreich zertifizierter Vorschlag wird zum
+Rückfallplan bei späterem Zeitablauf. Das fixiert die Einteilungen nicht in der
+anschließenden Suche: Sie darf weiterhin verschieben und offene Besetzungen
+reduzieren. Die Zahl offener Besetzungen darf gegenüber dem zertifizierten
+Ausgangsplan nicht steigen. Ein Zertifikat mit festgehaltenen Variablen beweist
+keine optimale Abdeckung; ein Rückfall bleibt `FEASIBLE`, nicht `OPTIMAL`.
+Ohne erfolgreiche Prüfung entsteht dadurch kein ausgebbarer Plan. Reiner
+Fix-/Randkontext aktiviert diesen Vorschlagsmechanismus nicht.
+
 Native SP5-Gesamtübernahme ist nicht implementiert: Die existierenden Writer teilen keine durchgehende Transaktion mit zusätzlich dateibasierten Regeln. Das Experiment ersetzt diese Grenze nicht durch einzelne Tabellenlocks oder einen frühen Versionsvergleich.

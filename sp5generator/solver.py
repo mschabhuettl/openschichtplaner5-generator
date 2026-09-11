@@ -732,6 +732,24 @@ def solve(snapshot, time_limit=30, partial=False):
     parameters["model_constraints"] = len(model.proto.constraints)
     warm_started = monotonic()
     warm = None
+    if partial and prior - fixed and all(key in xs for key in prior):
+        # Saved assignments are proposals, not new fixed constraints. Rebuild
+        # their generated duty intervals and independently validate them before
+        # requesting the same full-model certificate used for initial plans.
+        candidate = [
+            Assignment(
+                employee_id=eid, demand_id=did, fixed=(eid, did) in fixed,
+                segments=[i.model_copy(deep=True)
+                          for i in shifts[demands[did].shift_id].segments],
+            )
+            for eid, did in sorted(prior)
+        ]
+        checked = validate(snapshot, candidate)
+        if checked.valid:
+            warm = (candidate, checked)
+            model.clear_hints()
+            for key, x in xs.items():
+                model.add_hint(x, int(key in prior))
     if len(snapshot.employees) >= 40 and not partial:
         initial_plan_deadline = min(started + time_limit / 2, monotonic() + 12)
         plans = {
@@ -862,11 +880,14 @@ def solve(snapshot, time_limit=30, partial=False):
         solver.parameters.cp_model_presolve = False
         parameters["quality_presolve"] = False
         plan, checked = warm
+        warm_counts = Counter(a.demand_id for a in plan)
+        warm_vacancies = sum(max(0, d.minimum - warm_counts[d.id])
+                             for d in snapshot.demands)
         metrics = {
             "employees": {},
-            "objective_phase": "validated_initial_solution",
+            "objective_phase": "vacancies" if partial else "validated_initial_solution",
             "separation_rounds": 0,
-            "vacancy_count": 0,
+            "vacancy_count": warm_vacancies,
         }
         for e in snapshot.employees:
             selected = [
@@ -930,12 +951,17 @@ def solve(snapshot, time_limit=30, partial=False):
             plan,
             checked,
             metrics=metrics,
-            objective_value=float(
+            objective_value=float(warm_vacancies) if partial else float(
                 sum(metrics["weighted_objective_contributions"].values())
             ),
         )
-        phase = "quality"
-        model.minimize(weighted)
+        if partial:
+            # Continue minimizing vacancies; a valid saved partial plan does
+            # not prove optimal coverage, even if the fixed-hint solve was optimal.
+            model.add(sum(vacancies) <= warm_vacancies)
+        else:
+            phase = "quality"
+            model.minimize(weighted)
     while True:
         remaining = time_limit - (monotonic() - started)
         if best:
