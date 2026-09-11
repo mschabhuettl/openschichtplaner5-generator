@@ -712,3 +712,33 @@ def test_new_import_proposes_authorized_rest_defaults_without_confirming_setup()
     assert all(not e.approvals for e in s.employees)
     assert s.objectives.workday_transitions == 100
     assert input_diagnostics(s)  # Proposed values do not remove setup blockers.
+
+
+@pytest.mark.parametrize("plan", ["ist", "soll"])
+def test_absence_type_provenance_survives_deduplication_and_json(plan):
+    import json
+
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            rows = super().get_schedule(year, month, **kw)
+            if not rows:
+                return []
+            row = rows[0]
+            # Same interval, different accounting types; repeated team rows
+            # must still deduplicate, while distinct types must not collapse.
+            return [{**row, "leave_type_id": kind, "note": "not for export"}
+                    for kind in (701, 702, 701, None)]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 6),
+                               "1", "UTC", reference_plan=plan)
+    data = json.loads(snapshot.model_dump_json())
+    rows = data["metadata"]["context_schedule"]
+    assert [r["leave_type_id"] for r in rows] == [701, 702, None]
+    assert all("note" not in r for r in rows)
+    # Provenance is not a credit, an approval or a confirmation.
+    baseline = import_snapshot(SyntheticDatabase(), date(2026, 1, 5),
+                               date(2026, 1, 6), "1", "UTC", reference_plan=plan)
+    assert snapshot.profiles == baseline.profiles
+    assert snapshot.employees[0].model_dump(exclude={"unavailable"}) == baseline.employees[0].model_dump(exclude={"unavailable"})
+    assert set((i.start, i.end) for i in snapshot.employees[0].unavailable) == set((i.start, i.end) for i in baseline.employees[0].unavailable)
+    assert not snapshot.employees[0].approvals

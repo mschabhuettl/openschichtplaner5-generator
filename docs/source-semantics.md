@@ -1272,3 +1272,37 @@ das bleibt vor einer expliziten Übernahme zu klären. Abwesenheitsanrechnung
 bleibt separat: `calculations.absence_hours`, `charge_factor`, `absence_sums`
 bewerten Arbeitstage/Feiertage, INTERVAL, CHARGETYP/CHARGEHRS und DEDUCTACT.
 Ein bloßes Generator-Abwesenheitsintervall enthält diese Bewertung nicht.
+
+### Abwesenheitsart im Planungskontext nicht verlieren
+
+Belegte Mappinglücke: `sp5_adapter.import_snapshot` ließ `leave_type_id`
+beim Aufbau von `metadata.context_schedule` weg. Gleichzeitig dient dieser
+reduzierte Datensatz als Deduplizierungsschlüssel: verschiedene Abwesenheitsarten
+mit identischer Person, Datum und Zeit konnten zusammenfallen. Der Import
+behält nun die von der Quelle gelieferte Typ-ID; fehlende/anonymisierte IDs
+bleiben `null`. Freitext und Anzeigenamen werden weiterhin nicht übernommen.
+
+Datenfluss: `ABSEN.LEAVETYPID` → Library
+`database.SP5Database.get_schedule` → API
+`sp5api/routers/schedule.py:get_schedule` einschließlich
+`apply_absence_visibility` → Generator `api_adapter._Database.get_schedule`
+→ `sp5_adapter.import_snapshot`. OSP5 nutzt dieselbe ID in
+`frontend/src/pages/Schedule.tsx` für Abwesenheitsfilter und das Übertragen
+von Abwesenheiten. Die Sichtbarkeitsbeschränkung der API wird nicht umgangen:
+eine entfernte Typ-ID wird weder erraten noch aus anderen Quellen ergänzt.
+
+Der Typ allein ist **noch kein Stundenwert**. `calculations.absence_sums`
+benötigt zusätzlich Typdefinition, Beschäftigung, Arbeitstage und Feiertage;
+`absence_hours` und `charge_factor` berücksichtigen unter anderem INTERVAL,
+COUNTALL, CHARGETYP und CHARGEHRS. DEDUCTACT kann die Richtung der Anrechnung
+ändern. Fehlende Typdefinitionen dürfen deshalb bei einer künftigen Bewertung
+nicht als nachgewiesene Nullstunden gelten. Harte Arbeitszeitgrenzen und
+Ruhezeiten bleiben getrennt von dieser Kontenbewertung.
+
+Regression: `test_absence_type_provenance_survives_deduplication_and_json`
+prüft Ist/Soll-Referenzwahl, unterschiedliche Arten am gleichen Intervall,
+doppelte Quellzeilen, fehlende Typ-ID und JSON-Erhaltung. Alle Mitarbeiterfelder
+außer der Zahl identischer Sperrintervalle bleiben gleich; die tatsächlich
+gesperrten Zeiträume bleiben identisch. Keine Gutschrift, Freigabe oder
+Profilbestätigung wird daraus abgeleitet. Dieser Befund erklärt einen
+Herkunftsverlust, nicht den weiterhin fehlenden Originalfall mit 600 Sekunden.

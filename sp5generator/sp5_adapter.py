@@ -523,6 +523,7 @@ def import_snapshot(
                     "group_id",
                     "date",
                     "kind",
+                    "leave_type_id",
                     "shift_id",
                     "workplace_id",
                     "interval",
