@@ -2646,3 +2646,32 @@ Ruhezeitkontext benötigt zusätzlich seinen eigenen begründeten Horizont.
 einen falschen Pfad zur isolierten API-Testkopie; nach Pfadkorrektur vollständig
 grün. Nächster Schritt: expliziter Rand-/Quellendeckungsvertrag statt
 Vollständigkeitsannahmen. Kein Release und keine erneute unveränderte Privatabnahme.
+
+### Expliziter Abrufvertrag für native Kalendersummen
+
+`tools/calendar_limits_candidate.py:calendar_source_window` berechnet jetzt den
+benötigten Datumsabruf: aktive Planungstage **einschließlich gemessener
+Überlauftage**, bei Wochenlimits auf ganze ISO-Wochen erweitert, plus den lokalen
+Vortag für hineingehende Dienste. Grundlage ist der vorhandene Generatorparser
+`sp5_adapter._parse_native_windows`: Start höchstens 23:59, Ende höchstens 24:00,
+ein umgeschlagenes Ende liegt am Folgetag. Dies ist ein Formatvertrag, kein neu
+erfundenes Tagesmaximum. Sommer-/Winterzeit werden nicht durch pauschales
+Abziehen von 24 UTC-Stunden behandelt.
+
+Der gesamte Abruf muss in **einem** Selektionsaufruf erfolgen: die derzeitigen
+MASHI/SPSHI/CYCLE-Identitäten sind anfragelokale Ordinale und dürfen nicht aus
+separaten Abrufen zusammengefügt werden. Erweiterte Kontextdienste dürfen auch
+nicht wiederum neue Planungstage aktivieren; `diagnose_calendar` unterscheidet
+weiterhin anhand des ursprünglichen Planungszeitraums. Für den Abruf sind zuerst
+die Überlauftage der Planungsdienste zu bestimmen, anschließend wird der gesamte
+Kontext neu selektiert. Konsistente Datenbanklesung bleibt eine offene Voraussetzung.
+
+Die drei echten API-Selektorintegrationstests für MASHI/SPSHI/CYCLE verwenden
+nun diesen Vertrag und behalten die sechs Montagsstunden eines Sonntagsdienstes.
+Neun zusätzliche Tests prüfen Teilwochen, ISO-Jahreswechsel mit Überlauf,
+beide Zeitumstellungen und nicht darstellbare Datumsgrenzen. Fokussierte Suite:
+**246 passed**. Kein automatischer produktiver Abruf, kein vollständiger
+Ruhezeitkontext, kein Quellendeckungsnachweis und kein Release. Nächster Schritt:
+Konsistenz und stabile Quellidentitäten prüfen, bevor die Diagnosekandidaten in
+einen produktiven Datenfluss übernommen werden. Der konkrete 0.9.29-Job bleibt
+mangels exaktem Eingabe-/Ergebnisartefakt nicht reproduziert.

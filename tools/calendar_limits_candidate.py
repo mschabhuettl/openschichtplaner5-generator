@@ -31,6 +31,37 @@ class CalendarReport:
     complete: bool = False
 
 
+@dataclass(frozen=True)
+class CalendarSourceWindow:
+    first_day: date
+    last_day: date
+    source_start: date
+    source_end: date
+
+
+def calendar_source_window(active_days, *, weekly):
+    """Required date-selection envelope for native calendar work sums only.
+
+    Include measured planning spill days in active_days. For weekly checks fetch
+    whole ISO weeks, then one preceding local date for incoming native segments.
+    _parse_native_windows restricts starts to 00:00..23:59 and ends to the same
+    or next local date; this bound is NOT a universal maximum duty duration.
+    No elapsed-24h subtraction (DST), rest horizon or source coverage assertion.
+    Fetch the envelope in ONE selector call: source identities are request-local.
+    """
+    days = tuple(active_days)
+    if not days or any(type(day) is not date for day in days):
+        raise ValueError('Explicit nonempty calendar dates required')
+    first, last = min(days), max(days)
+    try:
+        if weekly:
+            first -= timedelta(days=first.weekday())
+            last += timedelta(days=6 - last.weekday())
+        return CalendarSourceWindow(first, last, first - timedelta(days=1), last)
+    except OverflowError:
+        raise ValueError('Calendar context outside supported date range') from None
+
+
 def diagnose_calendar(selected, profiles, profile_ids, start, end, zone, covered_days):
     """Single employee/selected plan; retain multiple applicable profile limits.
 

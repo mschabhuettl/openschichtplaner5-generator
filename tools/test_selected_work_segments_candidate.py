@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from sp5generator.models import RuleProfile
-from tools.calendar_limits_candidate import diagnose_calendar
+from tools.calendar_limits_candidate import calendar_source_window, diagnose_calendar
 from tools.audit_upstream_work_time_plan import load_helpers
 from tools.duty_conflicts_candidate import diagnose_pairs
 from tools.selected_work_segments_candidate import measure_selected
@@ -49,7 +49,8 @@ def test_date_only_selection_loses_incoming_overnight_work(source):
     selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
     db = SimpleNamespace(_read=lambda name: t.get(name, []))
     assert measure_selected(db, selector, 10, DAY, DAY, 'ist', 'Europe/Vienna') == ()
-    contextual = measure_selected(db, selector, 10, previous, DAY,
+    window = calendar_source_window([DAY], weekly=True)
+    contextual = measure_selected(db, selector, 10, window.source_start, window.source_end,
                                   'ist', 'Europe/Vienna')
     assert len(contextual) == 1
     assert contextual[0].duty.calendar_minutes('Europe/Vienna')[DAY] == 360
