@@ -275,6 +275,43 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     }
     await uploadProject(originalPath);await navigate('rules');await page.setViewportSize({width:1440,height:1000});
+    // Existing-duty warnings offer names and focused review without rewriting imported evidence.
+    const namedIssues=structuredClone(snapshot);
+    namedIssues.unresolved=[
+      `Bestehender Dienst ${snapshot.employees[0].id} 2026-02-02: Zuordnung zum Besetzungsbedarf und Freigaben bestätigen.`,
+      'Bestehender Dienst sp5:employee:999999 2026-02-02: keine eindeutige Zuordnung.',
+      'Allgemeiner synthetischer Hinweis ohne Personenbezug'
+    ];
+    const namedIssuesPath=path.join(state,'named-import-issues.json');fs.writeFileSync(namedIssuesPath,JSON.stringify(namedIssues));
+    await uploadProject(namedIssuesPath);await navigate('rules');
+    const namedState=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())}));
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      if(process.env.WEB_TEST_SCREENSHOT_DIR)await page.locator('.unresolved-surface').screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`named-import-issues-${width}.png`)});
+    }
+    assert.match(await issuesBox.locator('.card').first().innerText(),/Testperson 001/);
+    assert.equal(await issuesBox.getByRole('button',{name:'Person prüfen',exact:true}).count(),1);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      await issueSearch.fill('Testperson 001');
+      await page.waitForFunction(()=>document.querySelectorAll('#unresolved .card').length===1);
+      assert.equal(await issuesBox.locator('.card').count(),1);
+      await issuesBox.getByRole('button',{name:'Person prüfen',exact:true}).click();
+      assert.equal(await page.locator('#details input').first().inputValue(),'Testperson 001');
+      assert.equal(await page.locator('#details input').first().evaluate(e=>document.activeElement===e),true);
+      await navigate('rules');
+      await issuesBox.getByRole('button',{name:'Bedarfe am Datum prüfen',exact:true}).click();
+      assert.equal(await page.locator('[data-collection-search="demands"]').inputValue(),'2026-02-02');
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      await issueSearch.fill('');
+      await page.waitForFunction(()=>document.querySelectorAll('#unresolved .card').length===3);
+    }
+    assert.match(await issuesBox.locator('.card').nth(1).innerText(),/Person ist im aktuellen Projekt nicht vorhanden/);
+    await issueSearch.fill(snapshot.employees[0].id);
+    await page.waitForFunction(()=>document.querySelectorAll('#unresolved .card').length===1);
+    assert.equal(await issuesBox.locator('.card').count(),1,'Original IDs remain searchable');
+    assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())})),namedState);
+    await uploadProject(originalPath);await navigate('rules');await page.setViewportSize({width:1440,height:1000});
     // Select a distinct Soll baseline without changing history, availability or approvals.
     await reveal('#referencePlan');
     assert.equal(await page.locator('#referencePlan').inputValue(),'ist');

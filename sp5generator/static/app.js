@@ -345,11 +345,20 @@ function renderReferenceImport(){
 function renderUnresolved(){
  const box=$('unresolved');
  if(!snapshot.unresolved.length){box.replaceChildren();el('p','Keine offenen Importangaben.',box);return;}
- const entries=snapshot.unresolved.map((message,index)=>({message,index}));
- const view=collection(box,'unresolved',entries,{label:'Offene Angaben',size:10,search:entry=>entry.message,redraw:renderUnresolved});
+ const entries=snapshot.unresolved.map((message,index)=>{
+  const reference=/^Bestehender Dienst (sp5:employee:\S+) (\d{4}-\d{2}-\d{2}):/.exec(message);
+  const person=reference?dataIndex().employees.get(reference[1]):null;
+  const label=person?`Bestehender Dienst ${person.name} ${message.slice(`Bestehender Dienst ${reference[1]} `.length)}`:message;
+  return {message,index,reference,person,label};
+ });
+ const view=collection(box,'unresolved',entries,{label:'Offene Angaben',size:10,search:entry=>`${entry.message} ${entry.label}`,redraw:renderUnresolved});
  if(!view.total)el('p','Keine passenden Angaben. Suchbegriff ändern; andere offene Angaben bleiben erhalten.',view.content);
- for(const {message,index} of view.items){const row=el('div',undefined,view.content);row.className='card';el('span',message,row);
-  button(row,'Nach fachlicher Korrektur als geklärt markieren',()=>{snapshot.unresolved.splice(index,1);invalidateResult();renderRules();});
+ for(const {index,reference,person,label} of view.items){const row=el('div',undefined,view.content);row.className='card';el('span',label,row);
+  if(reference&&!person)el('p','Die Person ist im aktuellen Projekt nicht vorhanden. Import und Personenzuordnung prüfen.',row).className='helper-text';
+  const actions=el('div',undefined,row);actions.className='actions';
+  if(person)button(actions,'Person prüfen',()=>{const current=dataIndex().employees.get(person.id);if(!current)throw Error('Diese Person ist im aktuellen Projekt nicht mehr vorhanden.');personDetails(current);$('details').querySelector('input')?.focus();$('details').scrollIntoView({block:'start'});});
+  if(reference)button(actions,'Bedarfe am Datum prüfen',()=>openDemandReview(reference[2]));
+  button(actions,'Nach fachlicher Korrektur als geklärt markieren',()=>{snapshot.unresolved.splice(index,1);invalidateResult();renderRules();});
  }
 }
 function renderRules(){
