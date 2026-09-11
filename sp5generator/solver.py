@@ -594,6 +594,25 @@ def solve(snapshot, time_limit=30, partial=False):
             sum(paid) + e.balance_minutes + e.credit_minutes - e.target_minutes,
         )
         cost("hours", deviation, snapshot.objectives.hours)
+        if e.contractual_weekly_minutes is not None and snapshot.objectives.hours:
+            # Soft calendar-week workload, never an invented hard cap. Full
+            # allowance at edges: do not infer weekdays or divide monthly targets.
+            # Actual segments include fixed context; credits/pay cannot hide work.
+            weeks = {day - timedelta(days=day.weekday())
+                     for day in dates(snapshot.period_start, snapshot.period_end)}
+            weeks.update(day - timedelta(days=day.weekday())
+                         for d, _ in normal_entries
+                         if snapshot.period_start <= shift_day[d.shift_id] <= snapshot.period_end
+                         for day in dates_by_shift[d.shift_id])
+            for week in sorted(weeks):
+                terms = [term for day, values in daily.items()
+                         if week <= day < week + timedelta(days=7) for term in values]
+                upper_week = sum(n for d, _ in entries
+                                 for day, n in dates_by_shift[d.shift_id].items()
+                                 if week <= day < week + timedelta(days=7))
+                excess = model.new_int_var(0, upper_week, f"weekly_contract:{e.id}:{week}")
+                model.add_max_equality(excess, [0, sum(terms) - e.contractual_weekly_minutes])
+                cost("weekly_contract_excess", excess, snapshot.objectives.hours)
     # Explicit mentor-to-trainee edges with bounded per-duty mentoring slots.
     mentor_load = defaultdict(list)
     for (eid, did), x in xs.items():
@@ -905,6 +924,7 @@ def solve(snapshot, time_limit=30, partial=False):
             metrics["employees"][e.id] = {
                 "paid_minutes": paid,
                 "target_minutes": e.target_minutes,
+                "contractual_weekly_minutes": e.contractual_weekly_minutes,
                 "credit_minutes": e.credit_minutes,
                 "balance_minutes": e.balance_minutes,
                 "deviation_minutes": paid
@@ -1098,6 +1118,7 @@ def solve(snapshot, time_limit=30, partial=False):
             metrics["employees"][e.id] = {
                 "paid_minutes": paid,
                 "target_minutes": e.target_minutes,
+                "contractual_weekly_minutes": e.contractual_weekly_minutes,
                 "credit_minutes": e.credit_minutes,
                 "balance_minutes": e.balance_minutes,
                 "deviation_minutes": paid

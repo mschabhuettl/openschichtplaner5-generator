@@ -75,6 +75,8 @@ class Employee(Model):
     allow_holidays: bool = True
     profile_ids: list[str]
     target_minutes: int = Field(default=0, ge=0)
+    # Contractual weekly workload: soft distribution goal, never a hard limit.
+    contractual_weekly_minutes: int | None = Field(default=None, ge=0, strict=True)
     balance_minutes: int = 0
     credit_minutes: int = Field(default=0, ge=0)
     employment_fraction: int = Field(default=100, ge=1, le=100)

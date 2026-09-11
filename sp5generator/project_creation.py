@@ -201,6 +201,7 @@ def create_project(data: ProjectCreateRequest) -> Snapshot:
                             valid_from=context_start, valid_until=context_end)
                    for position in positions] if data.approvals_confirmed else [],
         profile_ids=[profile.id], employment_fraction=p.employment_fraction,
+        contractual_weekly_minutes=round(p.weekly_hours * 60) if p.weekly_hours is not None else None,
         target_minutes=round((p.target_hours if p.target_hours is not None else p.weekly_hours * days / 7) * 60),
     ) for index, p in enumerate(data.people)]
 

@@ -181,6 +181,8 @@ function personDetails(e){
  const hoursGroup=el('div',undefined,grid);
  const hours=field(hoursGroup,'Sollstunden im Planungszeitraum',e.target_minutes==null?'':e.target_minutes/60,v=>setTargetHours(e,v),'number');hours.dataset.employeeHours=e.id;hours.min='0';hours.required=true;hours.placeholder='Sollstunden festlegen';
  const hoursHelp=el('p','Das Soll gilt für den gesamten Planungszeitraum, nicht pro Woche. Maximale Wochenstunden sind eine separate verbindliche Regel.',hoursGroup);hoursHelp.id='personHoursHelp';hoursHelp.className='helper-text';hours.setAttribute('aria-describedby',hoursHelp.id);
+ const weekly=field(hoursGroup,'Vertragliche Wochenstunden',e.contractual_weekly_minutes==null?'':e.contractual_weekly_minutes/60,v=>e.contractual_weekly_minutes=v===null?null:Math.round(v*60),'number');weekly.min='0';weekly.placeholder='Nicht aus der Quelle bekannt';weekly.dataset.employeeWeeklyHours=e.id;
+ const weeklyHelp=el('p','Weiches Verteilungsziel je Kalenderwoche: Zusätzliche Stunden über diesem Wert werden möglichst vermieden. Keine harte Höchstgrenze; das Periodensoll bleibt separat. Randdienste zählen mit, Randwochen erhalten den vollen Wochenwert. Leer bedeutet unbekannt.',hoursGroup);weeklyHelp.id='personWeeklyHoursHelp';weeklyHelp.className='helper-text';weekly.setAttribute('aria-describedby',weeklyHelp.id);
  const origin=snapshot.metadata?.provenance?.[e.id]?.nominal_hours;
  const bases={0:['Tagesbasis','hours_day','Tag'],1:['Wochenbasis','hours_week','Woche'],2:['Monatsbasis','hours_month','Monat'],3:['Gesamtbasis','hours_total','Beschäftigungszeitraum']};
  if(origin&&Number.isInteger(origin.calcbase)&&Object.hasOwn(bases,origin.calcbase)){
