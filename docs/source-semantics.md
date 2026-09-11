@@ -480,3 +480,39 @@ und unbestätigten Randkontext. Letzterer hat bereits im bestehenden Vertrag
 eine eigene Bedeutung: vorläufige Einteilungen sind möglich, die unabhängige
 Validierung bleibt aber `complete=false` mit `context`-Diagnose. Ein
 `OPTIMAL`-Solverstatus ersetzt diesen Vollständigkeitsnachweis nicht.
+
+## Reproduzierter Verlust einer Höchstgrenzen-Zuordnung in 0.9.29
+
+`static/profile-groups.js:ProfileGroups.apply` erkannte ersetzbare Platzhalter
+bisher ausschließlich an ID `sp5:unconfirmed`, `confirmed=false` und
+`source=unresolved`. Dieser Code ist bytegleich mit dem untersuchten
+0.9.29-Stand `714b9f7`. Im Profileditor eingetragene Grenzen ändern diese
+Kennzeichen nicht.
+
+Synthetischer Ablauf: In dieses noch unbestätigte Importprofil werden
+2400 Wochenminuten eingetragen. Die Sammelaktion ordnet anschließend ein
+bestätigtes Profil ohne Wochenmaximum zu. Die ursprüngliche Profildefinition
+bleibt zwar gespeichert, ihre Zuordnung zur Person wird aber entfernt;
+der Solver erhält für diese Person kein entsprechendes Wochenmaximum mehr.
+Das ist ein belegter Fehlerpfad, **kein Beweis**, dass der nicht vorliegende
+600-Sekunden-Nutzerlauf genau so entstanden ist. 2400 Minuten sind ein
+synthetischer Testwert, kein angenommenes Nutzermaximum.
+
+Die Sammelzuordnung schützt jetzt auch unter der ursprünglichen Import-ID
+bereits eingetragene Tages-, Wochen-, Perioden-, Arbeitstage-, Nacht-,
+Wochenend- und Serienhöchstgrenzen, einschließlich einer Grenze von null.
+Das alte Profil bleibt zugeordnet und unbestätigt, bis es gezielt geprüft
+wird. Ruheminima werden nicht durch niedrigere Werte ersetzt; unterschiedliche
+aktive Wochenruhe- oder Nachtblock-Bezüge werden nicht pauschal verglichen.
+Unveränderte Platzhalter ohne solche Grenzen und Personen ohne Profil bleiben
+über die bestehende Sammelaktion zuordenbar. Es gibt keine automatische
+Bestätigung, neue Höchstgrenze oder Rekonstruktion schon verlorener Zuordnungen.
+
+Belege: `tests/browser/profile-groups.cjs` prüft alle acht Höchstgrenzenfelder
+mit null und positiven Werten sowie Ruhe-/Bezugsänderungen. Der komplette
+Browserablauf trägt das Wochenmaximum im echten Formular ein, betätigt die
+Sammelaktion, speichert und lädt neu; die Person behält ihr unbestätigtes
+Profil samt 2400-Minuten-Grenze, während eine Person ohne Profil das
+gewählte bestätigte Profil erhält. Tages-/Wochenfelder speichern bereits
+Minuten unverändert; die vorhandenen Browserchecks belegen 720/2400 Minuten.
+Nur das separate Perioden-Soll wird von Stunden in Minuten umgerechnet.

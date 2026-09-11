@@ -890,6 +890,37 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const clearedSave=page.waitForResponse(r=>r.url().endsWith('/api/snapshots')&&r.request().method()==='PUT');
     await saveProject();
     assert.equal((await (await clearedSave).json()).profiles[0].max_period_minutes,null);
+    // Editing a cap on an import placeholder makes its assignment protected.
+    // Exercise the actual form, bulk action, persistence and reload path.
+    const guarded=await(await fetch(base+'/api/demo')).json();
+    guarded.id='synthetic-cap-preservation';guarded.revision='1';
+    const target=guarded.profiles[0];target.confirmed=true;
+    target.valid_from=guarded.context_start;target.valid_until=guarded.context_end;
+    for(const key of ['max_daily_minutes','max_weekly_minutes','max_period_minutes','max_work_days','max_nights','max_weekends','max_consecutive_work_days','max_consecutive_nights'])target[key]=null;
+    const pending={...target,id:'sp5:unconfirmed',confirmed:false,source:'unresolved'};
+    guarded.profiles=[target,pending];
+    guarded.employees.forEach(e=>e.profile_ids=[target.id]);
+    guarded.employees[0].profile_ids=[pending.id];guarded.employees[1].profile_ids=[];
+    await uploadProject({name:'synthetic-cap-preservation.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(guarded))});
+    await navigate('rules');
+    const pendingCard=page.locator('[data-profile-id="sp5:unconfirmed"]');
+    await pendingCard.locator('summary').click();
+    await pendingCard.locator('[data-profile-field="max_weekly_minutes"]').fill('2400');
+    await pendingCard.locator('[data-profile-field="max_weekly_minutes"]').blur();
+    await page.getByRole('group',{name:'Regelprofil gesammelt zuordnen',exact:true}).getByLabel('Bestätigtes Profil').selectOption(target.id);
+    await page.getByRole('button',{name:'Offene Profilzuordnungen übernehmen',exact:true}).click();
+    assert.match(await page.locator('#notice').innerText(),/Höchstgrenzen bleiben erhalten/);
+    const capSaved=page.waitForResponse(r=>r.url().endsWith('/api/snapshots')&&r.request().method()==='PUT');
+    await saveProject();
+    const capResponse=await capSaved;assert.equal(capResponse.status(),200);
+    const capSnapshot=await capResponse.json();
+    assert.deepEqual(capSnapshot.employees[0].profile_ids,[pending.id]);
+    assert.deepEqual(capSnapshot.employees[1].profile_ids,[target.id]);
+    assert.equal(capSnapshot.profiles.find(p=>p.id===pending.id).max_weekly_minutes,2400);
+    assert.equal(capSnapshot.profiles.find(p=>p.id===pending.id).confirmed,false);
+    await reveal('#restore');await page.click('#restore');
+    await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('Daten geladen'));
+    assert.deepEqual(await page.evaluate(()=>({ids:snapshot.employees[0].profile_ids,cap:snapshot.profiles.find(p=>p.id==='sp5:unconfirmed').max_weekly_minutes})),{ids:[pending.id],cap:2400});
     // The calendar renders local dates and end-exclusive midnight, not UTC slices.
     const demo = await (await fetch(base+'/api/demo')).json();
     const demand = demo.demands[0];

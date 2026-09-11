@@ -404,11 +404,11 @@ function renderProfiles(){
  const box=$('profiles');box.replaceChildren();
  el('h3','Verbindliche Regelprofile',box);
  const bulk=el('fieldset',undefined,box);el('legend','Regelprofil gesammelt zuordnen',bulk);
- el('p','Ein bestätigtes Profil allen Personen ohne individuelles Profil zuordnen. Unbestätigte Importplatzhalter werden ersetzt; individuelle Zuordnungen bleiben erhalten.',bulk);
+ el('p','Ein bestätigtes Profil Personen ohne individuelles Profil zuordnen. Importprofile mit bereits eingetragenen Höchstgrenzen bleiben zugeordnet und müssen gezielt geprüft werden. Bestehende Ruhevorgaben werden nicht abgeschwächt oder auf einen anderen Bezug umgestellt; individuelle Zuordnungen bleiben erhalten.',bulk);
  let chosen='',team='';
  select(bulk,'Bestätigtes Profil','',[['','Bitte wählen'],...snapshot.profiles.filter(p=>p.confirmed).map(p=>[p.id,p.id])],v=>chosen=v,{updatesProject:false});
  select(bulk,'Team','',[['','Alle geladenen Personen'],...[...new Set(snapshot.employees.flatMap(e=>e.team_ids))].map(id=>[id,dataIndex().groups.get(id)?.name??id])],v=>team=v,{updatesProject:false});
- button(bulk,'Offene Profilzuordnungen übernehmen',()=>{const n=ProfileGroups.apply(snapshot,chosen,team);invalidateResult();renderRules();notice(`${n} Profilzuordnungen übernommen. Individuelle Profile bleiben erhalten. Projekt speichern.`);});
+ button(bulk,'Offene Profilzuordnungen übernehmen',()=>{const n=ProfileGroups.apply(snapshot,chosen,team);invalidateResult();renderRules();notice(`${n} Profilzuordnungen übernommen. Individuelle Profile und bereits eingetragene Höchstgrenzen bleiben erhalten. Nicht übernommene Zuordnungen gezielt prüfen. Projekt speichern.`);});
 
  el('p','Alle Grenzen hier sind harte Regeln. Die angebotenen 11/36-Ruhevorgaben sind gewünschte Standardwerte, keine rechtliche Prüfung. Leere optionale Höchstgrenzen bedeuten: keine Grenze aus diesem Profil. Bestätigungen und persönliche Freigaben bleiben eigene Entscheidungen.',box);
  if(!snapshot.profiles.length)el('p','Keine Regelprofile vorhanden. Profile und Zuordnungen können im erweiterten Datenvertrag ergänzt werden.',box);
