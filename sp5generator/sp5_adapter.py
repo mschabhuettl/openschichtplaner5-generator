@@ -287,13 +287,21 @@ def import_snapshot(
     specials = _unique_rows(
         row for gid in scope for row in db.get_special_staffing(group_id=gid)
     )
-    daily = [
-        r
-        for r in requirements.get("daily_requirements", [])
-        # The library returns raw DADEM records (unlike normalized SHDEM).
-        # Preserve unresolved global rows, but never import another team's rows.
-        if r.get("GROUPID", r.get("group_id")) in (*scope, 0, None)
-    ]
+    daily = []
+    for row in requirements.get("daily_requirements", []):
+        # DADEM remains raw and uninterpreted. A malformed team identifier
+        # must not silently remove an unresolved planning prerequisite.
+        group = row.get("GROUPID", row.get("group_id"))
+        if group is not None and not (
+            type(group) is int
+            or (type(group) is float and math.isfinite(group) and group.is_integer())
+        ):
+            unresolved.append(
+                "DADEM: Ungültige Kennung (GROUPID); ganze numerische Kennungen erforderlich."
+            )
+            daily.append(row)
+        elif group in (*scope, 0, None):
+            daily.append(row)
     if daily:
         unresolved.append(
             "DADEM: Verhältnis zum Schichtbedarf und Zeitfenster noch zu klären."

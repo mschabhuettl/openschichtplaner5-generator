@@ -145,7 +145,6 @@ def test_special_and_zero_preserved_not_summed():
     assert not s.demands
     assert len(s.metadata["unresolved_native"]) == 3
 
-
 @pytest.mark.parametrize("group_field", ["GROUPID", "group_id"])
 @pytest.mark.parametrize("group,retained", [(1, True), (99, False), (0, True), (None, True)])
 def test_daily_requirement_team_scope_preserves_unresolved_semantics(group_field, group, retained):
@@ -160,6 +159,24 @@ def test_daily_requirement_team_scope_preserves_unresolved_semantics(group_field
     assert rows == ([{"ID": 601, group_field: group, "START": 600, "MIN": 3}] if retained else [])
     assert any(message.startswith("DADEM:") for message in s.unresolved) is retained
     # DADEM remains uninterpreted: do not add its MIN to a shift requirement.
+    assert len(s.demands) == 1 and s.demands[0].minimum == 1
+    assert not s.employees[0].approvals and not s.profiles[0].confirmed
+
+
+@pytest.mark.parametrize("group_field", ["GROUPID", "group_id"])
+@pytest.mark.parametrize("group", [True, False, 1.5, "99", [], {}, float("inf")])
+def test_invalid_daily_team_cannot_silently_remove_unresolved_requirement(group_field, group):
+    row = {"ID": 601, group_field: group, "START": 600, "MIN": 3}
+
+    class Source(SyntheticDatabase):
+        def get_staffing_requirements(self):
+            data = super().get_staffing_requirements()
+            data["daily_requirements"] = [row]
+            return data
+
+    s = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert s.metadata["unresolved_native"]["daily_requirements"] == [row]
+    assert any("DADEM: Ungültige Kennung" in message for message in s.unresolved)
     assert len(s.demands) == 1 and s.demands[0].minimum == 1
     assert not s.employees[0].approvals and not s.profiles[0].confirmed
 

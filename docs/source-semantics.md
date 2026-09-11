@@ -4604,3 +4604,46 @@ an automatic fallback authorization. Full default suite: 1122 passed, followed
 by five additional passing sentinel/cell tests. Three corrected Generator
 characterizations and both clean upstream package reconstructions also pass.
 Two existing dependency deprecation warnings remain. Ruff/diff checks pass.
+
+
+### Daily staffing prerequisite loss before team filtering (2026-09-11)
+
+Source chain: `sp5lib.database.SP5Database.get_staffing_requirements` reads
+DADEM and returns raw uppercase rows; unlike SHDEM it does not normalize them.
+API `routers/master_data.get_staffing_requirements` filters only SHDEM, leaving
+DADEM intact. OSP5 `api/client.ts` declares `daily_requirements: unknown[]`;
+`Schedule.tsx` loads only `data.shift_requirements`, and the daily staffing view
+in `Personalbedarf.tsx` also iterates `reqs.shift_requirements`. These consumers
+do not establish an equivalence between a raw daily total and shift headcount.
+
+Generator `sp5_adapter.import_snapshot` previously filtered DADEM by raw
+`GROUPID` (lowercase fallback) before validation: a fractional/string/container
+team silently disappeared, while booleans matched integer scope/global values.
+Fourteen synthetic cases fail before the correction. It now preserves malformed
+rows privately as unresolved native input and emits a value-free identity
+diagnostic. Valid out-of-scope integer rows remain excluded; null/zero keep
+existing unresolved global semantics. No daily total is converted into shift
+demand, no rule/profile/approval is confirmed, and no employee is forced into a
+plan. Existing unresolved-source validation remains the planning gate.
+
+The focused adapter/partial/calendar suite passes 311 tests. This is a proven
+input-diagnostic defect, not evidence that malformed DADEM existed in the user's
+0.9.29 input or caused a working-time violation. The original 600-second
+project/job/result remains unavailable. Existing partial regressions cover
+real versus paid duration, ISO weeks/DST/context, and UNKNOWN quality-phase
+fallback; this patch changes none of those constraints.
+
+Next person-flow boundary: Library `get_group_members` reads GRASG EMPLOYEEID
+using GROUPID equality; API `routers/employees.get_group_members` joins these
+IDs against EMPL, then Generator `api_adapter.get_group_members` extracts ID.
+`sp5_adapter.import_snapshot` intersects EMPL with the scoped membership set and
+deduplicates by raw ID before constructing employees, their nominal targets and
+unconfirmed profile links. Existing `test_hierarchy` and
+`test_api_adapter.test_parent_team_imports_nested_people_without_duplicates`
+cover legitimate nested memberships, not malformed or conflicting EMPL/GRASG
+identities. This merits a separate end-to-end reproduction before any fix;
+missing membership is not evidence of missing personal service approval, and
+membership must not be synthesized from historical duties.
+
+Full default regression suite after this correction: **1141 passed**, two
+existing dependency deprecation warnings. Ruff and diff checks pass.
