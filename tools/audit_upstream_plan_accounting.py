@@ -6,7 +6,9 @@ audited upstream behavior, NOT the desired accounting contract; after an
 upstream fix they should fail and the documented findings must be revisited.
 """
 
+import argparse
 import json
+import uuid
 
 from sp5lib.database import SP5Database
 
@@ -46,7 +48,9 @@ def probe(plan_types: tuple[int, ...], *, cycle: bool = False,
 
     # Bypass the filesystem constructor; replace only source readers.
     db = object.__new__(SP5Database)
+    db.db_path = f"synthetic-{uuid.uuid4()}"
     db._read = read
+    db.get_workplaces = lambda **kwargs: []
     db.get_employee = lambda employee_id: employee
     db.get_shifts = lambda **kwargs: [shift]
     db.get_leave_types = lambda **kwargs: []
@@ -60,6 +64,10 @@ def probe(plan_types: tuple[int, ...], *, cycle: bool = False,
     daily_charges = db.extracharge_hours_by_day(2026, 9, 10)
     month = result["months"][8]
     return {
+        "schedule_views": {plan: [row.get("schedule_type")
+                                  for row in db.get_schedule(2026, 9, plan=plan)
+                                  if row["kind"] == "shift"]
+                           for plan in ("ist", "soll", "both")},
         "plan_types": plan_types,
         "cycle": cycle,
         "ist_source_experiment": ist_source,
@@ -72,7 +80,37 @@ def probe(plan_types: tuple[int, ...], *, cycle: bool = False,
     }
 
 
+def verify_candidate() -> None:
+    # No input filtering: exercise the patched production methods themselves.
+    count = 0
+    for kinds, cycle, expected in [
+        ((0,), False, 8), ((1,), False, 0), ((0, 1), False, 8),
+        ((), True, 8), ((1,), True, 8), ((0, 1), True, 8),
+    ]:
+        for special in (None, "replacement", "additive"):
+            hours = 2 if special == "replacement" else expected + (2 if special else 0)
+            result = probe(kinds, cycle=cycle, special=special)
+            for field in ("september_actual_hours", "annual_actual_hours",
+                          "surcharge_hours", "daily_surcharge_hours"):
+                assert result[field] == hours, result
+                count += 1
+            if special is None:
+                ist = [0] if 0 in kinds or cycle else []
+                soll = [1] if 1 in kinds else []
+                assert sorted(result["schedule_views"]["ist"]) == ist, result
+                assert sorted(result["schedule_views"]["soll"]) == soll, result
+                assert sorted(result["schedule_views"]["both"]) == ist + soll, result
+                count += 3
+    print(json.dumps({"synthetic_only": True, "candidate_accounting_assertions": count}))
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--candidate", action="store_true",
+                        help="Assert corrected contract against an isolated patched library")
+    if parser.parse_args().candidate:
+        verify_candidate()
+        return
     cases = [((0,), False, 8), ((1,), False, 8), ((0, 1), False, 16),
              ((), True, 8), ((1,), True, 8), ((0, 1), True, 16)]
     results = []

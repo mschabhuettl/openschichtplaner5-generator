@@ -1706,3 +1706,43 @@ Priorisierte Umsetzung und Abnahme:
 Keine produktiven Quellen oder Benutzerinstallation geändert. Unveränderte
 0.9.31 wurde nicht erneut direkt gegen dieselbe API getestet; deren letzte
 private Abnahme bleibt oben ausdrücklich als blockierte Neuplanung geführt.
+
+### Isolierter Library-Korrekturkandidat mit vollständiger Testsuite
+
+`tools/upstream-ist-accounting-candidate.patch` ist ein reviewbarer Patch gegen
+Library `0dac443`, **kein installierter Fix**. Er wurde ausschließlich auf eine
+Kopie unter `/tmp/sp5-upstream-candidate` angewendet. Originalcheckout, laufende
+API und Generator-Runtime bleiben unverändert.
+
+Der Kandidat ergänzt `_movement_by_employee(..., ist_only=False)` kompatibel
+und aktiviert die Ist-Auswahl in `_calc_inputs` nur für MASHI. Die
+Zyklusunterdrückung berücksichtigt nur Ist-MASHI-Zeilen: Zyklen tragen bereits
+`schedule_type=0`, daher darf auch in Both eine Sollzeile den Istzyklus nicht
+verdrängen. Der Monatsindex bleibt ungefiltert; der bestehende abschließende
+`get_schedule(plan=...)`-Filter erhält Soll/Both. SPSHI bleibt unangetastet.
+
+Reproduktion (Generator-venv, isolierte gepatchte Library auf PYTHONPATH):
+
+```sh
+PYTHONPATH=/tmp/sp5-upstream-candidate .venv/bin/python tools/audit_upstream_plan_accounting.py --candidate
+PYTHONPATH=/tmp/sp5-upstream-candidate .venv/bin/python -m pytest /tmp/sp5-upstream-candidate/tests -q
+```
+
+Ergebnis: **90 Assertions** (72 gemeinsame Stunden-/Zuschlagsprüfungen plus
+18 Ist/Soll/Both-Sichtprüfungen) bestanden. Anders als beim Eingangsfilter-
+Experiment liest die Kandidatenprobe sämtliche synthetischen MASHI-Zeilen
+ungefiltert. `get_schedule` verwendet den echten `_read_by_month`-Leser, mit
+getrennten synthetischen Cacheidentitäten. Bestehende vollständige Librarysuite:
+**297 passed, 6 skipped**. Ungepatchte Fehlercharakterisierung weiterhin grün.
+Dies prüft keine reale DBF-Cacheinvalidierung und ersetzt keine API-Abnahme.
+
+Verbleibende Integrationsgrenze konkret: API
+`sp5api/routers/work_time_rules.py:_employee_plan` liest MASHI direkt und
+expandiert/unterdrückt Zyklen selbst; es nutzt weder `_calc_inputs` noch den
+gepatchten Library-Zyklushelfer. OSP5
+`frontend/src/pages/WorkTimeRules.tsx` ruft `api.checkWorkTimeRules` auf.
+Der Librarykandidat allein behebt diesen separaten Prüfpfad nicht. Auch
+Library-Tages-/Wochenansichten besitzen weitere direkte MASHI-Leser und sind
+nicht automatisch als planbereinigt zertifiziert. Deshalb noch keine
+Produktivintegration und kein Release; als Nächstes den API-Prüfpfad mit
+synthetischen alternativen Plansichten in denselben Vertrag aufnehmen.

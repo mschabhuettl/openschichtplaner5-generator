@@ -1,0 +1,36 @@
+--- a/sp5lib/database.py
++++ b/sp5lib/database.py
+@@ -270,11 +270,14 @@
+         von: date,
+         bis: date,
+         employee_id: int | None = None,
++        *, ist_only: bool = False,
+     ) -> dict[int, list[dict]]:
+         """Bewegungsdaten (DATE-Spalte) je Mitarbeiter im Zeitraum [von, bis]."""
+         lo, hi = von.isoformat(), bis.isoformat()
+         out: dict[int, list[dict]] = {}
+         for r in self._read(table):
++            if ist_only and table == "MASHI" and int(r.get("TYPE") or 0) == 1:
++                continue
+             d = r.get("DATE") or ""
+             if not lo <= d <= hi:
+                 continue
+@@ -315,6 +318,7 @@
+         mashi_days = {
+             (r.get("EMPLOYEEID"), (r.get("DATE") or "")[:10])
+             for r in self._read("MASHI")
++            if int(r.get("TYPE") or 0) != 1
+         }
+         out: dict[int, list[dict]] = {}
+         for rec in expanded:
+@@ -339,7 +343,9 @@
+             "leave_types_by_id": {
+                 lt["ID"]: lt for lt in self.get_leave_types(include_hidden=True)
+             },
+-            "manual": self._movement_by_employee("MASHI", margin, bis, employee_id),
++            "manual": self._movement_by_employee(
++                "MASHI", margin, bis, employee_id, ist_only=True
++            ),
+             "special": self._movement_by_employee("SPSHI", margin, bis, employee_id),
+             "cycle": self._cycle_shifts_by_employee(margin, bis, employee_id),
+             "absences": self._movement_by_employee("ABSEN", von, bis, employee_id),
