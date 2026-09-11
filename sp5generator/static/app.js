@@ -290,7 +290,7 @@ function renderServiceGroups(){
    const body=table(view.content,['Dienst und Zeitmuster','Offene Vorkommen','Minuten im Nachtfenster','Vorschlag']);
    for(const {group,proposal} of view.items){const tr=el('tr',undefined,body);el('td',`${group.name} · ${group.times.map(t=>`${t[1]}–${t[3]}${t[2]!==t[0]?' (Folgetag)':''}`).join(' / ')}`,tr);el('td',String(group.pending),tr);el('td',proposal?String(proposal.nightMinutes):'Nicht auswertbar',tr);el('td',proposal?(proposal.kind==='night'?'Nacht':'Tag'):'Kein Vorschlag',tr);}
   };draw();
-  if(report.day+report.night)button(previewBox,'Geprüfte Zeitregel-Vorschläge übernehmen',()=>{
+  if(report.day+report.night)button(previewBox,`Alle ${report.day+report.night} Zeitregel-Vorschläge übernehmen`,()=>{
    if(version!==changeVersion){previewBox.replaceChildren();throw Error('Projekt seit der Vorschau geändert. Zeitregel-Vorschau erneut anzeigen.');}
    let count=0;for(const {group,proposal} of report.rows)if(proposal)count+=ServiceGroups.apply(snapshot,group.key,proposal.kind);
    snapshot.metadata.night_classification={...settings};invalidateResult();renderRules();notice(`${count} offene Dienstvorkommen nach Zeitregel eingestellt. Projekt speichern.`);
@@ -704,6 +704,7 @@ function matrixVisible(){
  return {employees:data.employees.slice(people.page*people.size,(people.page+1)*people.size),positions:data.positions.slice(positions.page*positions.size,(positions.page+1)*positions.size)};
 }
 function renderMatrix(){
+ updateHistoryApplyLabel();
  $('mappingWarning').hidden=serviceMatrix()||!snapshot.source.startsWith('sp5');
  const {employees,positions}=matrixVisible(),rows=transposed?positions:employees,cols=transposed?employees:positions;
  const box=$('matrix');box.replaceChildren();const filtered=matrixFiltered();pagination(box,pageState('matrixPeople',30),filtered.employees.length,renderMatrix,'Personen');if(filtered.positions.length>16)pagination(box,pageState('matrixPositions',16),filtered.positions.length,renderMatrix,'Dienste');const grid=el('div',undefined,box);grid.className='collection-content';
@@ -752,7 +753,17 @@ function renderCalendar(){
 }
 $('matrixSearch').oninput=debounce(()=>{if(!snapshot)return;pageState('matrixPeople',30).page=0;pageState('matrixPositions',16).page=0;renderMatrix();});
 action('transpose',()=>{transposed=!transposed;$('transpose').setAttribute('aria-pressed',String(transposed));renderMatrix();});
-action('confirmHistory',()=>{const {employees,positions}=matrixVisible();const pairs=employees.flatMap(e=>positions.filter(p=>suggested(e,p)&&!approved(e,p)).map(p=>[e,p]));if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge in der aktuellen Ansicht.');return;}if(!window.confirm(`${pairs.length} sichtbare historische Vorschläge ausdrücklich für ${snapshot.period_start} bis ${snapshot.period_end} freigeben? ${serviceMatrix()?'Die Freigabe gilt für den Dienst an allen Arbeitsplätzen. ':''}Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();});
+function pendingHistoryApprovals(){
+ const pairs=[],seen=new Set(),employees=dataIndex().employees;
+ for(const row of snapshot?.metadata?.history_matrix??[]){const employee=employees.get(row.employee_id);if(!employee)continue;
+  for(const proposal of row.suggested_approvals??[]){const key=JSON.stringify([employee.id,proposal.function_id,proposal.workplace_id]);
+   if(seen.has(key)||approved(employee,proposal))continue;seen.add(key);pairs.push([employee,proposal]);
+  }
+ }
+ return pairs;
+}
+function updateHistoryApplyLabel(){const count=pendingHistoryApprovals().length;$('confirmHistory').textContent=`Alle ${count} historischen Vorschläge übernehmen`;}
+action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${snapshot.period_start} bis ${snapshot.period_end} freigeben – unabhängig von Suche und sichtbaren Zeilen? Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
 $('start').addEventListener('change',historyDefaults);
 {
  const today=new Date(),year=today.getFullYear(),month=String(today.getMonth()+1).padStart(2,'0');
