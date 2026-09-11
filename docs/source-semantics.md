@@ -4421,3 +4421,25 @@ repetition of the unchanged private baseline. Remote CI remains unverified
 claim about 600 seconds, 24-hour duties or weekly overruns follows from this gate.
 Next: complete Generator-specific temporal diagnostics with synthetic allowlist
 checks, then integrate and privately GET-audit the combined runtime candidate.
+
+### Generator temporal diagnostic contract (2026-09-11)
+
+`APIClient._fetch` now recognizes the exact `temporal_value` category for the
+four staffing endpoints under `/api` and `/api/v1`. It displays a fixed local
+German date/weekday message, never upstream bodies, reasons or arbitrary header
+values. Unknown categories, other paths and other HTTP statuses remain generic.
+No import mapping, staffing requirements, approvals or solver limits change.
+
+Adapter and actual full-app temporal activation tests pass **276 tests**. The
+full-app gate checks the specific diagnostic for structure/numeric/temporal
+failures and retry after synthetic source repair without caching failed reads.
+Another **193 partial/calendar/dated-rest tests** pass; Ruff and diff check pass.
+An initial broad string edit also changed a special-staffing call and caused
+219 adapter failures; that unintended edit was removed before the passing run.
+The isolated Library/API temporal patches are still candidates, not deployed
+upstream. Specific diagnostics do not establish malformed real source data or
+reproduce the missing original 0.9.29 job.
+
+The complete local `tests` suite also passes **1078 tests** (two known dependency
+warnings). This does not replace the separate upstream candidate full-app gate
+or the private API audit and is not a remote CI result.

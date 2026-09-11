@@ -66,7 +66,10 @@ def check_temporal(http, headers, prefix, root, database, api_type, import_error
                         assert response.status_code == 500, response.text
                         assert_source_error(response, category)
                         assert str(root) not in response.text
-                        with pytest.raises(import_error, match='HTTP 500'):
+                        message = {'structure': 'strukturell unvollständig',
+                                   'numeric_value': 'ungeklärte Zahlenwerte',
+                                   'temporal_value': 'ungültige Datums- oder Wochentagswerte'}[category]
+                        with pytest.raises(import_error, match=message):
                             api.get(url + query)
                         assert api.cache == {}
                         # Same client retries after correction: failures must not

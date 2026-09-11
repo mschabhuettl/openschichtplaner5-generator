@@ -1001,11 +1001,14 @@ def test_http_restriction_shift_scope_does_not_identify_root_cause(
 
 
 @pytest.mark.parametrize('path', ['/api/staffing-requirements',
-                                  '/api/staffing-requirements/special?group_id=1'])
+                                  '/api/staffing-requirements/special?group_id=1',
+                                  '/api/v1/staffing-requirements',
+                                  '/api/v1/staffing-requirements/special?group_id=1'])
 @pytest.mark.parametrize('category,message', [
     ('read', 'konnte nicht vollständig gelesen'),
     ('structure', 'strukturell unvollständig'),
     ('numeric_value', 'ungeklärte Zahlenwerte'),
+    ('temporal_value', 'ungültige Datums- oder Wochentagswerte'),
 ])
 def test_staffing_source_contract_uses_only_local_messages(transport, path, category, message):
     from email.message import Message
@@ -1036,6 +1039,9 @@ def test_staffing_source_contract_uses_only_local_messages(transport, path, cate
 @pytest.mark.parametrize('status,path,code,category', [
     (401, '/api/staffing-requirements', 'staffing_source_unresolved', 'read'),
     (500, '/api/groups', 'staffing_source_unresolved', 'read'),
+    (500, '/api/v1/groups', 'staffing_source_unresolved', 'temporal_value'),
+    (500, '/api/v1/staffing-requirements/extra', 'staffing_source_unresolved', 'temporal_value'),
+    (500, '/api/v1/staffing-requirements', 'staffing_source_unresolved', 'temporal_value PRIVATE'),
     (500, '/api/staffing-requirements', 'PRIVATE_CODE', 'read'),
     (500, '/api/staffing-requirements', 'staffing_source_unresolved', 'PRIVATE_CATEGORY'),
     (500, '/api/staffing-requirements', None, None),

@@ -100,6 +100,8 @@ class APIClient:
                 and urlsplit(path).path in (
                     "/api/staffing-requirements",
                     "/api/staffing-requirements/special",
+                    "/api/v1/staffing-requirements",
+                    "/api/v1/staffing-requirements/special",
                 )
                 and exc.headers is not None
                 and exc.headers.get("X-SP5-Error-Code") == "staffing_source_unresolved"
@@ -108,6 +110,7 @@ class APIClient:
                     "read": "Bedarfsquelle konnte nicht vollständig gelesen werden.",
                     "structure": "Bedarfsquelle ist strukturell unvollständig oder ungültig.",
                     "numeric_value": "Bedarfsquelle enthält ungeklärte Zahlenwerte.",
+                    "temporal_value": "Bedarfsquelle enthält ungültige Datums- oder Wochentagswerte.",
                 }.get(exc.headers.get("X-SP5-Error-Category"))
                 if message:
                     raise APIImportError(
