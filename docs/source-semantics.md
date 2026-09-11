@@ -201,6 +201,103 @@ vorheriger privater Ist/Soll-Prüfnachweis bleibt im Automation-Scratch.
 Keine erfolgreiche Neuplanung oder Freigabe wird aus diesen Quell- und
 Regressionstests abgeleitet. Keine Änderung produktiver Originaldaten.
 
+## Gezielte Untersuchung des gemeldeten 0.9.29-Teilplans
+
+Der Nutzer meldet nach 600 Sekunden einen Teilplan mit nicht eingeplanten
+Personen, 24h-Diensten und überschrittenen Wochenstunden. Die folgenden
+Minimalfälle sind **keine Reproduktion dieses konkreten Plans**. In den
+bereits vorhandenen privaten Audit-JSONs wurden rekursiv 32 Ergebnisobjekte
+gefunden: ausschließlich MODEL_INVALID bei 30/60 Sekunden, kein
+600-Sekunden-Ergebnis. Erforderlich bleiben zusammengehöriger Projektstand,
+Jobparameter und Ergebnis inklusive Snapshot-Hash, wirksamer Profile und
+Randdienste. Diese Daten gehören ausschließlich in die private lokale Prüfung.
+
+### Stundenbegriffe über alle vier Komponenten
+
+| Datenfluss | Nachgewiesene Bedeutung | Folge für die Fehlersuche |
+| --- | --- | --- |
+| `SHIFT.STARTEND{idx}` → Library `parse_startend` → API `_collect_day_data` → OSP5-Dienstanzeige → Generator `Shift.segments` | Zeitfenster eines Diensts; gleiches Anfangs-/Ende außer dem leeren 00:00-Slot bedeutet Tageswechsel | `08:00-08:00` wird als 24h-Spanne importiert; nicht aus Sollstunden berechnet |
+| `SHIFT.DURATION{idx}` → Library `shift_hours_on_day` → API `_collect_day_data.day_hours` → Generator `paid_minutes` | angerechnete Stunden; können von den Zeitfenstern abweichen | Ein 24h-Zeitfenster kann 8h bezahlt sein; Stundenanzeige allein beweist keine Dauergrenze |
+| `EMPL.CALCBASE/HRS*` → Library `get_nominal_hours` → Generator `target_minutes` | Sollwert für den angefragten Zeitraum | `HRSWEEK=40` ist keine automatisch importierte harte 40h-Grenze |
+| API `work_time_rules.py:_load_rules/_check_employee` → OSP5-Arbeitszeitprüfung | separates Zusatzwerkzeug; Tages-/Wochenprüfung summiert DURATION am Startdatum; wahlweise feste Grenze oder Sollmodell × Faktor | Kein gleichwertiger Ersatz für die unabhängige Generatorprüfung, keine automatische Übernahme dieser Konfiguration |
+| OSP5 `Generator.tsx` Profilformular → Snapshot → Generator `RuleProfile.max_daily_minutes/max_weekly_minutes` | explizite Höchstgrenzen in Minuten, wirksam über Personenprofil-ID und Gültigkeit | Nur tatsächlich zugeordnete Grenzen gelten; ein zusätzliches unzugeordnetes Profil ändert nichts |
+
+Quellbelege: Library `calculations.py:parse_startend/shift_hours_on_day`, API
+`routers/work_time_rules.py:_collect_day_data/_check_employee`, OSP5
+`frontend/src/pages/Generator.tsx:53`, Generator
+`sp5_adapter.py:import_snapshot`, `timeutils.py:day_minutes`,
+`solver.py:solve`, `validator.py:_validate`. API-Adapter `_Database` importiert
+keine `/api/work-time-rules`-Konfiguration. Das Importprofil enthält 660/2160
+Minuten Ruhe, aber **keine** Tages-/Wochenhöchstzeit. Diese nicht gesetzten
+Grenzen wurden weder heimlich ergänzt noch aus API-Defaults oder Sollwerten
+abgeleitet.
+
+Zusätzlicher isolierter Test der tatsächlichen API-Funktionen (per AST geladen,
+synthetische `_read`-Tabellen, keine Originaldaten und kein Live-POST):
+`08:00-08:00`, DURATION=8 ergibt einen 24h-Block und 8 Tagesstunden.
+Die API-Prüfung mit Tagesgrenze 10h und Wochengrenze 40h meldet dafür keinen
+Stundenverstoß. Der Generator prüft demgegenüber die aufsummierten tatsächlichen
+Segmentminuten je lokalem Tag und Montag–Sonntag. Diese unterschiedliche
+Prüfsemantik muss bei einem Ergebnisvergleich ausdrücklich berücksichtigt werden.
+Sie belegt nicht, welche Grenze im gemeldeten Nutzerprojekt konfiguriert war.
+
+### Was die synthetischen Gegenproben belegen
+
+`tests/test_partial_limits.py` prüft unabhängig ausgerechnete Erwartungen:
+
+- Zwei 8h-Dienste mit je 1h Bezahlung überschreiten ein gemeinsames 8h-Tageslimit.
+  Im Teilmodus wird nur einer gewählt; im strikten Modus ist das Modell unlösbar.
+- Ein fixierter 8h-Randdienst in derselben Woche verhindert einen weiteren
+  8h-Dienst bei 15h-Wochenmaximum, auch mit hohem Soll und geringer Bezahlung.
+- Drei 24h-Dienste können 11h tägliche und 36h wöchentliche Ruhe erfüllen.
+  Ohne Wochenmaximum sind sie zulässig; mit ausdrücklich gesetzten 40h wird
+  im synthetischen Beispiel nur einer gewählt. Es wird kein allgemeines
+  Verbot von 24h-Diensten oder ein Nutzer-Wochenmaximum behauptet.
+- Überschneidung, fehlende 11h-Ruhe und zwei Positionen im selben Dienst
+  bleiben auch im Teilmodus ausgeschlossen. Strengere zugeordnete Profile
+  werden nicht durch weniger strenge Profile überstimmt.
+- Herbst-Zeitumstellung: lokal 00–04 Uhr sind 300 tatsächliche Minuten.
+  Ein Dienst über Sonntag/Montag wird auf lokale Tage und ISO-Wochen aufgeteilt;
+  der Jahreswechsel verwechselt nicht Kalenderjahr und ISO-Wochenjahr.
+- UNKNOWN in der Qualitätsphase erhält einen zuvor unabhängig geprüften
+  Teilplan als FEASIBLE; UNKNOWN ohne geprüfte Lösung liefert keine Einteilungen.
+  Teilmodus lockert Mindestbesetzung, nicht persönliche harte Regeln.
+- Drei geeignete Personen bei Höchstbesetzung eins führen rechtmäßig zu zwei
+  nicht eingeplanten Personen. Alle einzuplanen wäre eine neue, falsche Pflicht.
+
+19 dieser Import-/Regel-/Statusprüfungen wurden zusätzlich in einem separaten
+synthetischen Checkout des dokumentierten 0.9.29-Releasecommits
+`714b9f7284364263ae1be03e3a21a9a552f25525` ausgeführt und bestanden; der geladene
+Solverpfad wurde geprüft. Damit ist in diesen Fällen **kein** Umgehen gesetzter
+Grenzen durch 0.9.29 reproduziert. Ein Zeitablauf wurde deterministisch über den
+Solverstatus simuliert, nicht als 600-Sekunden-Lasttest ausgegeben.
+
+### Behobene Diagnoselücke: nicht eingeplante Personen
+
+Die bisherigen Engpasshinweise waren bedarfsbezogen. `solve` ergänzt jetzt
+`metrics.planning_diagnostics` mit tatsächlichen Kandidatenzahlen und
+Ausschlussgründen je Person, ohne zusätzliche Kandidatenprüfung oder Änderung
+der Zielfunktion. Die Zahlen zählen **Bedarfszeilen**, nicht Personen oder
+garantiert gemeinsam machbare Dienste; mehrere Ausschlussgründe können für
+dieselbe Zeile gelten. Fixierter Kontext zählt nicht als neuer Einsatz.
+
+Die Gründe unterscheiden `assigned`, `no_positive_capacity_demand`,
+`individually_ineligible`, `not_selected_with_candidates` und `no_valid_plan`.
+Freigabe, Beschäftigungszeitraum, Team und Verfügbarkeit kommen direkt aus
+`domain.eligibility`; Maximum 0 wird gesondert erfasst. Optionale Bedarfe und
+Mindestbedarfe bleiben unterscheidbar. Die konfigurierten Zielgewichte werden
+mitgeliefert. „Kandidaten vorhanden, nicht ausgewählt“ behauptet weder, dass
+eine gemeinsame Lösung möglich wäre, noch welches Gewicht kausal entscheidend
+war. Harte Regeln und globale Konkurrenz müssen weiterhin mitgeprüft werden.
+Bei abgebrochener Kandidatensuche oder ungültiger Eingabe werden keine
+unvollständigen Kandidatenzahlen als abschließende Diagnose veröffentlicht.
+
+29 neue Regressionen, gesamte Generator-Pythonsuite: **440 bestanden**.
+Die Diagnose liegt im strukturierten Ergebnis/JSON; keine neue UI, keine
+automatische Profilbestätigung, keine Freigabenübernahme und keine Veröffentlichung
+realer Planungsdaten. Priorisiert offen bleiben die genaue private Reproduktion,
+Sollbuchungen und die Trennung von Vergleichsreferenzen und Planungsblockern.
+
 ## Sollstunden: Einheit folgt der Berechnungsbasis
 
 1. Originalfelder `EMPL.CALCBASE`, `HRSDAY`, `HRSWEEK`, `HRSMONTH`,

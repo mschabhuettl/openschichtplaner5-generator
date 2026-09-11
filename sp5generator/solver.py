@@ -39,6 +39,7 @@ def solve(snapshot, time_limit=30, partial=False):
     started = monotonic()
     deadline = started + time_limit
     timings = {}
+    employee_candidates = None
     parameters = {
         "time_limit": time_limit,
         "partial": partial,
@@ -53,6 +54,37 @@ def solve(snapshot, time_limit=30, partial=False):
         counts = defaultdict(int)
         for a in assignments:
             counts[a.demand_id] += 1
+        if employee_candidates is not None:
+            selected = Counter(
+                a.employee_id for a in assignments
+                if snapshot.period_start <= shift_day[demands[a.demand_id].shift_id]
+                <= snapshot.period_end
+            )
+            usable = status in ("FEASIBLE", "OPTIMAL") and validation is not None and validation.valid
+            details = {}
+            for eid, candidates in employee_candidates.items():
+                if not usable:
+                    reason = "no_valid_plan"
+                elif selected[eid]:
+                    reason = "assigned"
+                elif not candidates["positive_capacity_demands"]:
+                    reason = "no_positive_capacity_demand"
+                elif not candidates["eligible_demands"]:
+                    reason = "individually_ineligible"
+                else:
+                    reason = "not_selected_with_candidates"
+                details[eid] = {
+                    **candidates,
+                    "exclusions": dict(candidates["exclusions"]),
+                    "assigned_demands": selected[eid],
+                    "reason": reason,
+                }
+            kwargs.setdefault("metrics", {})["planning_diagnostics"] = {
+                "scope": "demands starting inside the planning period",
+                "semantics": "individual eligibility only; not a joint feasibility or causal optimality proof",
+                "objective_weights": snapshot.objectives.model_dump(),
+                "employees": details,
+            }
         return Result(
             snapshot_id=snapshot.id,
             snapshot_hash=snapshot_hash(snapshot),
@@ -121,6 +153,11 @@ def solve(snapshot, time_limit=30, partial=False):
     }
     diagnostics = []
     exclusions = defaultdict(Counter)
+    candidate_stats = {
+        e.id: {"positive_capacity_demands": 0, "eligible_demands": 0,
+               "eligible_required_demands": 0, "exclusions": Counter()}
+        for e in snapshot.employees
+    }
     exclusion_labels = {
         "employment": "Beschäftigungszeitraum",
         "team": "Teamzugehörigkeit",
@@ -145,6 +182,16 @@ def solve(snapshot, time_limit=30, partial=False):
                 exclusions[d.id]["context"] += 1
                 continue
             reasons = eligibility(snapshot, e, d)
+            if in_period:
+                stats = candidate_stats[e.id]
+                if d.maximum == 0:
+                    stats["exclusions"]["zero_capacity"] += 1
+                else:
+                    stats["positive_capacity_demands"] += 1
+                    stats["exclusions"].update(reasons)
+                    if not reasons:
+                        stats["eligible_demands"] += 1
+                        stats["eligible_required_demands"] += int(d.minimum > 0)
             if reasons:
                 exclusions[d.id].update(reasons)
                 if (e.id, d.id) in fixed:
@@ -172,6 +219,9 @@ def solve(snapshot, time_limit=30, partial=False):
                 model.add(x == 1)
             elif (e.id, d.id) in prior:
                 model.add_hint(x, 1)
+    # Publish candidate facts only after the entire scan, never a timed-out
+    # prefix. These are informational metrics, not relaxed validation rules.
+    employee_candidates = candidate_stats
     # The standalone contract and independent checker accept at most this
     # many assignments, including fixed context. Extra optional staffing must
     # not drive the optimizer outside that supported result envelope.

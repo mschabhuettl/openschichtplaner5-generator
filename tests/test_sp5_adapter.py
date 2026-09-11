@@ -102,6 +102,32 @@ def test_holiday_demand_and_request_restriction():
     assert s.unresolved and not s.context_complete
 
 
+def test_native_24_hour_window_paid_duration_and_nominal_week_are_distinct():
+    from sp5generator.timeutils import day_minutes
+
+    class Source(SyntheticDatabase):
+        def get_shifts(self, **kw):
+            rows = super().get_shifts(**kw)
+            rows[0].update(STARTEND7="08:00-08:00", DURATION7=8)
+            return rows
+
+        def get_employees(self, **kw):
+            rows = super().get_employees(**kw)
+            rows[0].update(CALCBASE=1, HRSWEEK=40)
+            return rows
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "Europe/Vienna")
+    duty = snapshot.shifts[0]
+    assert day_minutes(duty, snapshot.timezone) == {date(2026, 1, 6): 960, date(2026, 1, 7): 480}
+    assert duty.paid_minutes == 480
+    # HRSWEEK informs CALCBASE nominal hours, never an invented hard maximum.
+    assert snapshot.profiles[0].max_daily_minutes is None
+    assert snapshot.profiles[0].max_weekly_minutes is None
+    assert snapshot.profiles[0].min_rest_minutes == 660
+    assert snapshot.profiles[0].weekly_rest_minutes == 2160
+    assert not snapshot.profiles[0].confirmed and not snapshot.employees[0].approvals
+
+
 def test_special_and_zero_preserved_not_summed():
     class Source(SyntheticDatabase):
         def get_staffing_requirements(self):
