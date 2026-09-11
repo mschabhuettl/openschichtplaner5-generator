@@ -2586,3 +2586,30 @@ bleibt unvollständig. Nach Korrektur **214 Tests grün**, Ruff und Diffcheck gr
 Öffentlicher lesender GitHub-CI-Metadatenabruf ergibt HTTP 404; `gh` fehlt,
 also kein neuer CI-Erfolgsnachweis. Nächster Schritt ist der Zyklus-/Randkontext,
 nicht ein weiteres UI- oder Releasepaket.
+
+### Zyklusquellen: fehlende Definition ist kein freier Tag
+
+`sp5lib.calculations.expand_cycle_assignments` überspringt CYASS ohne START,
+fehlende CYCLE-Definition und CYCLE.SIZE <= 0. API
+`work_time_rules._employee_plan` übernimmt die Expansion ohne Verlustmeldung.
+Damit kann der nachfolgende Arbeitszeitprüfer eine unvollständige Dienstmenge
+sehen. Das ist ein belegter Diagnosefehlerpfad, kein Nachweis der Ursache des
+konkreten 600-Sekunden-Ergebnisses aus 0.9.29.
+
+`tools/selected_work_segments_candidate.py:measure_selected` lehnt diese
+Unklarheiten jetzt vor der Selektion ab. Relevante CYEXC benötigen ein lesbares
+Datum; fehlende Ausnahme-Daten werden von der Library sonst ignoriert.
+Ungültige Datumsstrings können dort dagegen bereits eine Exception auslösen.
+Offenes CYASS.END bleibt erlaubt, umgekehrte Intervalle werden abgelehnt.
+Nachweislich außerhalb liegende Zuordnungen benötigen keine Zyklusdefinition
+für diese Abfrage. Fehlende CYENT-Positionen und SHIFTID=0 bleiben entsprechend
+der Library freie Tage, keine erfundenen Dienste.
+
+Zehn synthetische Regressionen in `tools/test_cycle_source_coverage_candidate.py`:
+sechs Abnahmetests zunächst rot, nach Korrektur grün; zusammen mit Selektions-,
+Segment-, Paar-, Kalender- und Teilplantests **207 passed**, Ruff grün.
+Ein erster Editieraufruf scheiterte am fehlenden `python`-Alias; die Änderung
+wurde anschließend mit dem Patchwerkzeug angewendet und vollständig geprüft.
+Kein produktiver API-/Generatorpfad verändert. Quellendeckung bleibt unbestätigt:
+Randabruf, CYENT-Schlüssel/Definitionen und konsistente Datenbanklesung sind
+weiter offen. Keine erneute Abnahme der unveränderten veröffentlichten Version.
