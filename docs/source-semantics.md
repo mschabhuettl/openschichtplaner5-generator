@@ -3505,3 +3505,36 @@ ungültiger Quellwerte. Priorität: importbezogene Zähler/Kategorien für gült
 außerhalb Scope versus ungültig/nicht auflösbar entwerfen und erst danach
 gezielt fail-closed umsetzen; legitime fremde Teams nicht pauschal blockieren.
 Der Originaljob 0.9.29 bleibt für einen konkreten Kausalnachweis erforderlich.
+
+### RESTR-Verwurfdiagnose und ungültige zugehörige Quellsätze
+
+2026-09-11: `sp5_adapter.import_snapshot` behebt die oben charakterisierte
+Diagnoselücke. `metadata.restriction_mapping_counts` zählt Quellsätze außerhalb
+von Personen-, erzeugtem Dienst- und Starttag-Scope getrennt von ungültigen
+Wochentagen/Stufen. `mapped_rows` zählt Quellsätze, `mapped_instances` ihre
+Expansion auf konkrete Tage/Teamvarianten. Die Kategorien behaupten bei
+fehlender Dienstzuordnung ausdrücklich nicht, dass die Quelle ungültig sei:
+fehlender Bedarf kann ebenfalls erklären, warum kein Dienst erzeugt wurde.
+
+Für eine ausgewählte Person und mindestens eine erzeugte Variante ihres
+Quelldienstes blockiert ein Wochentag außerhalb des Integer-Vertrags 0–7 jetzt
+über `unresolved`, statt die Einschränkung unbemerkt zu verlieren. Ungültige
+Stufen blockieren bei passendem Starttag. Boolesche, Fließkomma- und Textwerte
+werden nicht still in Integer umgedeutet. Fremde Personen/Dienste und gültige
+andere Starttage bleiben außerhalb Scope; es werden weder globale Sperren noch
+Freigaben erfunden. Die bestehenden Regeln für die Feiertagsauswahl bleiben
+unverändert. Die Zähler enthalten keine personenbezogenen Quellzeilen.
+
+`test_http_restriction_mapping_diagnoses_scope_and_invalid_rows` prüft 18
+synthetische HTTP-Fälle, darunter ungültige Werte außerhalb der Auswahl.
+`test_http_split_duty_restriction_covers_each_group_variant` prüft außerdem die
+Quellsatz-/Instanzzählung bei ein/zwei Teams und allen drei gültigen Stufen.
+Dies behebt einen belegten Importfehler, erklärt aber ohne Originaleingabe nicht
+die gemeldeten 24-Stunden-Dienste oder Wochenüberschreitungen von 0.9.29.
+
+Zusätzlicher Sicherheitsnachweis:
+`test_invalid_imported_restriction_blocks_otherwise_valid_planning` überträgt
+nur den neuen RESTR-Klärungsblocker auf ein ansonsten nachweislich lösbares
+synthetisches Modell. Voll- und Teilplanung liefern danach `MODEL_INVALID`,
+keine Einteilungen und ungültige Validierung. Vollsuite vor diesen beiden
+Zusatzfällen: 942 bestanden; anschließend alle 176 HTTP-Adaptertests bestanden.

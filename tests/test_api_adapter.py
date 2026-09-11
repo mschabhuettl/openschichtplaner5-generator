@@ -747,6 +747,10 @@ def test_http_split_duty_restriction_covers_each_group_variant(transport, grade,
                           team_ids=[str(gid) for gid in groups])
     assert len(snapshot.shifts) == len(groups)
     assert len(snapshot.restrictions) == len(groups)
+    counts = snapshot.metadata["restriction_mapping_counts"]
+    assert counts["mapped_rows"] == 1
+    assert counts["mapped_instances"] == len(groups)
+    assert sum(counts.values()) == 1 + len(groups)
     assert {r.shift_id for r in snapshot.restrictions} == {s.id for s in snapshot.shifts}
     assert all(r.level == grade and not r.approved for r in snapshot.restrictions)
     assert all(len(s.segments) == 2 and s.paid_minutes == 240 for s in snapshot.shifts)
@@ -754,11 +758,21 @@ def test_http_split_duty_restriction_covers_each_group_variant(transport, grade,
     assert all(not e.approvals for e in snapshot.employees)
 
 
-@pytest.mark.parametrize("override", [
-    {"employee_id": 999}, {"shift_id": 999}, {"weekday": 0}, {"weekday": 8},
+@pytest.mark.parametrize("override,category,blocked", [
+    ({"employee_id": 999}, "outside_employee_scope", False),
+    ({"shift_id": 999}, "outside_shift_scope", False),
+    ({"weekday": 0}, "outside_day_scope", False),
+    *[({"weekday": value}, "invalid_weekday", True)
+      for value in (8, -1, None, "7", True, 7.0)],
+    *[({"restrict": value}, "invalid_grade", True)
+      for value in (3, -1, None, "2", True, 2.0)],
+    ({"employee_id": 999, "weekday": 8}, "outside_employee_scope", False),
+    ({"shift_id": 999, "weekday": 8}, "outside_shift_scope", False),
+    ({"weekday": 0, "restrict": 3}, "outside_day_scope", False),
 ])
-def test_http_unmatched_restriction_current_mapping_gap(transport, override):
-    """Characterize silent omission; not an endorsement of corrupt source rows."""
+def test_http_restriction_mapping_diagnoses_scope_and_invalid_rows(
+    transport, override, category, blocked
+):
     responses, _ = transport
     responses["/api/restrictions"][0].update(override)
     responses[("schedule", "2026", "1", "ist")] = []
@@ -767,5 +781,29 @@ def test_http_unmatched_restriction_current_mapping_gap(transport, override):
                           history_end=day - timedelta(days=1))
     assert len(snapshot.shifts) == 1
     assert not snapshot.restrictions
-    assert not any("RESTR" in issue for issue in snapshot.unresolved)
+    assert any("RESTR" in issue for issue in snapshot.unresolved) == blocked
+    counts = snapshot.metadata["restriction_mapping_counts"]
+    assert counts[category] == 1
+    assert sum(counts.values()) == 1
     assert not snapshot.employees[0].approvals
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_invalid_imported_restriction_blocks_otherwise_valid_planning(transport, partial):
+    from sp5generator.solver import solve
+    from test_core_rules import case
+
+    responses, _ = transport
+    responses["/api/restrictions"][0]["weekday"] = 8
+    day = date(2026, 1, 6)
+    imported = import_api(day, day, "1", history_start=day - timedelta(days=1),
+                          history_end=day - timedelta(days=1))
+    # Isolate this import blocker from the separately unconfirmed native setup.
+    configured = case(1)
+    assert solve(configured, 3, partial=partial).solver_status == "OPTIMAL"
+    configured.unresolved = [x for x in imported.unresolved if x.startswith("RESTR ")]
+    assert len(configured.unresolved) == 1
+    result = solve(configured, 3, partial=partial)
+    assert result.solver_status == "MODEL_INVALID"
+    assert not result.assignments
+    assert not result.validation.valid

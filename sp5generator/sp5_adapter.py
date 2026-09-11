@@ -462,25 +462,45 @@ def import_snapshot(
                     unresolved.append(f"SHIFT {sid} {d}: {exc}")
             d += timedelta(days=1)
     native_restrictions = db.get_restrictions()
+    restriction_counts = dict.fromkeys(
+        ("outside_employee_scope", "outside_shift_scope", "outside_day_scope",
+         "invalid_weekday", "invalid_grade", "mapped_rows", "mapped_instances"), 0
+    )
+    metadata["restriction_mapping_counts"] = restriction_counts
     for row in native_restrictions:
         eid = f"sp5:employee:{row['employee_id']}"
         if eid not in employee_map:
+            restriction_counts["outside_employee_scope"] += 1
             continue
+        candidates = []
         for sid, shift in shifts.items():
             d = shift.segments[0].start.date()
-            if (
-                sid == f"sp5:shift:{row['shift_id']}:{d}"
-                or sid.startswith(f"sp5:shift:{row['shift_id']}:{d}:group:")
-            ) and row.get("weekday") == calc.day_index(d, holidays):
-                grade = row.get("restrict")
-                if grade not in (0, 1, 2):
-                    unresolved.append(f"RESTR {row.get('id')}: unbekannte Stufe.")
-                else:
-                    restrictions.append(
-                        Restriction(
-                            employee_id=eid, shift_id=sid, level=grade, approved=False
-                        )
-                    )
+            if (sid == f"sp5:shift:{row['shift_id']}:{d}"
+                    or sid.startswith(f"sp5:shift:{row['shift_id']}:{d}:group:")):
+                candidates.append((sid, d))
+        if not candidates:
+            restriction_counts["outside_shift_scope"] += 1
+            continue
+        weekday = row.get("weekday")
+        if type(weekday) is not int or weekday not in range(8):
+            restriction_counts["invalid_weekday"] += 1
+            unresolved.append(f"RESTR {row.get('id')}: ungültiger Wochentag (erwartet 0–7).")
+            continue
+        matching = [sid for sid, d in candidates if weekday == calc.day_index(d, holidays)]
+        if not matching:
+            restriction_counts["outside_day_scope"] += 1
+            continue
+        grade = row.get("restrict")
+        if type(grade) is not int or grade not in (0, 1, 2):
+            restriction_counts["invalid_grade"] += 1
+            unresolved.append(f"RESTR {row.get('id')}: unbekannte Stufe.")
+            continue
+        restriction_counts["mapped_rows"] += 1
+        restriction_counts["mapped_instances"] += len(matching)
+        restrictions.extend(
+            Restriction(employee_id=eid, shift_id=sid, level=grade, approved=False)
+            for sid in matching
+        )
     month = context_start.replace(day=1)
     seen_schedule = set()
     while month <= context_end:
