@@ -1746,3 +1746,49 @@ Library-Tages-/Wochenansichten besitzen weitere direkte MASHI-Leser und sind
 nicht automatisch als planbereinigt zertifiziert. Deshalb noch keine
 Produktivintegration und kein Release; als Nächstes den API-Prüfpfad mit
 synthetischen alternativen Plansichten in denselben Vertrag aufnehmen.
+
+### API-Prüfpfad: isolierter Ist-Kandidat und bestehende Helfertests
+
+`tools/upstream-api-ist-plan-candidate.patch` ergänzt am API-Stand `d578f21`
+vor `_dated` eine ausschließlich auf MASHI angewendete Ist-Auswahl. Damit
+verwenden Stundenaddition und die lokale Zyklusunterdrückung dieselbe Sicht.
+SPSHI.TYPE bleibt unberührt. Dies ist ein **explizit Ist-only experimenteller
+Kandidat**, keine stillschweigende Festlegung des öffentlichen API-Defaults:
+Eine Produktivintegration benötigt weiterhin den ausdrücklichen Sichtvertrag
+im Endpoint und in OSP5 `WorkTimeRules.tsx`.
+
+Reproduzierbares Werkzeug `tools/audit_upstream_work_time_plan.py` lädt die drei
+Originalfunktionen `_employee_plan`, `_collect_day_data`, `_check_employee`
+unverändert per AST, ohne Serverstart, DBF-Zugriff oder HTTP. Gegen Original
+und isoliert gepatchte Datei jeweils **18 Fälle / 72 Assertions bestanden**:
+Ist, Soll, beide, Zyklus ohne Materialisierung, Zyklus mit Soll sowie mit beiden
+Sichten, jeweils ohne Sonderdienst, mit Ersatz oder mit Zusatz. Geprüft werden
+Stundensumme, Blockzahl und Tages-/Wochenverletzungen. Die synthetischen Grenzen
+10h/12h sind ausschließlich Testwerte, keine fachlichen Nutzerdefaults.
+
+```sh
+PYTHONPATH=/home/hilbert/projects/libopenschichtplaner5 .venv/bin/python tools/audit_upstream_work_time_plan.py /home/hilbert/projects/openschichtplaner5-api/sp5api/routers/work_time_rules.py
+PYTHONPATH=/tmp/sp5-upstream-candidate .venv/bin/python tools/audit_upstream_work_time_plan.py /tmp/sp5-upstream-api-ist-candidate.py --candidate --helper-tests /home/hilbert/projects/openschichtplaner5-api/tests/test_work_time_helpers.py
+```
+
+Zusätzlich **acht bestehende reine API-Helfertests bestanden**, über AST mit
+unveränderten Testfunktionen und originalen Defaultwerten ausgeführt. Die zwei
+Dateikonfigurations-/HTTP-Tests wurden ausdrücklich nicht ausgeführt; dies ist
+keine vollständige API-Testsuite oder Endpoint-Abnahme. Gemeinsame Gegenprobe
+mit dem Librarykandidaten: dessen **90 Assertions weiterhin bestanden**.
+Originalcheckouts, laufende API und Generator-Runtime unverändert; kein Release.
+
+Die Korrekturprobe löst ausschließlich die Plansichtvermischung. Bekannte
+Lücken bei Überlappung/Nullruhe, realen statt bezahlten Stunden und Randkontext
+bleiben bestehen. Sie darf deshalb nicht als gleichwertiger Generatorvalidator
+verwendet werden und belegt keine Ursache des fehlenden Original-600s-Artefakts.
+
+Nächster zusammenhängender Integrationspunkt ist konkret abgegrenzt:
+Library `get_schedule_day` und `get_schedule_week` schreiben nach dem
+Zyklushelfer erneut **ungefilterte** MASHI-Zeilen in Person-/Datums-Dictionaries.
+API `routers/schedule.py:get_schedule_day/get_schedule_week` reicht diese
+Fassaden weiter. Ein korrigierter Zyklushelfer allein kann dort alternative
+Sollzeilen als nachträglichen Override nicht verhindern. Dies ist zunächst ein
+Codebefund, noch keine hier ausgeführte Tages-/Wochen-Reproduktion. Vor
+Produktivintegration diese Ansichten mit unterschiedlichen Ist-/Soll-Diensten
+und umgekehrter Quellreihenfolge gegen die Monatsansicht abgleichen.

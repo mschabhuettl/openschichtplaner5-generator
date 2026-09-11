@@ -1,0 +1,13 @@
+--- a/sp5api/routers/work_time_rules.py
++++ b/sp5api/routers/work_time_rules.py
+@@ -127,7 +127,9 @@
+                 out.append((d, r))
+         return out
+ 
+-    manual = _dated(db._read("MASHI"))
++    # Isolated Ist-only candidate: select before cycle suppression.
++    # SPSHI.TYPE is not the MASHI plan discriminator.
++    manual = _dated(r for r in db._read("MASHI") if int(r.get("TYPE") or 0) != 1)
+     special = _dated(db._read("SPSHI"))
+     cycle_recs = calc.expand_cycle_assignments(
+         [r for r in db._read("CYASS") if r.get("EMPLOYEEID") == employee_id],
