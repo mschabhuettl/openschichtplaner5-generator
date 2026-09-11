@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from .jobs import Store, Conflict, run_worker
 from .models import Snapshot, Assignment, Result
@@ -75,15 +75,53 @@ class SetupReviewMetadata(BaseModel):
     classified: int = Field(ge=0)
 
 
+class HistorySuggestionMetadata(BaseModel):
+    function_id: str
+    workplace_id: str = '*'
+    evidence_count: int = Field(default=0, ge=0)
+    evidence_days: int = Field(default=0, ge=0)
+
+
+class HistoryObservationMetadata(BaseModel):
+    name: str
+    count: int = Field(ge=0)
+
+
+class HistoryRowMetadata(BaseModel):
+    employee_id: str
+    observed_assignment_count: int = Field(default=0, ge=0)
+    observed_shifts: list[HistoryObservationMetadata] | None = None
+    suggested_approvals: list[HistorySuggestionMetadata] | None = None
+
+
+class HistoryAppliedMetadata(BaseModel):
+    employee_id: str
+    function_id: str
+
+
+class HistoryAutomationMetadata(BaseModel):
+    minimum_days: int = Field(ge=2, le=1097)
+    applied: list[HistoryAppliedMetadata]
+
+
+DISPLAY_METADATA = {
+    'setup_review': ('Einrichtungsübersicht', TypeAdapter(SetupReviewMetadata)),
+    'history_matrix': ('Historische Dienstvorschläge', TypeAdapter(list[HistoryRowMetadata])),
+    'history_automation': ('Historische Freigabeübersicht', TypeAdapter(HistoryAutomationMetadata)),
+}
+
+
 def check_project_structure(snapshot: Snapshot):
     """Reject unsafe display/input boundaries while allowing unfinished rules."""
-    if snapshot.metadata.get('setup_review') is not None:
+    for key, (label, adapter) in DISPLAY_METADATA.items():
+        if snapshot.metadata.get(key) is None:
+            continue
         try:
             # Validate known UI metadata without dropping custom or future fields.
-            SetupReviewMetadata.model_validate(snapshot.metadata['setup_review'], strict=True)
+            adapter.validate_python(snapshot.metadata[key], strict=True)
         except ValidationError as exc:
-            raise HTTPException(422, 'Einrichtungsübersicht in den Projektmetadaten '
-                                '(setup_review) ist beschädigt. Eine unveränderte '
+            raise HTTPException(422, f'{label} in den Projektmetadaten '
+                                f'({key}): Übersicht beschädigt. Eine unveränderte '
                                 'Projektsicherung verwenden oder diese Übersicht korrigieren.') from exc
     from .domain import input_diagnostics
     blocking_codes = {'input', 'date_range', 'period', 'interval', 'size_limit', 'numeric_range'}

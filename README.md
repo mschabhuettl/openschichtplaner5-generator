@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.9.3** erhält ausdrücklich aktivierte Qualifikationsanforderungen bei der Einstellungsübernahme und erklärt Engpässe auch bei gültigen Teilplänen. Persönliche Dienstfreigaben bleiben der SP5-Standard; zusätzliche Qualifikationsanforderungen sind optional. [Änderungen und Aktualisierung](docs/release-0.9.3.md).
+**Version 0.9.4** prüft Einrichtungs- und Historienmetadaten vor dem Öffnen oder Speichern einer Projektdatei. Beschädigte Übersichten ersetzen kein bestehendes Projekt. Persönliche Dienstfreigaben bleiben der SP5-Standard; zusätzliche Qualifikationsanforderungen sind optional. [Änderungen und Aktualisierung](docs/release-0.9.4.md).
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -53,7 +53,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel aus dem Workflow-Artefakt `openschichtplaner5-generator-python` installieren:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.9.3-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.9.4-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 

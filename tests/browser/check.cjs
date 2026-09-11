@@ -258,6 +258,14 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal((await rejectedSetup).status(),422);
     assert.match(await page.locator('#notice').textContent(),/Einrichtungsübersicht.*beschädigt/);
     assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
+    for(const [key,value] of [['history_matrix',{}],['history_automation',{}]]){
+      const invalidHistory=structuredClone(backedUp);invalidHistory.metadata[key]=value;
+      const rejectedHistory=page.waitForResponse(r=>r.url().endsWith('/api/snapshots/check')&&r.request().method()==='POST');
+      await uploadProject({name:'invalid-history.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(invalidHistory))});
+      assert.equal((await rejectedHistory).status(),422);
+      assert.match(await page.locator('#notice').textContent(),new RegExp(key));
+      assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
+    }
     acceptDiscard=false;
     await reveal('#demo');
     await page.click('#demo');

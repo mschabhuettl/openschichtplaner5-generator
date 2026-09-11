@@ -161,11 +161,32 @@ def test_invalid_setup_review_is_rejected_before_replacing_a_project(tmp_path, r
         assert client.get('/api/snapshots/' + saved['id']).json() == saved
 
 
+@pytest.mark.parametrize('key,value', [
+    ('history_matrix', {}), ('history_matrix', [None]),
+    ('history_matrix', [{'employee_id': 'synthetic', 'suggested_approvals': {}}]),
+    ('history_matrix', [{'employee_id': 'synthetic', 'observed_shifts': [None]}]),
+    ('history_matrix', [{'employee_id': 'synthetic', 'suggested_approvals': [None]}]),
+    ('history_automation', {}), ('history_automation', {'minimum_days': 3, 'applied': {}}),
+    ('history_automation', {'minimum_days': 3, 'applied': [None]}),
+])
+def test_invalid_history_metadata_does_not_replace_project(tmp_path, key, value):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        saved = client.put('/api/snapshots', json=client.get('/api/demo').json()).json()
+        imported = {**saved, 'metadata': {**saved['metadata'], key: value}}
+        for method, url in [('post', '/api/snapshots/check'), ('put', '/api/snapshots')]:
+            rejected = getattr(client, method)(url, json=imported)
+            assert rejected.status_code == 422
+            assert key in rejected.json()['detail']
+        assert client.get('/api/snapshots/' + saved['id']).json() == saved
+
+
 def test_valid_setup_review_and_custom_metadata_are_preserved(tmp_path):
     with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
         snapshot = client.get('/api/demo').json()
         snapshot['metadata'].update({
             'custom_note': {'version': 1},
+            'history_matrix': [{'employee_id': 'synthetic-person', 'future_field': True}],
+            'history_automation': {'minimum_days': 3, 'applied': [], 'future_field': True},
             'setup_review': {'newPeople': ['synthetic-person'], 'newServices': [],
                              'review': ['Synthetic review'], 'reusedPeople': 0,
                              'classified': 1, 'future_field': {'keep': True}},
