@@ -248,3 +248,17 @@ main{max-width:none;width:100%;margin:0;padding-left:20px;padding-right:20px}
 #projectCards,#jobCards{max-height:72dvh;overflow:auto;scrollbar-gutter:stable}
 .project-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
 @media(max-width:720px){main{padding-left:12px;padding-right:12px}.collection-content{max-height:70dvh}#matrix>.collection-content,#calendar>.collection-content{max-height:max(280px,calc(100dvh - 235px))}#calendar>.collection-count{padding:6px 13px}}
+
+/* Compact approval workspace; preserve full labels, focus and all rows. */
+.matrix-surface > .surface-toolbar { padding: 8px 12px; gap: 8px; }
+.matrix-surface > .matrix-legend { padding: 0 12px 8px; gap: 6px 14px; font-size: 11px; }
+.matrix-surface > .surface-footer { padding: 7px 12px; gap: 8px; }
+#matrix > .collection-count { padding: 4px 12px; font-size: 11px; }
+#matrix .matrix-table th:not(:first-child) { min-width: 104px; max-width: 140px; padding: 6px; white-space: normal; overflow-wrap: anywhere; }
+#matrix .matrix-table tbody th { min-width: 145px; max-width: 180px; padding: 4px 8px; }
+#matrix .matrix-table td { padding: 2px; }
+#matrix .matrix-cell { min-height: 28px; padding: 3px 5px; font-size: 11px; line-height: 1.25; border-radius: 4px; }
+#matrix .matrix-cell:focus-visible { outline-offset: -2px; }
+@media (pointer: coarse) {
+  #matrix .matrix-cell { min-height: 36px; }
+}
