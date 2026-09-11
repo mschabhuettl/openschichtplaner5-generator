@@ -4443,3 +4443,75 @@ reproduce the missing original 0.9.29 job.
 The complete local `tests` suite also passes **1078 tests** (two known dependency
 warnings). This does not replace the separate upstream candidate full-app gate
 or the private API audit and is not a remote CI result.
+
+### Rebuilt combined staffing runtime gate (2026-09-11)
+
+`tools/test_upstream_staffing_packaged.py` rebuilds the six checked-in staffing
+candidate patches in dependency order from clean tracked Library/API Python
+source. It copies no DBF fixtures, credentials, configuration or state. Unlike
+the earlier module-override gates, the child imports the combined package
+normally and asserts that reader, database, API dependency factory and staffing
+router all originate in the assembled directory. No prepared `/tmp` source
+copies or `sys.modules` replacement are needed for this gate.
+
+The existing `run_contract` / `check_temporal` assertions are reused, not
+reimplemented: actual middleware authentication, dependency activation, both
+API prefixes, valid/invalid temporal data, empty/deleted sources, team/date
+filters, permissive cache isolation and Generator error/retry behavior. This
+closes a test-integration gap: individually valid patches and injected modules
+alone did not prove the combined source package imports and activates correctly.
+
+```sh
+SP5_LIBRARY_SOURCE=/path/to/libopenschichtplaner5 \
+SP5_API_SOURCE=/path/to/openschichtplaner5-api \
+.venv/bin/python -m pytest -q tools/test_upstream_staffing_packaged.py
+```
+
+Verified source revisions: Library `0dac4438c0be02c1ad612f54d4aba75a3e4d6335`,
+API `d578f212d635b672ab277d7d29a37387145506f5`. Both prefix cases pass.
+The API lifespan, credential login and a network server are deliberately outside
+this in-process HTTP gate. No productive API change, release, real DBF validation
+or reproduced 0.9.29 plan is implied. The existing private GET audit exercises
+the deployed remote API, not this upstream package: injecting strict DBF parsing
+into that remote service would require a separate deployment, not a GET request.
+No such deployment was performed. Hard work-time rules, approvals, staffing and
+Generator runtime remain unchanged in this step.
+
+### Remaining staffing identity-type gap (2026-09-11)
+
+The next independent characterization adds 30 synthetic DBF/API cases plus
+three Generator cases in `tools/test_upstream_staffing_source_contract.py`:
+
+* `required_fields` enforces descriptor presence/uniqueness, **not ID types**.
+  The combined reader contract still accepts L-typed true, M-typed null and
+  numeric 1.5 for GROUPID, SHIFTID and WORKPLACID. Blank/malformed N-typed
+  values already fail with `numeric_value`; the first test draft incorrectly
+  expected legacy zero coercion for those 12 cases, and was corrected after
+  inspecting `_validate_dbf_numbers` and observing its exceptions.
+* Library `SP5Database.get_staffing_requirements` exposes these parsed values
+  without identity validation. API `get_staffing_requirements` treats null as
+  unscoped and uses Python equality for team matching: true equals integer 1.
+  Library `get_special_staffing` instead filters null out for selected team 1,
+  but also matches true to 1. Fractional team 1.5 is filtered out by both.
+* OSP5 `frontend/src/pages/Personalbedarf.tsx`, regular-demand `reqMap`
+  construction, uses `r.group_id !== filterGroup`; unlike Python it rejects
+  boolean true when the selected team is numeric 1. TypeScript annotations
+  alone do not validate JSON received at runtime.
+* Generator `APISource.get_staffing_requirements` fetches regular demands
+  **without a team filter**. In `import_snapshot`, the initial
+  `gid not in (*scope, 0, None)` check accepts true for team 1 and drops 1.5
+  before reporting an unresolved requirement. The synthetic fixture creates
+  one demand for true with no unresolved regular requirement, no demand and
+  no unresolved regular requirement for 1.5, and correctly records null as
+  unresolved. This is a demonstrated local mapping gap, not proof that the
+  user's real DBF has any of these values. SPDEM is fetched with a team filter,
+  so a Generator-only fix cannot recover upstream-filtered malformed rows.
+
+Prioritized correction: validate identity types before filtering at the source
+boundary and at Generator import, keeping existing explicit zero/null semantics
+separate from malformed types. Do not infer new approvals, staffing, positive-ID
+ranges or a weekly maximum. Verify normal integer IDs and any supported integral
+DBF float representation, plus existing workplace-zero interpretation. Follow
+with the combined package gate and a private GET audit for Generator runtime
+changes. Original 0.9.29 input/job/result remains unavailable; this finding does
+not establish the cause of the 600-second plan, 24-hour duties or weekly overruns.

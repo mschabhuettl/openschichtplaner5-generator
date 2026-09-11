@@ -69,6 +69,91 @@ ROUTES = [('SHDEM', '/api/staffing-requirements', 'get_staffing_requirements'),
 
 
 @pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('field,index,key', [('GROUPID', 2, 'group_id'),
+                                           ('SHIFTID', 3, 'shift_id'),
+                                           ('WORKPLACID', 4, 'workplace_id')])
+@pytest.mark.parametrize('field_type,raw,expected,error', [
+    ('L', b'   T', True, False), ('M', b'0001', None, False),
+    ('N', b' 1.5', 1.5, False), ('N', b'nope', None, True),
+    ('N', b'    ', None, True),
+])
+def test_identity_presence_still_accepts_invalid_values(
+        source, client, monkeypatch, table, url, method, field, index, key,
+        field_type, raw, expected, error):
+    """Characterize the remaining identity gap; do not bless these as IDs."""
+    from tools.test_upstream_staffing_temporal_app import calendar_payload
+
+    db, reader, path = source
+    payload = bytearray(calendar_payload(table, 'active', 'valid'))
+    payload[32 + 32 * index + 11] = ord(field_type)
+    header_length = int.from_bytes(payload[8:10], 'little')
+    offset = header_length + 1 + index * 4
+    payload[offset:offset + 4] = raw
+    (path / f'5{table}.DBF').write_bytes(payload)
+    original_read = db._read
+
+    def read(name):
+        if name == table:
+            return reader.read_dbf(
+                db._table(name), strict=True, numeric_fields=('MIN', 'MAX'),
+                required_fields=('GROUPID', 'SHIFTID', 'WORKPLACID'),
+                date_fields=('DATE',) if name == 'SPDEM' else (),
+                weekday_fields=('WEEKDAY',) if name == 'SHDEM' else ())
+        return original_read(name)
+
+    monkeypatch.setattr(db, '_read', read)
+    http, sanitized = client
+    if error:
+        # Strict mode already validates every numeric descriptor, including IDs.
+        with pytest.raises(reader.DBFValueError):
+            db._read(table)
+        for query in ('', '?group_id=1'):
+            response = http.get(url + query)
+            assert response.status_code == 500
+            assert_source_error(response, 'numeric_value')
+        assert sanitized == []
+        return
+    parsed = db._read(table)[0][field]
+    assert type(parsed) is type(expected) and parsed == expected
+    for query in ('', '?group_id=1'):
+        response = http.get(url + query)
+        assert response.status_code == 200
+        rows = response.json()['shift_requirements'] if table == 'SHDEM' else response.json()
+        # True compares equal to team 1; SHDEM's API accepts null as global,
+        # whereas SPDEM's Library filters it out. Fractional IDs pass parsing.
+        included = (not query or field != 'GROUPID' or expected is True
+                    or (table == 'SHDEM' and expected is None))
+        assert len(rows) == int(included)
+        if included:
+            assert type(rows[0][key]) is type(expected) and rows[0][key] == expected
+    assert sanitized == []
+
+
+@pytest.mark.parametrize('group_id,demand_count,unresolved_count',
+                         [(True, 1, 0), (None, 0, 1), (1.5, 0, 0)])
+def test_generator_group_identity_gap(group_id, demand_count, unresolved_count):
+    """Downstream characterization of the identity types exposed above."""
+    from datetime import date
+    from sp5generator.sp5_adapter import import_snapshot
+
+    path = Path(__file__).resolve().parents[1] / 'tests/test_sp5_adapter.py'
+    spec = importlib.util.spec_from_file_location('synthetic_adapter_fixture', path)
+    fixtures = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixtures)
+
+    class Source(fixtures.SyntheticDatabase):
+        def get_staffing_requirements(self):
+            data = super().get_staffing_requirements()
+            data['shift_requirements'][0]['group_id'] = group_id
+            return data
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC')
+    assert len(snapshot.demands) == demand_count
+    unresolved = snapshot.metadata.get('unresolved_native', {}).get('regular_requirements', [])
+    assert len(unresolved) == unresolved_count
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
 @pytest.mark.parametrize('field', ['MIN', 'MAX'])
 @pytest.mark.parametrize('raw,category', [(b'0000', None), (b'    ', 'numeric_value'),
                                        (b'nope', 'numeric_value'), (b' NaN', 'numeric_value')])

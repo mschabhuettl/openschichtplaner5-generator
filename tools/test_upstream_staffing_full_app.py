@@ -58,12 +58,21 @@ def test_full_app_staffing_contract(tmp_path, prefix, activation):
 
 def run_contract(prefix):
     import importlib.util
-    spec = importlib.util.spec_from_file_location('sp5lib.dbf_reader',
+    if os.environ.get('SP5_PACKAGED_RUNTIME'):
+        import sp5lib.dbf_reader as reader
+        import sp5lib.database as database
+        import sp5api.dependencies as dependencies
+        import sp5api.routers.master_data as router
+        code = Path(os.environ['SP5_PACKAGED_RUNTIME']).resolve()
+        for module in (reader, database, dependencies, router):
+            assert Path(module.__file__).resolve().is_relative_to(code)
+    else:
+        spec = importlib.util.spec_from_file_location('sp5lib.dbf_reader',
                                                   os.environ['SP5_STRICT_READER'])
-    reader = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = reader
-    spec.loader.exec_module(reader)
-    if 'SP5_STAFFING_DATABASE' in os.environ:
+        reader = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = reader
+        spec.loader.exec_module(reader)
+    if 'SP5_STAFFING_DATABASE' in os.environ and not os.environ.get('SP5_PACKAGED_RUNTIME'):
         spec = importlib.util.spec_from_file_location('sp5lib.database',
                                                       os.environ['SP5_STAFFING_DATABASE'])
         database = importlib.util.module_from_spec(spec)
