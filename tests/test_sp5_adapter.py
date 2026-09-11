@@ -922,10 +922,10 @@ def test_person_integral_dbf_float_identity_normalizes_without_losing_person():
     assert [e.id for e in snapshot.employees] == ["sp5:employee:101"]
 
 
-@pytest.mark.parametrize("period_end", [date(2026, 1, 6), date(2026, 2, 26)])
+@pytest.mark.parametrize("period_end", [date(2026, 1, 6), date(2026, 2, 26), date(2026, 2, 28)])
 @pytest.mark.parametrize("window, spills", [("20:00-00:00", False), ("20:00-08:00", True)])
-def test_final_context_day_overnight_import_exposes_extent_mismatch(period_end, window, spills):
-    """Characterize the importer blocker without dropping work or weakening validation.
+def test_final_context_day_overnight_preserves_extent_and_source_window(period_end, window, spills):
+    """Preserve complete imported work without certifying unqueried context.
 
     The second period puts the last context day on the Vienna DST transition.
     This is an importer extent bug, not evidence that overnight duties are illegal.
@@ -947,16 +947,36 @@ def test_final_context_day_overnight_import_exposes_extent_mismatch(period_end, 
             return [{"employee_id": 101, "date": last_source_day.isoformat(),
                      "kind": "shift", "shift_id": 201, "workplace_id": 301}]
 
-    snapshot = import_snapshot(Source(), period_end, period_end, "1", "Europe/Vienna")
+    source = Source()
+    calls = []
+    get_schedule = source.get_schedule
+
+    def traced_schedule(year, month, **kw):
+        calls.append((year, month))
+        return get_schedule(year, month, **kw)
+
+    source.get_schedule = traced_schedule
+    snapshot = import_snapshot(source, period_end, period_end, "1", "Europe/Vienna")
+    assert max(calls) == (last_source_day.year, last_source_day.month)
     work, = snapshot.boundary_work
     assert work.segments[0].start.date() == last_source_day
     assert work.segments[0].end.date() == last_source_day + timedelta(days=1)
     assert work.segments[0].end.hour == (8 if spills else 0)
     assert not snapshot.context_complete
     assert not snapshot.employees[0].approvals
-    assert snapshot.context_end == last_source_day
-    assert snapshot.profiles[0].valid_until == last_source_day
+    extent_end = last_source_day + timedelta(days=int(spills))
+    assert snapshot.context_end == extent_end
+    assert snapshot.profiles[0].valid_until == extent_end
+    assert not snapshot.profiles[0].confirmed
+    assert snapshot.metadata["context_source_window"] == {
+        "start_date": (period_end - timedelta(days=31)).isoformat(),
+        "end_date": last_source_day.isoformat(),
+        "selection": "schedule_start_date",
+        "complete": False,
+    }
+    assert any("Randkontext" in item for item in snapshot.unresolved)
     context_errors = [d for d in input_diagnostics(snapshot) if d.code == "context"]
-    assert len(context_errors) == int(spills)
+    assert not context_errors
     if spills:
-        assert work.id in context_errors[0].message
+        shortened = snapshot.model_copy(update={"context_end": last_source_day})
+        assert any(d.code == "context" for d in input_diagnostics(shortened))

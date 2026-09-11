@@ -5184,3 +5184,34 @@ day recreates the same issue at the new outer edge; merely extending a declared
 complete context would claim unqueried coverage. No validator relaxation or
 removal/truncation of boundary work is justified. This evidence concerns the
 fresh-import MODEL_INVALID path, not proof of the original 0.9.29 report's cause.
+
+### Corrected source-window versus interval envelope (candidate, 2026-09-11)
+
+The previously characterized outer-edge defect is now corrected in
+`sp5_adapter.import_snapshot`. Monthly reads and row filtering use a fixed
+`source_start`/`source_end` window. `metadata.context_source_window` records its
+inclusive start dates, `selection=schedule_start_date`, and `complete=false`.
+After importing work, the snapshot context and the **unconfirmed** generated
+profile cover the actual interval envelope using the existing UTC-minute
+`timeutils.bounds`/`local_day` helpers. Half-open intervals ending exactly at
+midnight do not add an extra occupied day. No recursive next-day fetch, duty
+truncation, invented hours, new approval or validator relaxation is involved.
+`context_complete=false` and the explicit unresolved context-confirmation notice
+remain in place; an expanded envelope is not proof of unqueried source coverage.
+Existing saved projects and explicitly configured profiles are not rewritten.
+
+The API path is `api_adapter._Database.get_schedule` (`/api/schedule`, year/month/group/plan)
+→ `import_api` → the same `import_snapshot` implementation. Upstream Library
+`SP5Database.get_schedule` and API `routers/schedule.py::get_schedule` expose
+calendar-dated rows, not a guarantee that all intervals finish inside that
+calendar selection. The importer constructs the overnight intervals from
+`SHIFT.STARTEND{day_index}`; therefore the envelope correction belongs here,
+not in OSP5's display or an invented maximum duty duration.
+
+`test_final_context_day_overnight_preserves_extent_and_source_window` replaces
+the prior characterization with six regressions: midnight/overnight controls,
+Vienna DST-date context and a month-end context edge. It checks unchanged query
+month limits, complete preserved work, profile extent, absent approvals and
+unconfirmed context. Deliberately shortening the corrected envelope still
+produces the validator's `context` error. These tests address one fresh-import
+MODEL_INVALID cause, not the unverified original 0.9.29 input/result pair.

@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from .hierarchy import group_tree, resolve_group_selection
 from .domain import MAX_PLANNING_DAYS
+from .timeutils import bounds as work_bounds, local_day
 
 from .models import (
     BoundaryWork,
@@ -593,9 +594,16 @@ def import_snapshot(
             Restriction(employee_id=eid, shift_id=sid, level=grade, approved=False)
             for sid in matching
         )
-    month = context_start.replace(day=1)
+    source_start, source_end = context_start, context_end
+    metadata["context_source_window"] = {
+        "start_date": source_start.isoformat(),
+        "end_date": source_end.isoformat(),
+        "selection": "schedule_start_date",
+        "complete": False,
+    }
+    month = source_start.replace(day=1)
     seen_schedule = set()
-    while month <= context_end:
+    while month <= source_end:
         schedule = _reference_schedule(
             db, scope, month.year, month.month, period_start, period_end, reference_plan
         )
@@ -623,7 +631,7 @@ def import_snapshot(
             eid = f"sp5:employee:{row.get('employee_id')}"
             if (
                 d is None
-                or not context_start <= d <= context_end
+                or not source_start <= d <= source_end
                 or eid not in employee_map
             ):
                 continue
@@ -785,6 +793,12 @@ def import_snapshot(
                     f"Sonderdienst {eid} {d}: individuelle Zeit-/Stundenabweichung oder fehlende eindeutige Detailzuordnung; gezielt ergänzen."
                 )
         month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+    # The source selects start dates, while context contains complete intervals.
+    # Extending that envelope does not certify coverage of unqueried dates.
+    for work in [*shifts.values(), *boundary_work.values()]:
+        start, end = work_bounds(work)
+        context_start = min(context_start, local_day(start, timezone))
+        context_end = max(context_end, local_day(end - 1, timezone))
     profile = RuleProfile(
         id="sp5:unconfirmed",
         valid_from=context_start,
