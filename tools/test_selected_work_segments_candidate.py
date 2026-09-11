@@ -31,6 +31,30 @@ def tables():
                        'STARTEND0': '08:00-12:00 16:00-20:00'}]}
 
 
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('plan', ['ist', 'soll'])
+def test_duplicate_selected_shift_cannot_choose_eight_or_twentyfour_hours(collect, reverse, plan):
+    t = tables()
+    t['SHIFT'] = [{'ID': 1, 'STARTEND0': '08:00-16:00'},
+                  {'ID': 1, 'STARTEND0': '00:00-24:00'}]
+    if reverse:
+        t['SHIFT'].reverse()
+    result = collect(t, plan)
+    assert len(result) == 1
+    assert result[0].status == 'unmeasurable'
+    assert result[0].duty is None
+    assert result[0].issues == ('shift_ambiguous',)
+
+
+def test_duplicate_unused_shift_does_not_block_selected_work(collect):
+    t = tables()
+    t['SHIFT'] += [{'ID': 2, 'STARTEND0': '08:00-16:00'},
+                   {'ID': 2, 'STARTEND0': '00:00-24:00'}]
+    result = collect(t)
+    assert result[0].status == 'measured'
+    assert result[0].duty.calendar_minutes('Europe/Vienna') == {DAY: 480}
+
+
 @pytest.mark.parametrize('source', ['MASHI', 'SPSHI', 'CYCLE'])
 def test_date_only_selection_loses_incoming_overnight_work(source):
     previous = DAY - timedelta(days=1)

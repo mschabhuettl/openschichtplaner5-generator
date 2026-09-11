@@ -87,7 +87,9 @@ def measure_selected(db, selector, employee_id, start, end, plan, zone):
         _validate_cycle_sources(db, employee_id, start, end)
     manual, cycle, special = selector(db, employee_id, start, end, plan)
     holidays = calc.holiday_calendar(db._read('HOLID'))
-    shifts = {int(row['ID']): row for row in db._read('SHIFT')}
+    shifts = {}
+    for row in db._read('SHIFT'):
+        shifts.setdefault(int(row['ID']), []).append(row)
     replaced = {day for day, row in special if int(row.get('SHIFTID') or 0)}
     absence_days = set()
     for row in db._read('ABSEN'):
@@ -109,11 +111,16 @@ def measure_selected(db, selector, employee_id, start, end, plan, zone):
             if source == 'SPSHI':
                 windows = row.get('STARTEND')
             else:
-                shift = shifts.get(int(row.get('SHIFTID') or 0))
-                if shift is None:
+                definitions = shifts.get(int(row.get('SHIFTID') or 0), [])
+                if not definitions:
                     result.append(SelectedDuty(identity, day, 'unmeasurable',
                                                issues=issues + ('shift_missing',)))
                     continue
+                if len(definitions) != 1:
+                    result.append(SelectedDuty(identity, day, 'unmeasurable',
+                                               issues=issues + ('shift_ambiguous',)))
+                    continue
+                shift = definitions[0]
                 windows = shift.get(f'STARTEND{calc.day_index(day, holidays)}')
             try:
                 duty = measure_duty(identity, day, str(windows or ''), zone)

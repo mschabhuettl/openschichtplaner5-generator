@@ -2813,3 +2813,21 @@ konsistenter tabellenübergreifender Snapshot, semantische Quellenintegrität,
 stabile Quellidentitäten und Ruhezeit-Randkontext. Fehlende Daten werden nicht
 durch Freigaben oder Regeln ersetzt. Kein neues Release, keine erfolgreiche
 Echtdatenplanung und kein Ursachenbeweis für den fehlenden 0.9.29-Originaljob.
+
+### Mehrdeutige Dienstdefinitionen nicht nach Tabellenreihenfolge messen
+
+Im Diagnosekandidaten `measure_selected` war der Aufbau der SHIFT-Tabelle als
+Dictionary eine weitere belegte Integritätslücke: zwei Definitionen derselben
+ID wurden still auf die letzte reduziert. Vier synthetische Abnahmetests
+(Ist/Soll, beide Reihenfolgen; 08–16 versus 00–24) waren zunächst rot. Der
+Kandidat hält jetzt alle Definitionen fest und meldet bei einer tatsächlich
+benötigten mehrfachen ID `unmeasurable/shift_ambiguous`, ohne Dauer zu wählen.
+Nicht verwendete doppelte IDs blockieren die ausgewählten Dienste nicht.
+
+Fünf neue Regressionen; zusammen mit Reader-, Selektions-, Konflikt- und
+Kalenderlimitprüfungen **167 passed**, Ruff und Diffcheck grün. Der erste
+erweiterte Testaufruf hatte vier Importfehler, weil `tests` im PYTHONPATH fehlte;
+der korrigierte Aufruf mit `PYTHONPATH=<Library>:.:tests` besteht vollständig.
+Dieser Befund betrifft den isolierten Diagnosekandidaten. Er belegt weder
+doppelte Definitionen in Originaldaten noch die Ursache der gemeldeten
+24h-Dienste. 24h bleiben nach tatsächlichen konfigurierten Grenzen zu beurteilen.
