@@ -2501,3 +2501,63 @@ Nachweis: obiger Testaufruf, zusätzlich
 16 Integrationstests erneut erfolgreich; Ruff und `git diff --check` grün.
 Nächster Integrationsschritt: Profile und vollständige Randkontextanforderungen
 für Tages-/ISO-Wochensummen verbinden, ohne Sollstunden zu Höchstgrenzen zu machen.
+
+### Explizite Profilgrenzen über gemessenen Tages-/ISO-Wochensummen
+
+`tools/calendar_limits_candidate.py:diagnose_calendar` verbindet ausgewählte
+Dienstsegmente mit vorhandenen `models.RuleProfile`-Objekten und expliziten
+persönlichen `profile_ids`. Keine zweite Profilstruktur und kein neues
+Arbeitszeitpaket: Zeitteilung bleibt `timeutils.day_minutes`, Profilsemantik
+folgt `validator.validate` (Schleife `limit_days`) und `solver.solve`
+(`active_weeks`/`planning_tails`). Mehrere zugeordnete bestätigte Profile bleiben
+nebeneinander wirksam; unbekannte, unbestätigte und zeitlich nicht abgedeckte
+Zuordnungen werden ausdrücklich als ungelöst gemeldet.
+
+Die Tageswerte zählen verstrichene Segmentminuten aller ausgewählten Dienste
+inklusive festem Kontext. Geteilte Dienstpausen zählen nicht; doppelte Dienste
+werden nicht durch eine Intervallunion versteckt. Ein Tagesmaximum ist dabei
+keine maximale Einzeldienstlänge. `None` bedeutet keine konfigurierte Grenze,
+null ist dagegen eine echte Grenze. Ein vorhandenes Ruheminimum erzeugt weder
+Tages- noch Wochenmaximum. `DURATION`, `NOEXTRA` und Sollstunden fließen nicht ein.
+
+Wochenprüfungen betreffen Montag bis Sonntag einschließlich Kontext außerhalb
+der Planperiode und der Gültigkeit des aktivierenden Profils. Ein in der Periode
+beginnender Nachtdienst aktiviert passende Profile auch für seinen Folgetag;
+sonstiger zukünftiger Kontext erweitert den Prüfumfang nicht. Das entspricht
+der bereits korrigierten Generatorsemantik, nicht einer neuen fachlichen Regel.
+Eine explizite Menge `covered_days` benennt fehlende Tage jeder Summenprüfung.
+Sie ist lediglich eine Aufruferangabe, kein automatischer Vollständigkeitsbeleg.
+
+**Datenfluss und verbleibende Mappinggrenze:** Die synthetische Integration
+verfolgt MASHI/CYCLE/SPSHI über den echten gepatchten API-Selektor
+`work_time_rules._employee_plan` bis zu ausgewählten Segmenten und diesen
+Profilprüfungen. Ist/Soll werden getrennt gehalten; ein additiver Sonderdienst
+führt im Test zu 600 Minuten, Ersatz zu 120 Minuten, die alternative Sollsicht
+bleibt jeweils bei 480 Minuten. Das sind Testdaten, keine Nutzerwerte.
+Die ursprüngliche API berechnet im Modellmodus in `_check_employee` weiterhin
+`get_nominal_hours(Montag, Sonntag) * week_factor`; das ist gemäß
+`calculations.get_nominal_hours` eine CALCBASE-Sollrechnung und kein automatisch
+importierbares Vertragsmaximum. OSP5 `frontend/src/pages/WorkTimeRules.tsx`
+liest/schreibt diese separate API-Konfiguration; der Kandidat behauptet keine
+Übertragung dieser Konfiguration in bestätigte Generatorprofile.
+
+**Grenzen:** `complete=false` bleibt immer gesetzt. Quellendeckung, Kalender-
+Randabruf einschließlich hineingehender Dienste, Abwesenheitskonflikte,
+Überlappung/Ruhe und übrige Profilregeln sind damit nicht vollständig geprüft.
+`observed_exceeds` beschreibt die beobachtete Zuordnungssumme; insbesondere bei
+überlappenden oder fachlich ungeklärten Quellen ist das kein freigegebenes
+Ist-Arbeitszeitkonto. Kein Laufzeiteingriff, kein Release und keine neue private
+Abnahme unveränderter 0.9.31. Original-0.9.29-600s-Artefakte fehlen weiterhin.
+
+Tests: `tools/test_calendar_limits_candidate.py` enthält 19 synthetische Fälle
+(inklusive vier Vergleichen mit dem unabhängigen Generatorvalidator);
+`tools/test_selected_work_segments_candidate.py` vier zusätzliche Integrationen
+für Ist/Soll und Sonderdienstersatz/-addition. Zusammen mit Segment-, Paar-,
+Teilplan-, Kalender- und Randruhetests: **198 passed**. Ruff und Diffcheck grün.
+Die ersten Paritätstestaufrufe hatten falsche Testadapter-Feldnamen
+(`Assignment`/`Validation`); nach Anpassung an den bestehenden Vertrag grün.
+
+Nächster offener Integrationsschritt: fehlende/defekte Quelldatumswerte vor
+`_employee_plan` sichtbar machen (dessen `_dated` überspringt sie derzeit) und
+den erforderlichen Randabruf belegen. Profilimport bleibt eine eigene
+fachliche Herkunftsfrage; keine automatischen Höchstgrenzen erfinden.

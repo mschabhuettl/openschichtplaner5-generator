@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from sp5generator.models import RuleProfile
+from tools.calendar_limits_candidate import diagnose_calendar
 from tools.audit_upstream_work_time_plan import load_helpers
 from tools.duty_conflicts_candidate import diagnose_pairs
 from tools.selected_work_segments_candidate import measure_selected
@@ -120,3 +122,20 @@ def test_cycle_used_in_ist_when_only_soll_manual_exists(collect):
     assert row.duty.calendar_minutes('Europe/Vienna') == {DAY: 480}
     row, = collect(data, 'soll')
     assert row.source_id == 'MASHI:0'
+
+
+@pytest.mark.parametrize(('plan', 'special_id', 'expected'), [
+    ('ist', 0, 600), ('ist', 1, 120), ('soll', 0, 480), ('soll', 1, 480)])
+def test_selected_source_to_explicit_calendar_limit(collect, plan, special_id, expected):
+    data = tables()
+    data['SPSHI'] = [{'EMPLOYEEID': 10, 'DATE': str(DAY), 'TYPE': 1,
+                      'SHIFTID': special_id, 'STARTEND': '20:00-22:00'}]
+    selected = collect(data, plan)
+    profile = RuleProfile(id='explicit', valid_from=DAY, valid_until=DAY,
+                          min_rest_minutes=660, confirmed=True, max_daily_minutes=500)
+    result = diagnose_calendar(selected, [profile], ['explicit'], DAY, DAY,
+                               'Europe/Vienna', {DAY})
+    check, = result.checks
+    assert check.observed_minutes == expected
+    assert check.observed_exceeds == (expected > 500)
+    assert result.complete is False
