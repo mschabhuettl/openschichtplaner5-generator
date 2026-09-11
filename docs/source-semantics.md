@@ -113,10 +113,10 @@ belegt insbesondere SPDEM-Vorrang und „kein Bedarf“ als eigene Kategorie.
    Umsetzung: `_nominal_bookings` normalisiert die vorhandene Facade,
    `_Database.get_bookings` liest GET `/api/bookings`;
    `tests/test_nominal_bookings.py` prüft die unten beschriebenen Grenzen.
-3. **Vertragsentscheidung vorbereiten: Vergleich versus Pflichtdaten.**
-   Nicht fixierte, nicht zuordenbare Referenzen als Diagnose von echten
-   Planungsblockern trennen. Vor Änderung Regressionen für `reference` und
-   `fixed` und unabhängigen Vergleich definieren. Fixierte ungeklärte
+3. **Korrigiert: Vergleich versus Pflichtdaten.**
+   Nicht fixierte, nicht zuordenbare normale Referenzen im Planungszeitraum
+   bleiben Diagnose, sind aber keine Pflicht-Einteilungen. Regressionen für
+   `reference` und `fixed` prüfen dies einschließlich unabhängiger Validierung. Fixierte ungeklärte
    Einteilungen, Bedarfsunklarheiten und fehlende Freigaben bleiben blockierend.
 4. **Fehlende Fachangaben: positive persönliche Freigaben und Profile.**
    In den durchverfolgten RESTR-/Schedule-/Mitgliedschaftspfaden ist keine
@@ -454,3 +454,29 @@ ausdrücklich. Weniger Wechsel fördern zusammenhängende Blöcke und freie Tage
 maximieren aber nicht mathematisch die längste minutengenaue Freizeit.
 OPTIMAL bezieht sich auf die gewichtete Gesamtwertung; FEASIBLE besitzt keinen
 Optimalitätsnachweis. Die unabhängige Regelprüfung bleibt maßgeblich.
+
+
+## Referenzdiagnose ist keine Pflicht-Einteilung
+
+Isolierter synthetischer Gegenbeweis in `tests/test_reference_blockers.py`:
+Eine vollständig eingerichtete Quelle enthält genau einen zu besetzenden
+Bedarf für Dienst A und einen ausdrücklich nicht fixierten Vergleichsdienst B
+ohne Bedarf. B erzeugte über `sp5_adapter.import_snapshot` dennoch einen
+Eintrag in `Snapshot.unresolved`; `domain.input_diagnostics` machte deshalb
+den gesamten neuen Plan `MODEL_INVALID`. Nach Entfernen ausschließlich
+dieses Vergleichsblockers löst derselbe Bedarf unabhängig vollständig geprüft.
+
+Der Import setzt bei ungeklärten normalen In-Perioden-Referenzen jetzt
+`planning_blocker` gemäß `existing_plan_mode == "fixed"`. Diagnose,
+Quellreferenz, Kandidatenliste und Ablehnungsgrund bleiben erhalten. Nur
+explizit verlangte, nicht auflösbare Fixierungen werden weiterhin zu
+`unresolved`. Bedarf, Freigaben, Profile, Abwesenheiten, Rand-Einteilungen
+und Sonderdienste werden nicht ergänzt oder bestätigt. Es gibt keine
+automatische Bereinigung bereits gespeicherter Projekte.
+
+Die Regressionen prüfen Ist/Soll jeweils in Vergleichs- und Fixierungsmodus
+sowie fehlende Freigaben, unbestätigte Profile, sonstige Pflichtangaben
+und unbestätigten Randkontext. Letzterer hat bereits im bestehenden Vertrag
+eine eigene Bedeutung: vorläufige Einteilungen sind möglich, die unabhängige
+Validierung bleibt aber `complete=false` mit `context`-Diagnose. Ein
+`OPTIMAL`-Solverstatus ersetzt diesen Vollständigkeitsnachweis nicht.

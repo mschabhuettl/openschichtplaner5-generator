@@ -568,10 +568,17 @@ def import_snapshot(
                             "workplace_mismatch" if not workplace_candidates else
                             "zero_capacity" if not candidates else "ambiguous"
                         )
+                        reference["planning_blocker"] = existing_plan_mode == "fixed"
                         metadata["unresolved_native"].setdefault("reference_schedule", []).append(reference)
-                        unresolved.append(
-                            f"Bestehender Dienst {eid} {d}: keine eindeutige Zuordnung zum tatsächlichen Besetzungsbedarf."
-                        )
+                        # Comparison-only duties are not mandatory source
+                        # assignments. Preserve their mapping diagnostics, but
+                        # only an explicitly requested fixation blocks planning.
+                        # This branch covers regular duties inside the period;
+                        # fixed boundary context and special duties stay strict.
+                        if reference["planning_blocker"]:
+                            unresolved.append(
+                                f"Bestehender Dienst {eid} {d}: keine eindeutige Zuordnung zum tatsächlichen Besetzungsbedarf."
+                            )
                     continue
                 native = native_shifts[row["shift_id"]]
                 idx = calc.day_index(d, holidays)

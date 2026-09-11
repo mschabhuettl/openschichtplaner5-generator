@@ -29,6 +29,7 @@ responses = {
                      **{f'DURATION{i}': 8 for i in range(8)}} for sid, name in [(201, 'Dienst A'), (202, 'Dienst B'), (203, 'Dienst C')]],
     '/api/workplaces': [{'ID': 301, 'NAME': 'Arbeitsplatz 1'}, {'ID': 302, 'NAME': 'Arbeitsplatz 2'}],
     '/api/holidays': [],
+    '/api/bookings': [],
     '/api/staffing-requirements': {'shift_requirements': [
         {'id': 400 + gid * 10 + sid, 'group_id': gid, 'weekday': 0, 'shift_id': sid,
          'workplace_id': 301, 'min': 1, 'max': 2} for gid in (2, 3) for sid in (201, 202)], 'daily_requirements': []},

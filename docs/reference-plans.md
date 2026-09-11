@@ -21,6 +21,17 @@ Die API-Fassade reicht dieselbe Plansicht an `/api/schedule` weiter.
   zum vorhandenen Bedarf. Fehlender Bedarf wird nicht erfunden. Freigaben und
   Regelprofile werden nicht bestätigt; der unabhängige Prüfer bleibt maßgeblich.
 
+Nicht eindeutig zuordenbare **normale Vergleichsdienste innerhalb des
+Planungszeitraums** bleiben in der Zuordnungsdiagnose erhalten, sind aber
+keine verpflichtenden Einteilungen und blockieren deshalb nicht allein die
+Neuplanung. Bei ausdrücklich gewählter **Fixierung** bleibt die fehlende
+Zuordnung ein Planungsblocker. Das Metadatenfeld `planning_blocker` kennzeichnet
+diesen Unterschied bei ungeklärten Referenzen. Es werden weder Ersatzbedarfe
+noch Freigaben erzeugt. Angrenzende Ist-Dienste, Sonderdienste und sonstige
+offene Einrichtungsvoraussetzungen werden dadurch nicht freigegeben.
+Die Änderung gilt für neue Importe; bestehende Projekte werden nicht
+automatisch umgeschrieben oder von offenen Hinweisen bereinigt.
+
 Im Quellmonat werden bei Soll zusätzlich die normalen Soll-Dienste gelesen.
 Außerhalb des Planungszeitraums bleiben auch innerhalb desselben Monats die
 Ist-Dienste erhalten. Monate ohne Überschneidung benötigen keine Soll-Abfrage.

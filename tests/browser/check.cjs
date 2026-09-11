@@ -641,7 +641,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(await nominal.inputValue(),'40');
     assert.match(await page.locator('#personHoursOrigin').innerText(),/Monatsbasis mit 156 Stunden je Monat/);
     assert.match(await page.locator('#personHoursOrigin').innerText(),/2026-02-02 bis 2026-02-08: 40 Stunden/);
-    assert.match(await page.locator('#personHoursOrigin').innerText(),/Sollbuchungen sind im Importwert nicht enthalten/);
+    assert.doesNotMatch(await page.locator('#personHoursOrigin').innerText(),/Sollbuchungen sind im Importwert nicht enthalten/);
     assert.equal(await nominal.getAttribute('aria-describedby'),'personHoursHelp personHoursOrigin');
     await nominal.fill('48');await nominal.blur();
     assert.match(await page.locator('#personHoursOrigin').innerText(),/: 40 Stunden/,'Import provenance does not become the edited target');
