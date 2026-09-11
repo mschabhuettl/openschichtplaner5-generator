@@ -1,6 +1,6 @@
 """Synthetic integration with the real patched API selector; no HTTP/DBF data."""
 import os
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +29,33 @@ def tables():
                        'SHIFTID': 1} for kind in (0, 1)],
             'SHIFT': [{'ID': 1, 'NOEXTRA': 1, 'DURATION0': 3,
                        'STARTEND0': '08:00-12:00 16:00-20:00'}]}
+
+
+@pytest.mark.parametrize('source', ['MASHI', 'SPSHI', 'CYCLE'])
+def test_date_only_selection_loses_incoming_overnight_work(source):
+    previous = DAY - timedelta(days=1)
+    t = {'SHIFT': [{'ID': 1, 'STARTEND6': '22:00-06:00'}]}
+    if source == 'MASHI':
+        t[source] = [{'EMPLOYEEID': 10, 'DATE': str(previous), 'TYPE': 0,
+                      'SHIFTID': 1}]
+    elif source == 'SPSHI':
+        t[source] = [{'EMPLOYEEID': 10, 'DATE': str(previous), 'SHIFTID': 0,
+                      'STARTEND': '22:00-06:00'}]
+    else:
+        t.update(CYASS=[{'ID': 3, 'EMPLOYEEID': 10, 'CYCLEID': 1,
+                         'START': str(previous), 'END': str(previous)}],
+                 CYCLE=[{'ID': 1, 'SIZE': 1, 'UNIT': 0}],
+                 CYENT=[{'CYCLEEID': 1, 'INDEX': 0, 'SHIFTID': 1}])
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    db = SimpleNamespace(_read=lambda name: t.get(name, []))
+    assert measure_selected(db, selector, 10, DAY, DAY, 'ist', 'Europe/Vienna') == ()
+    contextual = measure_selected(db, selector, 10, previous, DAY,
+                                  'ist', 'Europe/Vienna')
+    assert len(contextual) == 1
+    assert contextual[0].duty.calendar_minutes('Europe/Vienna')[DAY] == 360
+    # Previous Sunday belongs to a different ISO week; Monday's six hours do not.
+    iso = DAY.isocalendar()
+    assert contextual[0].duty.iso_week_minutes('Europe/Vienna')[iso.year, iso.week] == 360
 
 
 @pytest.mark.parametrize('plan', ['ist', 'soll'])

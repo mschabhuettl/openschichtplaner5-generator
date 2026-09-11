@@ -58,3 +58,39 @@ def test_valid_empty_cycles_not_invented_as_work(kind):
     elif kind == 'free_day':
         t['CYENT'] = [{'CYCLEEID': 1, 'INDEX': 0, 'SHIFTID': 0}]
     assert measure(t) == ()
+
+
+def test_duplicate_cycle_position_is_order_dependent_in_library():
+    t = data()
+    t['CYENT'] = [{'CYCLEEID': 1, 'INDEX': 0, 'SHIFTID': shift}
+                  for shift in (7, 0)]
+    assert expand(t) == []
+    t['CYENT'].reverse()
+    assert expand(t)[0]['SHIFTID'] == 7
+    with pytest.raises(ValueError, match='Unresolved CYENT duplicate position'):
+        measure(t)
+
+
+@pytest.mark.parametrize('position', [None, '', -1, 1, 0.5, 'invalid'])
+def test_relevant_cycle_position_must_be_explicit_and_in_range(position):
+    t = data()
+    t['CYENT'] = [{'CYCLEEID': 1, 'INDEX': position, 'SHIFTID': 7}]
+    with pytest.raises(ValueError, match='Unresolved CYENT position'):
+        measure(t)
+
+
+@pytest.mark.parametrize('unit,position', [(0, 0), (1, 6)])
+def test_position_range_uses_day_or_week_model(unit, position):
+    t = data()
+    t['CYCLE'][0]['UNIT'] = unit
+    t['CYENT'] = [{'CYCLEEID': 1, 'INDEX': position, 'SHIFTID': 0},
+                  {'CYCLEEID': 2, 'INDEX': -9, 'SHIFTID': 7}]
+    assert measure(t) == ()
+
+
+def test_soll_does_not_validate_unselected_cycle_sources():
+    t = data()
+    t['CYASS'][0]['START'] = None
+    result = measure_selected(SimpleNamespace(_read=lambda n: t.get(n, [])),
+        lambda *_: ([], [], []), 10, DAY, DAY, 'soll', 'Europe/Vienna')
+    assert result == ()

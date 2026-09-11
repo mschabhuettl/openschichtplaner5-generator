@@ -46,42 +46,8 @@ def measure_selected(db, selector, employee_id, start, end, plan, zone):
             if type(source_day) is not date:
                 # No original field content or employee identity in the error.
                 raise ValueError(f'Unresolved {source} source date')
-    # Missing cycle positions are free days, not missing cycle definitions.
-    def required_date(value, source):
-        try:
-            parsed = calc.to_date(value)
-        except (TypeError, ValueError):
-            parsed = None
-        if type(parsed) is not date:
-            raise ValueError(f'Unresolved {source} source date')
-        return parsed
-
-    cycles = {int(row.get('ID') or 0): row for row in db._read('CYCLE')}
-    relevant_assignments = set()
-    for row in db._read('CYASS'):
-        if row.get('EMPLOYEEID') != employee_id:
-            continue
-        first = required_date(row.get('START'), 'CYASS')
-        last = (required_date(row['END'], 'CYASS')
-                if row.get('END') not in (None, '') else None)
-        if last is not None and last < first:
-            raise ValueError('Unresolved CYASS reversed interval')
-        if first > end or (last is not None and last < start):
-            continue
-        definition = cycles.get(int(row.get('CYCLEID') or 0))
-        if definition is None:
-            raise ValueError('Unresolved CYCLE definition')
-        try:
-            size = int(definition.get('SIZE') or 0)
-        except (ValueError, TypeError):
-            size = 0
-        if size <= 0:
-            raise ValueError('Unresolved CYCLE length')
-        relevant_assignments.add(int(row.get('ID') or 0))
-    for row in db._read('CYEXC'):
-        if (row.get('EMPLOYEEID') == employee_id
-                and int(row.get('CYCLEASSID') or 0) in relevant_assignments):
-            required_date(row.get('DATE'), 'CYEXC')
+    if plan == 'ist':
+        _validate_cycle_sources(db, employee_id, start, end)
     manual, cycle, special = selector(db, employee_id, start, end, plan)
     holidays = calc.holiday_calendar(db._read('HOLID'))
     shifts = {int(row['ID']): row for row in db._read('SHIFT')}
@@ -122,3 +88,64 @@ def measure_selected(db, selector, employee_id, start, end, plan, zone):
                     issues = ('absence_coexists_unresolved',)
                 result.append(SelectedDuty(identity, day, 'measured', duty, issues))
     return tuple(result)
+
+
+def _validate_cycle_sources(db, employee_id, start, end):
+    # Missing cycle positions are free days, not missing cycle definitions.
+    def required_date(value, source):
+        try:
+            parsed = calc.to_date(value)
+        except (TypeError, ValueError):
+            parsed = None
+        if type(parsed) is not date:
+            raise ValueError(f'Unresolved {source} source date')
+        return parsed
+
+    cycles = {int(row.get('ID') or 0): row for row in db._read('CYCLE')}
+    relevant_assignments = set()
+    relevant_lengths = {}
+    for row in db._read('CYASS'):
+        if row.get('EMPLOYEEID') != employee_id:
+            continue
+        first = required_date(row.get('START'), 'CYASS')
+        last = (required_date(row['END'], 'CYASS')
+                if row.get('END') not in (None, '') else None)
+        if last is not None and last < first:
+            raise ValueError('Unresolved CYASS reversed interval')
+        if first > end or (last is not None and last < start):
+            continue
+        definition = cycles.get(int(row.get('CYCLEID') or 0))
+        if definition is None:
+            raise ValueError('Unresolved CYCLE definition')
+        try:
+            size = int(definition.get('SIZE') or 0)
+        except (ValueError, TypeError):
+            size = 0
+        if size <= 0:
+            raise ValueError('Unresolved CYCLE length')
+        cycle_id = int(row.get('CYCLEID') or 0)
+        relevant_lengths[cycle_id] = size * (7 if int(definition.get('UNIT') or 0) == 1 else 1)
+        relevant_assignments.add(int(row.get('ID') or 0))
+    positions = set()
+    for row in db._read('CYENT'):
+        cycle_id = int(row.get('CYCLEEID') or 0)
+        if cycle_id not in relevant_lengths:
+            continue
+        # Expansion coerces absent INDEX to zero and overwrites duplicates.
+        # Neither operation establishes which duty actually belongs here.
+        raw = row.get('INDEX')
+        try:
+            position = int(raw)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError('Unresolved CYENT position') from None
+        if (isinstance(raw, bool) or (not isinstance(raw, str) and raw != position)
+                or not 0 <= position < relevant_lengths[cycle_id]):
+            raise ValueError('Unresolved CYENT position')
+        key = (cycle_id, position)
+        if key in positions:
+            raise ValueError('Unresolved CYENT duplicate position')
+        positions.add(key)
+    for row in db._read('CYEXC'):
+        if (row.get('EMPLOYEEID') == employee_id
+                and int(row.get('CYCLEASSID') or 0) in relevant_assignments):
+            required_date(row.get('DATE'), 'CYEXC')

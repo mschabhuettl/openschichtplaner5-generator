@@ -2613,3 +2613,36 @@ wurde anschließend mit dem Patchwerkzeug angewendet und vollständig geprüft.
 Kein produktiver API-/Generatorpfad verändert. Quellendeckung bleibt unbestätigt:
 Randabruf, CYENT-Schlüssel/Definitionen und konsistente Datenbanklesung sind
 weiter offen. Keine erneute Abnahme der unveränderten veröffentlichten Version.
+
+### Zykluspositionen und hineingehende Dienste: weitere Verlustnachweise
+
+Library `calculations.expand_cycle_assignments` baut CYENT nach
+`(CYCLEEID, INDEX)` als Dictionary auf: der letzte Datensatz gewinnt.
+Die synthetische Reihenfolge Dienst/freier Tag ergibt keinen Dienst, die
+umgekehrte Reihenfolge einen Dienst. Fehlender INDEX wird dort als 0 behandelt;
+Positionen außerhalb der Zykluslänge werden nie erreicht. API
+`work_time_rules._employee_plan` übernimmt diese Expansion. OSP5
+`frontend/src/pages/Schichtmodell.tsx` unterscheidet Tages-/Wochenmodelle und
+schreibt flache Tagespositionen; Library `database.get_shift_cycles` baut
+ebenfalls ein INDEX-Dictionary für die Darstellung. Kein Beleg, dass solche
+defekten Quelldatensätze im konkreten Nutzerprojekt vorkommen.
+
+Der Diagnosekandidat prüft jetzt relevante CYENT auf explizite ganzzahlige,
+gültige und eindeutige Positionen (SIZE beziehungsweise SIZE*7). Freie Positionen
+und SHIFTID=0 bleiben erlaubt. Dabei korrigiert: Zyklusvorprüfung nur in Ist;
+die explizite Sollsicht des API-Kandidaten verwendet keine Zyklen und darf durch
+deren defekte Daten nicht blockiert werden. Keine Änderung produktiver Quellen.
+
+Drei Integrationstests mit dem echten gepatchten API-Selektor belegen den
+Periodenrand für MASHI, SPSHI und CYASS/CYENT: Sonntag 22–06 Uhr fehlt bei
+reinem Montagsabruf vollständig. Mit Vortag sind die sechs Montagsstunden sowohl
+im Kalendertag als auch in der neuen ISO-Woche enthalten. Allein vollständige
+Datumsabdeckung Montag–Sonntag beweist folglich keine vollständige Arbeitszeit
+dieser Woche. Noch kein automatischer Randabruf oder Gesamtgültigkeitsnachweis;
+Ruhezeitkontext benötigt zusätzlich seinen eigenen begründeten Horizont.
+
+13 neue synthetische Tests, acht Abnahmetests vor Korrektur rot; insgesamt
+**237 passed**, Ruff und Diffcheck grün. Ein Integrationsaufruf verwendete zuerst
+einen falschen Pfad zur isolierten API-Testkopie; nach Pfadkorrektur vollständig
+grün. Nächster Schritt: expliziter Rand-/Quellendeckungsvertrag statt
+Vollständigkeitsannahmen. Kein Release und keine erneute unveränderte Privatabnahme.
