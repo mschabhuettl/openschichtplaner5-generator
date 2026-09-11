@@ -166,6 +166,7 @@ def solve(snapshot, time_limit=30, partial=False):
         "weekend": "Wochenendfreigabe",
         "holiday": "Feiertagsfreigabe",
         "approval": "persönliche Dienstfreigabe fehlt oder ist nicht gültig",
+        "profile": "bestätigtes Regelprofil für Dienstüberhang fehlt",
         "qualification": "zusätzlicher Qualifikationsnachweis",
         "restriction": "Dienstsperre",
         "absence": "Abwesenheit",

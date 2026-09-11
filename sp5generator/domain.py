@@ -102,6 +102,17 @@ def eligibility(snapshot, employee, demand):
     a, b = bounds(shift)
     first, last = local_day(a, snapshot.timezone), local_day(b - 1, snapshot.timezone)
     reasons = []
+    # Input integrity checks the planning dates. A selected planning duty
+    # additionally needs confirmed rules for its actual worked spill days.
+    # Historical context retains its separate contract; do not infer profiles.
+    if snapshot.period_start <= first <= snapshot.period_end:
+        for day in day_minutes(shift, snapshot.timezone):
+            if day <= snapshot.period_end:
+                continue
+            profiles = profiles_for(snapshot, employee, day)
+            if not profiles or any(not p.confirmed for p in profiles):
+                reasons.append("profile")
+                break
     if not employee.employment_start <= first <= last <= employee.employment_end:
         reasons.append("employment")
     if shift.team_id not in employee.team_ids:

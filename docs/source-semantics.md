@@ -1389,3 +1389,29 @@ An verschiedenen ISO-Wochen dürfen beide Dienste stattfinden. Der unabhängige
 Validator weist genau die erwartete Wochenverletzung aus. In diesen Fällen
 wurde kein Solver-/Validator-Unterschied gefunden; der fehlende originale
 600-Sekunden-Projekt-/Jobstand bleibt für die konkrete Fehlerursache notwendig.
+
+### Bestätigte Profilabdeckung für tatsächlichen Dienstüberhang
+
+Zusätzlicher reproduzierter Fehler: `domain.input_diagnostics` prüft die
+Profilbestätigung nur zwischen `period_start` und `period_end`. Ein am letzten
+Planungstag beginnender Dienst konnte danach ohne gültiges bestätigtes
+Folgeprofil weiterlaufen. `domain.eligibility` prüfte Beschäftigung, Freigabe und
+Verfügbarkeit über den Dienst hinweg, aber nicht diese Profilabdeckung.
+Der unabhängige Validator akzeptierte deshalb im synthetischen Beispiel
+23–03 Uhr sowohl ein fehlendes als auch ein unbestätigtes Folgeprofil.
+Ein fehlendes Profil bedeutete zugleich fehlende profilbezogene Zeitlimits
+für den Überhang. Das ist kein Nachweis der Ursache des originalen 600s-Laufs.
+
+Die bestehende Kandidatenprüfung verlangt nun für jeden tatsächlich gearbeiteten
+lokalen Folgetag mindestens ein gültiges zugeordnetes Profil und Bestätigung
+aller dort gültigen zugeordneten Profile. Solver und Validator verwenden diese
+Prüfung; Teilplanung darf den Dienst offenlassen, aber nicht ohne Profil
+besetzen. Die Ausschlussdiagnose benennt die fehlende bestätigte Abdeckung.
+Historische Randarbeit bleibt unverändert; es werden keine Profile verlängert,
+Freigaben erfunden oder SP5-Sollstunden als Höchstgrenzen interpretiert.
+
+`test_overnight_spill_requires_confirmed_profile_coverage` prüft Voll-/Teilplan,
+fehlendes/unbestätigtes/bestätigtes Folgeprofil sowie Dienstende exakt um
+Mitternacht gegenüber tatsächlicher Arbeit am Folgetag. Für ein Ende um 00 Uhr
+wird kein Profil für den nicht gearbeiteten Folgetag verlangt. Vier ursprüngliche
+Gegenproben schlugen vor der Korrektur wegen fälschlich gültiger Validierung fehl.

@@ -154,3 +154,37 @@ def test_dated_profile_switch_preserves_whole_iso_week_limit(partial, strict_fir
         assert len(result.assignments) == (1 if same_week else 2)
         assert validate(snapshot, result.assignments).valid
         assert sum(result.vacancies.values()) == int(same_week)
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("coverage", ["missing", "unconfirmed", "confirmed"])
+@pytest.mark.parametrize("end_hour", [0, 3])
+def test_overnight_spill_requires_confirmed_profile_coverage(partial, coverage, end_hour):
+    day = date(2026, 1, 5)
+    snapshot = sample(day)
+    snapshot.period_end = day
+    snapshot.shifts = snapshot.shifts[:1]
+    snapshot.demands = snapshot.demands[:1]
+    duty = snapshot.shifts[0]
+    duty.segments[0].start = datetime(2026, 1, 5, 23, tzinfo=UTC)
+    duty.segments[0].end = datetime(2026, 1, 6, end_hour, tzinfo=UTC)
+    first = snapshot.profiles[0]
+    first.valid_until = day
+    if coverage != "missing":
+        successor = first.model_copy(update={
+            "id": "successor", "valid_from": day + timedelta(days=1),
+            "valid_until": snapshot.context_end, "confirmed": coverage == "confirmed",
+        })
+        snapshot.profiles.append(successor)
+        snapshot.employees[0].profile_ids.append(successor.id)
+    checked = validate(snapshot, [Assignment(employee_id="e", demand_id="0")])
+    accepted = coverage == "confirmed" or end_hour == 0
+    assert checked.valid is accepted
+    assert ("profile" in {d.code for d in checked.diagnostics}) is (not accepted)
+    result = solve(snapshot, time_limit=2, partial=partial)
+    if accepted or partial:
+        assert result.solver_status == "OPTIMAL"
+        assert len(result.assignments) == int(accepted)
+        assert result.validation.valid
+    else:
+        assert result.solver_status == "INFEASIBLE"
