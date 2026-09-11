@@ -1,7 +1,7 @@
 """HTTP transport tests using freshly generated synthetic responses only."""
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
@@ -93,6 +93,59 @@ def test_existing_api_import_read_only_history_and_no_credentials(transport):
     assert "synthetic-test-token" not in payload and "source.test" not in payload
     assert snapshot.unresolved and not snapshot.context_complete
     assert any("plan=both" in c.full_url for c in transport[1])
+
+
+@pytest.mark.parametrize("slot", range(8))
+@pytest.mark.parametrize("boundary", [False, True])
+def test_http_time_slots_match_library_for_demand_and_boundary(transport, slot, boundary):
+    """Do not copy the OSP5 hover's weekday+1 lookup into planning time.
+
+    Every slot differs, including paid versus real minutes. Identical daily
+    fixtures would conceal an off-by-one or holiday/default fallback.
+    """
+    from sp5lib import calculations as calc
+    from sp5generator.timeutils import day_minutes
+
+    responses, calls = transport
+    duty_day = date(2026, 1, 5) + timedelta(days=slot)
+    period = duty_day + timedelta(days=int(boundary))
+    holidays = {duty_day: 0} if slot == 7 else {}
+    responses["/api/holidays"] = [{"DATE": d.isoformat(), "INTERVAL": 0} for d in holidays]
+    native = responses["/api/shifts"][0]
+    for index in range(8):
+        native[f"STARTEND{index}"] = f"{index + 1:02}:00-{index + 2:02}:30"
+        native[f"DURATION{index}"] = index + 1
+    # The derived library field is zero-based too. It must not override the
+    # full canonical STARTEND slots or supply a spurious default.
+    native["TIMES_BY_WEEKDAY"] = {
+        str(i): {"start": f"{i + 1:02}:00", "end": f"{i + 2:02}:30"}
+        for i in range(7)
+    }
+    row = responses["/api/staffing-requirements"]["shift_requirements"][0]
+    responses["/api/staffing-requirements"]["shift_requirements"] = [
+        {**row, "id": 401 + i, "weekday": i} for i in range(8)
+    ]
+    responses[("schedule", "2026", "1", "ist")] = [{
+        "employee_id": 101, "date": duty_day.isoformat(), "kind": "shift",
+        "shift_id": 201, "workplace_id": 301,
+    }]
+    snapshot = import_api(period, period, "1", "UTC",
+                          period - timedelta(days=1), period - timedelta(days=1))
+    assert calc.day_index(duty_day, holidays) == slot
+    expected = calc.parse_startend(native[f"STARTEND{slot}"])
+    source = "sp5:existing" if boundary else "sp5:SHIFT"
+    duties = [s for s in snapshot.shifts if s.source == source]
+    assert len(duties) == 1
+    duty = duties[0]
+    assert [(s.start.hour * 60 + s.start.minute, s.end.hour * 60 + s.end.minute)
+            for s in duty.segments] == expected
+    assert day_minutes(duty, snapshot.timezone) == {duty_day: 90}
+    assert duty.paid_minutes == (slot + 1) * 60
+    assert duty.holiday is (slot == 7)
+    assert len(snapshot.assignments) == 1
+    assert snapshot.assignments[0].fixed is boundary
+    assert not snapshot.employees[0].approvals
+    assert all(request.get_method() == "GET" for request in calls)
 
 
 def test_incomplete_absence_visibility_blocks(transport):

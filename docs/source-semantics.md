@@ -589,6 +589,65 @@ Bestätigungsfragen. Historie darf keine zukünftige Freigabe erzeugen. Das
 pauschale Löschen von `unresolved`, Umbenennen von `unconfirmed` oder Umgehen
 von `eligibility` für beliebige Fixierungen ist kein geeigneter Fix.
 
+### Durchgängiger Importbeleg statt nur handgebauter Solver-Eingabe
+
+`tests/test_hierarchy.py:test_single_direct_membership_does_not_prove_context_assignment_team`
+prüft jetzt beide Teamvarianten jeweils als Voll- und Teilplanung bis zum
+Solver und unabhängigen Validator. Der unveränderte synthetische Import
+ergibt `MODEL_INVALID` mit `profile` und `unresolved`, also vor dem CP-SAT-Lauf.
+Nach ausschließlich **synthetischer** Auflösung dieser Eingangsvoraussetzungen
+und einer Freigabe ab dem Planungstag bleibt der Vortagsdienst unzulässig:
+Validator `approval`, Solver `INFEASIBLE/fixed_conflict`. Es wird kein Plan
+ausgegeben. Eine eindeutige Quellgruppe allein behebt diese Kopplung nicht.
+Das bewusste Entfernen von Diagnosen im Test isoliert den Fehlerpfad und ist
+ausdrücklich keine Anleitung zur Behandlung echter Importe.
+
+## Zeit-Slots: OSP5-Hover ist keine verlässliche Vergleichsreferenz
+
+Lesestand: Library `0dac443`, API `d578f21`, OSP5 `addf5c2` (jeweils sauberer
+Checkout). Der folgende Befund betrifft den **Hovertext**, nicht pauschal
+alle OSP5-Zeitberechnungen oder die unbekannte Nutzerinstallation:
+
+- `sp5lib/calculations.py:day_index` verwendet Montag=0 bis Sonntag=6,
+  Feiertag=7 für `STARTEND`, `DURATION` und Bedarfs-Lookups.
+- `sp5lib/database.py:SP5Database.get_shifts` gibt diese Originalfelder weiter
+  und baut `TIMES_BY_WEEKDAY` ausdrücklich mit `range(7)` auf, ebenfalls
+  Montag=0 bis Sonntag=6; ein Feiertagsslot wird dort nicht ergänzt.
+- `sp5api/routers/master_data.py:get_shifts` reicht die Library-Daten durch.
+  `schemas.py:ShiftResponse` erbt `extra=allow`, also keine Umnummerierung
+  der weiteren `STARTEND`-Felder. Der Generator liest diese Felder über
+  `api_adapter._Database.get_shifts` und `sp5_adapter.import_snapshot`.
+- OSP5 `frontend/src/pages/Schedule.tsx` lädt mit
+  `api.getShifts().then(setShifts)` unveränderte Typdaten. Im Hoverbereich
+  (um Zeile 1633) liefert `jsWdToDbWd` korrekt Montag=0, danach werden aber
+  **`STARTEND${dbWd + 1}` und `TIMES_BY_WEEKDAY[String(dbWd + 1)]`** gelesen.
+  `STARTEND0` dient dort als Fallback. Die erste Auswahl verschiebt Montag
+  auf Dienstag und Sonntag auf den Feiertagsslot; der abweichende
+  `TIMES_BY_WEEKDAY`-Override korrigiert das für Montag bis Samstag nicht.
+  Die Auswahl enthält auch keine datumsspezifische Feiertagsprüfung.
+
+Damit kann dieser Tooltip bei unterschiedlichen Tagesfenstern eine andere
+Zeit als die Library/Generator-Planung anzeigen. Identische Fenster an allen
+Wochentagen verdecken den Fehler. Kein Browsernachweis für die echte
+Installation und **kein Beleg**, dass dies die gemeldeten 24h-Dienste oder
+Wochenüberschreitungen verursacht. Eine Generator-Umnummerierung wäre falsch.
+Die bestehende allgemeine Tabellenbezeichnung „OSP5-Dienstanzeige“ oben darf
+nicht als Nachweis identischer Zeitdarstellung in allen Komponenten gelten.
+
+16 neue synthetische HTTP-Regressionen in
+`test_api_adapter.test_http_time_slots_match_library_for_demand_and_boundary`
+prüfen alle acht Slots jeweils für neue Bedarfsdienste und feste Randdienste.
+Jeder Slot hat ein anderes Zeitfenster und andere bezahlte Stunden.
+Nach Import stimmen Fenster und Feiertagsauswahl mit Library `day_index` und
+`parse_startend` überein: jeweils 90 reale Minuten, davon unabhängige bezahlte
+Minuten. Der Test erhält fehlende persönliche Freigaben und den Fixierungsstatus;
+er behauptet keine Planbarkeit des unbestätigten Imports.
+
+Priorität bleibt die unabhängige Darstellung personenbezogener Randarbeit
+und ihre vollständige Einbeziehung in harte Grenzen. Den OSP5-Hoverfehler
+separat korrigieren, nicht als Solverfix verkaufen. Produktiven API-/OSP5-Code
+hat diese Untersuchung nicht verändert; keine neue Laufzeitlogik oder Release.
+
 ## Neuer Grenzbefund: Dienstüberhang nach dem letzten Planungstag
 
 Im Stand `a910623` begrenzten `solver.solve` und `validator._validate` die

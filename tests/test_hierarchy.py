@@ -99,7 +99,8 @@ def test_parent_import_includes_children_preserves_demand_teams_and_deduplicates
 
 
 @pytest.mark.parametrize("explicit_group", [None, 2])
-def test_single_direct_membership_does_not_prove_context_assignment_team(explicit_group):
+@pytest.mark.parametrize("partial", [False, True])
+def test_single_direct_membership_does_not_prove_context_assignment_team(explicit_group, partial):
     """Ancestor expansion alone can make one direct membership ambiguous.
 
     Preserve the known person/time as fixed context; do not silently confirm
@@ -146,3 +147,36 @@ def test_single_direct_membership_does_not_prove_context_assignment_team(explici
     # Even an explicit source team does not confirm duty/approval semantics.
     assert duty.kind == "unconfirmed"
     assert any("Zuordnung zum Besetzungsbedarf und Freigaben" in s for s in snapshot.unresolved)
+
+    from sp5generator.domain import input_diagnostics
+    from sp5generator.models import Approval
+    from sp5generator.solver import solve
+    from sp5generator.validator import validate
+
+    # End-to-end diagnosis: these are imported source records, not handmade
+    # demand objects. The raw import fails before CP-SAT model construction.
+    result = solve(snapshot, 3, partial=partial)
+    assert result.solver_status == "MODEL_INVALID"
+    assert {"profile", "unresolved"} <= {d.code for d in result.validation.diagnostics}
+
+    # Deliberately synthetic setup to isolate the remaining historical-date
+    # coupling. This is NOT a recipe for clearing real import blockers.
+    snapshot.unresolved = []
+    snapshot.restrictions = []
+    for profile in snapshot.profiles:
+        profile.confirmed = True
+    for shift in snapshot.shifts:
+        shift.kind = "day"
+    employee.approvals = [Approval(
+        function_id="sp5:service:201", workplace_id="sp5:workplace:301",
+        valid_from=snapshot.period_start, valid_until=snapshot.context_end,
+    )]
+    assert not input_diagnostics(snapshot)
+    checked = validate(snapshot, snapshot.assignments)
+    boundary_id = snapshot.assignments[0].demand_id
+    assert any(d.code == "approval" and d.demand_id == boundary_id for d in checked.diagnostics)
+    result = solve(snapshot, 3, partial=partial)
+    assert result.solver_status == "INFEASIBLE"
+    assert not result.assignments
+    assert any(d.code == "fixed_conflict" and d.demand_id == boundary_id
+               and "approval" in d.message for d in result.validation.diagnostics)
