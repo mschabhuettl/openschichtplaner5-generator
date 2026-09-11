@@ -465,6 +465,16 @@ def solve(snapshot, time_limit=30, partial=False):
                             <= p.max_weekly_minutes
                         ).only_enforce_if(x)
             if p.weekly_rest_minutes and p.weekly_rest_frame == "calendar_week":
+                # Weekly rest is scoped by overlap with the whole planning
+                # calendar week (validator.weekly_windows), not by profile days
+                # inside the planning interval. Keep hour-limit scope separate.
+                first_week = snapshot.period_start - timedelta(days=snapshot.period_start.weekday())
+                rest_weeks = {
+                    day for day in dates(first_week, snapshot.period_end)
+                    if day.weekday() == 0
+                    and p.valid_from <= day + timedelta(days=6)
+                    and p.valid_until >= day
+                }
                 required = p.weekly_rest_minutes + (
                     p.min_rest_minutes if p.weekly_rest_add_daily else 0
                 )
@@ -474,9 +484,9 @@ def solve(snapshot, time_limit=30, partial=False):
                         day - timedelta(days=day.weekday()) for day in tail
                         if p.valid_from <= day <= p.valid_until
                     }
-                    for week in weeks - active_weeks:
+                    for week in weeks - rest_weeks:
                         tail_week_triggers[week].append(x)
-                for week in sorted(active_weeks | tail_week_triggers.keys()):
+                for week in sorted(rest_weeks | tail_week_triggers.keys()):
                     wa, wb = (
                         midnight(week, snapshot.timezone),
                         midnight(week + timedelta(days=7), snapshot.timezone),
@@ -521,7 +531,7 @@ def solve(snapshot, time_limit=30, partial=False):
                         )
                         model.add(sum(blocking) == 0).only_enforce_if(y)
                         witnesses.append(y)
-                    if week in active_weeks:
+                    if week in rest_weeks:
                         model.add_bool_or(witnesses)
                     else:
                         # Same conditional scope as daily/weekly hour limits:

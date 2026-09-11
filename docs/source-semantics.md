@@ -3252,3 +3252,44 @@ der private `MODEL_INVALID`-Einrichtungsblocker bleiben davon getrennt.
 Prüfung: 167 Tests (`test_dated_calendar_rest`, `test_partial_limits`,
 `test_spill_rest`, `test_core_rules`) bestanden; Ruff grün. Nur Tests/Analyse,
 keine Runtimeänderung, kein Release und kein erneuter identischer Dockerabnahmelauf.
+
+
+### Korrektur: datierte Kalenderwochenruhe direkt im Solver
+
+Folgeschritt 2026-09-11 zum oben belegten Fall: `solver.solve` bildet für
+`calendar_week` nun eigene `rest_weeks` aus allen Planungswochen, deren Fenster
+das zugeordnete Profil überlappt. Das entspricht der Kombination aus
+`validator.weekly_windows` und der Profilüberlappungsprüfung in `validate`.
+Tages-/Wochenstundenlimits behalten ihre bisherige datumsbezogene Aktivierung.
+Zusätzliche Zukunftswochen durch Überhang bleiben nur bei Auswahl des auslösenden
+Dienstes aktiv; fremder fester Randkontext aktiviert sie nicht pauschal.
+
+Die synthetische Regression in `tests/test_dated_calendar_rest.py` deckt jetzt
+32 Kombinationen aus Profil am 4./5./10./12. Januar, Zuordnung ja/nein,
+Voll-/Teilplanung und Planung nur Montag beziehungsweise nur Sonntag ab. Nur die zugeordneten Profile innerhalb der Planungswoche
+wirken. Der jeweils problematische Planungsdienst wird direkt ausgeschlossen, mit null
+`separation_rounds`; Vollplanung ist entsprechend unlösbar. Außerhalb liegende
+und nicht zugeordnete Profile sperren den Dienst nicht. Die UNKNOWN-Sicherheit
+wird weiterhin mit einem tatsächlich verworfenen Kandidaten geprüft, nun am
+bestehenden `rolling_elapsed`-Überhangbeispiel; kein fingierter Validator.
+
+Dies ändert die direkte Modellabdeckung, nicht die fachliche Regel oder den
+unabhängigen Validator. Kein Beleg für die Ursache des fehlenden Originaljobs
+0.9.29 und keine gemessene Beschleunigungszusage für dessen 600-Sekunden-Lauf.
+
+Prüfung der Runtimekorrektur: vollständige lokale Suite 772 bestanden (zwei
+bestehende Testclient-Deprecation-Warnungen); anschließend um die spiegelbildliche
+Sonntagsplanung ergänzt, alle 33 Tests dieser Datei bestanden. Ruff und
+`git diff --check` grün. Remote-CI nicht nachgewiesen (`gh` fehlt, lesende
+GitHub-API-Abfrage ohne Authentifizierung liefert 404).
+
+Private lokale API-Abnahme des Kandidaten: 11.09.2026, 16:27:47–16:31:34 UTC,
+September und derselbe bisherige Teamumfang, Ist/Soll jeweils Import, Speichern,
+Job und unabhängige Validierung. Basisimage 0.9.31 mit lesend eingebundenem
+aktuellem Python-Paket; geladener Solverpfad im Container verifiziert, Modulhashes
+privat gesichert. Health und lesende API-Verbindung erfolgreich; beide Sichten
+weiterhin `MODEL_INVALID`, null generierte Einteilungen, unabhängige Validierung
+nicht gültig, null persönliche Freigaben und kein bestätigtes Profil. Keine
+Freigaben oder zusätzlichen Regeln erfunden. Keine erfolgreiche reale Neuplanung
+und kein Originaljob-Nachweis. Privater Prüfcontainer anschließend gestoppt;
+keine Benutzerinstallation verändert. Kein neues Release.
