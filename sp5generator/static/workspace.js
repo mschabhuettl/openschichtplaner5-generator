@@ -138,9 +138,11 @@
     const filled=demands.reduce((sum,demand)=>sum+Math.min(Math.max(0,Number(demand.minimum)||0),byDemand.get(demand.id)?.size||0),0);
     const coverage=minimum?Math.round(filled/minimum*100):0;
     const days=Math.max(0,Math.round((Date.parse(project.period_end)-Date.parse(project.period_start))/86400000)+1);
-    const contextIncomplete=project.context_complete===false;
-    const missingApprovals=employees.filter(person=>!(person.approvals||[]).length).length;
-    const blockers=(project.unresolved||[]).length+profiles.filter(profile=>!profile.confirmed).length+shifts.filter(shift=>shift.kind==='unconfirmed').length+(employees.length?0:1)+(demands.length?0:1)+(contextIncomplete?1:0)+(employees.length&&missingApprovals===employees.length?1:0);
+    const readiness=current.readiness||{state:'unchecked',count:null};
+    const checked=['ready','issues'].includes(readiness.state);
+    const hints=checked?readiness.count:0;
+    const readinessLabels={unchecked:'noch nicht geprüft',pending:'wird geprüft',draft:'Bearbeitung offen',error:'Prüfung fehlgeschlagen',ready:'Eingabehinweise',issues:'Eingabehinweise'};
+    const readinessMessages={unchecked:'Noch keine aktuelle Eingabeprüfung. Beim Öffnen von Berechnen wird automatisch geprüft.',pending:'Aktuelle Eingaben werden geprüft …',draft:'Offene Bearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Eingabeprüfung.',error:'Vorprüfung nicht abgeschlossen. Bitte den angezeigten Fehler prüfen und erneut versuchen.',ready:'Keine offenen Eingabehinweise. Berechnung und unabhängige Ergebnisprüfung stehen noch aus.',issues:`${number(hints)} Hinweise aus der aktuellen Eingabeprüfung. Die konkreten Hinweise unten fachlich bearbeiten.`};
     const title=projectName(project);
     if(document.activeElement!==byId('projectName'))byId('projectName').value=title;
     byId('projectName').readOnly=busy();
@@ -149,15 +151,15 @@
     text('metricPeople',number(employees.length));text('navPeople',number(employees.length));
     const teamCount=new Set(employees.flatMap(person=>person.team_ids||[])).size;text('metricTeams',teamCount?`${number(teamCount)} ${teamCount===1?'Team':'Teams'}`:'im Projekt');
     text('metricDays',number(days));text('metricCoverage',`${coverage} %`);text('metricAssignments',`${number(filled)} / ${number(minimum)} Stellen`);
-    text('metricBlockers',number(blockers));text('metricBlockersLabel',blockers?'offene Angaben':'Angaben offen');byId('metricBlockers').classList.toggle('bad',!!blockers);
-    text('navBlockers',number(blockers));show('navBlockers',!!blockers);show('navRunning',!!(current.solving||current.jobId));
+    text('metricBlockers',checked?number(hints):readiness.state==='pending'?'…':'—');text('metricBlockersLabel',readinessLabels[readiness.state]||readinessLabels.unchecked);byId('metricBlockers').classList.toggle('bad',readiness.state==='issues'||readiness.state==='error');
+    text('navBlockers',number(hints));byId('navBlockers').title='Hinweise aus der aktuellen Eingabeprüfung';show('navBlockers',checked&&hints>0);show('navRunning',!!(current.solving||current.jobId));
     byId('topSaveIndicator').classList.toggle('dirty',!!(current.dirty||current.jsonDirty));
     byId('headerSave').disabled=busy()||byId('save').disabled;
     byId('headerBackup').disabled=byId('backup').disabled;
     text('calcPeriod',`${date(project.period_start)} – ${date(project.period_end)}`);text('calcDays',number(days));text('calcTimezone',project.timezone||'—');
     text('calcPeople',number(employees.length));text('calcShifts',number(shifts.length));text('calcDemand',number(minimum));text('calcFixed',number(assignments.filter(assignment=>assignment.fixed).length));text('calcProfiles',number(profiles.length));
-    text('calculationReadiness',blockers?`${number(blockers)} ${blockers===1?'Angabe braucht':'Angaben brauchen'} noch Ihre Prüfung. Details finden Sie bei Team, Regeln und Bedarf.`:contextIncomplete?'Randzeiten sind noch nicht vollständig bestätigt. Prüfen Sie den Kontext vor einer vollständigen Planung.':missingApprovals?`${number(missingApprovals)} Personen haben noch keine Freigaben. Prüfen Sie die Teammatrix vor der Berechnung.`:'Bereit zur Vorprüfung. Die Berechnung prüft, ob sich der Bedarf mit Ihren Regeln und Freigaben besetzen lässt.');
-    byId('calculationReadiness').classList.toggle('warning',!!(blockers||contextIncomplete||missingApprovals));show('calculationProgress',!!(current.solving||current.jobId));show('planEmpty',!assignments.length);
+    text('calculationReadiness',readinessMessages[readiness.state]||readinessMessages.unchecked);
+    byId('calculationReadiness').classList.toggle('warning',['issues','error','draft'].includes(readiness.state));show('calculationProgress',!!(current.solving||current.jobId));show('planEmpty',!assignments.length);
     if(previousId!==project.id)renderProjects();
   }
   document.querySelectorAll('[data-navigate]').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.navigate,{focus:true,scroll:true})));

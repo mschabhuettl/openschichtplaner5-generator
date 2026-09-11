@@ -5,7 +5,7 @@ let dirty=false, jsonDirty=false, changeVersion=0, activePanel='projects', proje
 let indexVersion=-1, indexes=null, matrixCache=null, stateFrame=null, jsonVersion=-1;
 const renderedPanels=new Map(), collections=new Map();
 let savedRequest=0,jobsRequest=0;
-let readinessVersion=-1,readinessPending=-1,readinessRequest=0;
+let readinessVersion=-1,readinessPending=-1,readinessRequest=0,readinessSummary=null;
 const fold=value=>String(value??'').toLocaleLowerCase('de-DE');
 function dataIndex(){
  if(indexVersion===changeVersion&&indexes)return indexes;
@@ -13,7 +13,13 @@ function dataIndex(){
  indexes={demandLabels:new Map(),employees:keyed(snapshot.employees),shifts:keyed(snapshot.shifts),demands:keyed(snapshot.demands),positions:keyed(snapshot.positions),workplaces:keyed(snapshot.metadata.workplaces??[]),groups:new Map((snapshot.metadata.group_tree??[]).flatMap(g=>[[String(g.id),g],['sp5:group:'+g.id,g]])),history:new Map((snapshot.metadata.history_matrix??[]).map(row=>[row.employee_id,row]))};
  indexVersion=changeVersion;matrixCache=null;return indexes;
 }
-function plannerState(){return {snapshot,assignments,dirty,jsonDirty,jobId,solving,projectBusy};}
+function currentReadiness(){
+ if(jsonDirty||personDraft)return {state:'draft',count:null};
+ if(readinessSummary?.version===changeVersion&&readinessSummary.state!=='draft'&&(readinessSummary.state!=='pending'||readinessPending===changeVersion))return readinessSummary;
+ return {state:'unchecked',count:null};
+}
+function plannerState(){return {snapshot,assignments,dirty,jsonDirty,jobId,solving,projectBusy,readiness:currentReadiness()};}
+function setReadinessSummary(state,count=null){readinessSummary={version:changeVersion,state,count};window.PlannerUI?.refresh?.(plannerState());}
 function publishState(){
  if(stateFrame!==null)return;
  stateFrame=requestAnimationFrame(()=>{stateFrame=null;window.dispatchEvent(new CustomEvent('planner:state',{detail:plannerState()}));refreshAutomaticReadiness();});
@@ -282,7 +288,7 @@ function renderSetupReview(){
  }
  el('p','Die Eingabeprüfung zeigt offene Regeln. Sie garantiert noch keine vollständige Besetzung oder lösbare Planung.',box);
  const output=el('div',undefined,box);
- button(box,'Planungsbereitschaft prüfen',async()=>{const version=changeVersion,result=await api('/api/readiness','POST',currentSnapshot());if(version!==changeVersion){notice('Projekt geändert. Prüfung erneut starten.');return;}output.replaceChildren();el('strong',result.ready?'Eingaben geprüft – Berechnung kann gestartet werden.':'Vor der Berechnung noch bearbeiten:',output);const counts=new Map();for(const d of result.diagnostics)counts.set(d.code,(counts.get(d.code)??0)+1);for(const [code,n] of counts)el('p',`${diagnosticTitles[code]??code}: ${n}`,output);const details=el('details',undefined,output);el('summary','Konkrete Hinweise',details);const list=el('div',undefined,details);const draw=()=>{const view=collection(list,'setupReadiness',result.diagnostics,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items)el('p',diagnosticMessage(d),view.content);};draw();});
+ button(box,'Planungsbereitschaft prüfen',async()=>{const version=changeVersion,result=await api('/api/readiness','POST',currentSnapshot());if(version!==changeVersion){notice('Projekt geändert. Prüfung erneut starten.');return;}if(!jsonDirty&&!personDraft)setReadinessSummary(result.ready?'ready':'issues',result.diagnostics.length);output.replaceChildren();el('strong',result.ready?'Eingaben geprüft – Berechnung kann gestartet werden.':'Vor der Berechnung noch bearbeiten:',output);const counts=new Map();for(const d of result.diagnostics)counts.set(d.code,(counts.get(d.code)??0)+1);for(const [code,n] of counts)el('p',`${diagnosticTitles[code]??code}: ${n}`,output);const details=el('details',undefined,output);el('summary','Konkrete Hinweise',details);const list=el('div',undefined,details);const draw=()=>{const view=collection(list,'setupReadiness',result.diagnostics,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items)el('p',diagnosticMessage(d),view.content);};draw();});
 }
 function renderReferenceImport(){
  const box=$('referenceImport'),rows=snapshot.metadata.reference_schedule;
@@ -427,7 +433,7 @@ function diagnosticMessage(d){
 function refreshAutomaticReadiness(force=false){
  if(!snapshot||activePanel!=='calculate')return;
  const status=$('automaticReadinessStatus'),details=$('automaticReadinessDetails'),retry=$('retryReadiness');
- const display=(state,message)=>{status.dataset.state=state;status.textContent=message;};
+ const display=(state,message,count=null)=>{status.dataset.state=state;status.textContent=message;setReadinessSummary(state,count);};
  if(jsonDirty||personDraft){
   readinessRequest++;readinessPending=-1;readinessVersion=-1;details.replaceChildren();retry.hidden=true;
   display('draft','Offene JSON- oder Abwesenheitsbearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Vorprüfung.');return;
@@ -440,7 +446,7 @@ function refreshAutomaticReadiness(force=false){
   if(!current())return;
   if(typeof result?.ready!=='boolean'||!Array.isArray(result.diagnostics)||result.diagnostics.some(d=>!d||typeof d.message!=='string'||typeof d.code!=='string')||result.ready!==(result.diagnostics.length===0))throw Error('Unvollständige Antwort der Vorprüfung.');
   readinessVersion=version;readinessPending=-1;
-  display(result.ready?'ready':'issues',result.ready?'Keine offenen Eingabefehler gefunden. Die Berechnung und anschließende Ergebnisprüfung stehen noch aus.':`${result.diagnostics.length.toLocaleString('de-DE')} Hinweise vor der Berechnung prüfen.`);
+  display(result.ready?'ready':'issues',result.ready?'Keine offenen Eingabefehler gefunden. Die Berechnung und anschließende Ergebnisprüfung stehen noch aus.':`${result.diagnostics.length.toLocaleString('de-DE')} Hinweise vor der Berechnung prüfen.`,result.diagnostics.length);
   if(result.diagnostics.length){
    const disclosure=el('details',undefined,details);disclosure.open=true;el('summary','Konkrete Prüfhinweise',disclosure);
    const list=el('div',undefined,disclosure);const draw=()=>{const view=collection(list,'automaticReadiness',result.diagnostics,{label:'Hinweise',size:10,redraw:draw});for(const d of view.items){const line=el('div',undefined,view.content);line.className='diagnostic-item';el('p',diagnosticMessage(d),line);const person=dataIndex().employees.get(d.employee_id);if(person)button(line,'Person bearbeiten',()=>personDetails(person));}};draw();

@@ -72,6 +72,11 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   await page.locator('#details').getByLabel('Name',{exact:true}).fill('Testperson 002 bearbeitet');
   await page.locator('#details').getByLabel('Name',{exact:true}).blur();
   await page.locator('#details').getByRole('button',{name:'Abwesenheit hinzufügen',exact:true}).click();
+  await page.locator('#details').getByLabel('Abwesend ab',{exact:true}).fill('2026-02-02T01:00');
+  await page.waitForFunction(()=>document.querySelector('#metricBlockersLabel').textContent==='Bearbeitung offen');
+  await page.locator('#details').getByRole('button',{name:'Abbrechen',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#metricBlockersLabel').textContent==='noch nicht geprüft',null,{timeout:5000});
+  await page.locator('#details').getByRole('button',{name:'Abwesenheit hinzufügen',exact:true}).click();
   await page.locator('#details').getByLabel('Abwesend ab',{exact:true}).fill('2026-02-02T00:00');
   await page.locator('#details').getByLabel('Abwesend bis',{exact:true}).fill('2026-02-03T00:00');
   const absenceResponse=page.waitForResponse(response=>response.url().endsWith('/api/intervals/resolve')&&response.request().method()==='POST');
