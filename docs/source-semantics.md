@@ -1195,3 +1195,53 @@ lautet `no_valid_plan`. Eine unabhängige Gegenprüfung derselben gefundenen
 Schicht mit 239 statt 240 realen Wochenminuten meldet `weekly_limit`.
 Dies prüft die Statusbehandlung und Importintegration, nicht das reale
 Laufzeitverhalten oder den weiterhin fehlenden Originaljob.
+
+### Istkonten und Neuplanung: keine pauschale Gutschrift aus Iststunden
+
+Die anschließende Quellanalyse verfolgt den noch offenen Stundenbestandteil
+über dieselben Library/API/OSP5-Checkouts wie oben:
+
+| Stufe | Beleg | Bedeutung |
+| --- | --- | --- |
+| Originalbuchung | `5BOOK`: `EMPLOYEEID`, `DATE`, `TYPE`, `VALUE`; Library `database.get_bookings` | Signierte Stundenbuchung, kein Dienstintervall. |
+| Library | `calculations.booking_sum`, `get_actual_hours` | TYPE 0 im inklusiven Datumsbereich plus Arbeitsstunden plus bezahlte Abwesenheitsanrechnung minus DEDUCTACT-Anrechnung. Buchungen wirken vor Beschäftigungsbegrenzung. |
+| Konto/Summe | `database.calculate_time_balance`, `_time_balance_from_inputs`, `calculate_annual_statement` | Monatliches Ist minus Soll; TYPE 2 und 5OVER gehören zum gesonderten Überstundenkonto. Jahresübertrag ist bereits eine TYPE-0-Buchung; Jahresabschluss zieht `carry_in` für seinen Nettoausweis wieder ab. |
+| API | `sp5api/routers/reports.py:get_bookings`, `get_zeitkonto_detail`, `get_statistics` | GET `/api/bookings` liefert Einzelbuchungen; Zeitkonto-Detail liefert die Library-Jahresauswertung. Statistik kann einen eigenen Datumsbereich haben. Diese Sichten sind keine austauschbaren Anfangssalden. |
+| OSP5 | `frontend/src/pages/Zeitkonto.tsx` | Lädt `getZeitkonto(year, groupId)` und Jahreszusammenfassung; zeigt Monats-Ist, Jahres-Ist und Saldo. Anzeige eines Istwerts bestätigt keine Gutschrift für einen neu erzeugten Plan. |
+| Generator | `sp5_adapter._nominal_bookings`, `import_snapshot`; `solver.solve` | Importiert bisher nur TYPE 1 ins Periodensoll; Gutschriften/Anfangssalden bleiben ausdrücklich ungeklärt. Weiches Stundenziel ist `abs(geplante bezahlte Minuten + balance_minutes + credit_minutes - target_minutes)`. |
+
+**Konkrete Mappinglücke:** Datumsscharfe TYPE-0-Korrekturen und
+Abwesenheitsanrechnungen fließen derzeit nicht automatisch in dieses weiche
+Stundenziel ein. Das kann bei sonst identischen Eingaben die Verteilung
+verändern. Es beweist weder die Ursache der gemeldeten Nichteinplanung noch
+einen Verstoß gegen harte Wochen-/Tagesgrenzen. Ein Pluswert senkt im
+vorhandenen Zielmodell den verbleibenden Stundenbedarf, ein Minuswert erhöht
+ihn. `credit_minutes` ist ausschließlich nichtnegativ; deshalb wäre schon
+eine pauschale TYPE-0-Zuordnung zu diesem Feld falsch.
+
+**Nachgewiesene Doppelzählungsgefahr, kein aktuell eingebauter Fehler:**
+Ein bestehender Achtstundendienst mit +2h Istbuchung ergibt in der Library
+10h Ist. Werden diese 10h als Gutschrift übernommen und derselbe Dienst neu
+eingeplant, bewertet der Generator 18h statt 10h. Ebenso darf ein bereits
+im Kontosaldo enthaltener Jahresübertrag nicht nochmals addiert werden.
+Eine Januarbuchung ist keine Buchung eines einzelnen späteren Planungstags;
+ein Anfangssaldo braucht eine ausdrücklich getrennte Stichtagsberechnung.
+
+**Synthetischer Nachweis:**
+`tests/test_nominal_bookings.py:test_actual_account_is_not_a_replanning_credit`
+prüft vier signierte Korrekturen (-10/-2/+2/+10h), vorhandene Arbeit versus
+Neuplanung ohne Arbeit, einen außerhalb des Ausschnitts liegenden Übertrag
+sowie getrennte TYPE-1-/TYPE-2-Konten gegen die echte Library. Alle vier
+Fälle erhalten die offene Generator-Einrichtungsdiagnose und erfinden keine
+Wochenobergrenze. Die 46 vorhandenen Library-Tests in
+`tests/test_calculations.py` bestehen ebenfalls, einschließlich
+`test_deductact_subtracts` und `test_saldo_booking_types_separated`.
+
+**Priorisierte nächste Korrektur:** Einzelkomponenten zunächst mit Datum,
+Vorzeichen und Herkunft nachvollziehbar abbilden, ohne gesamte Ist-/Saldo-
+Summen als Gutschrift zu übernehmen. Vor automatischer Anrechnung sind
+Periodenkorrekturen, Abwesenheitsanrechnung und Anfangssaldo voneinander zu
+trennen; bereits manuell gepflegte Werte dürfen nicht zusätzlich gezählt
+werden. Die Quelle belegt die Kontenrechnung, nicht den gewünschten
+Saldoausgleich des Nutzers. Keine automatische Regelbestätigung und keine
+Änderung harter Arbeitszeitgrenzen folgen aus dieser Analyse.

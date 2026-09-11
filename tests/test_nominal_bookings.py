@@ -58,6 +58,47 @@ def test_bookings_count_before_employment_clamp():
     assert snapshot.employees[0].target_minutes == 120
 
 
+@pytest.mark.parametrize("adjustment", [-10, -2, 2, 10])
+def test_actual_account_is_not_a_replanning_credit(adjustment):
+    """Source actual totals include work; importing the total would count it twice."""
+    from sp5lib import calculations as calc
+
+    day = date(2026, 1, 6)
+    employee = calc.EmployeeContext(
+        workdays=(True, True, True, True, True, False, False, False),
+        calcbase=0, hrs_day=8,
+    )
+    rows = [
+        {"DATE": day.isoformat(), "TYPE": 0, "VALUE": adjustment},
+        {"DATE": "2026-01-01", "TYPE": 0, "VALUE": 100},
+        {"DATE": day.isoformat(), "TYPE": 1, "VALUE": 3},
+        {"DATE": day.isoformat(), "TYPE": 2, "VALUE": 100},
+    ]
+    kwargs = dict(
+        holidays={}, shifts_by_id={1: {"STARTEND1": "06:00-14:00", "DURATION1": 8}},
+        bookings=rows,
+    )
+    without_work = calc.get_actual_hours(employee, day, day, **kwargs)
+    with_work = calc.get_actual_hours(
+        employee, day, day,
+        manual_shifts=[{"DATE": day.isoformat(), "SHIFTID": 1}], **kwargs,
+    )
+    assert without_work == adjustment
+    assert with_work == 8 + adjustment
+    assert calc.get_nominal_hours(employee, day, day, holidays={}, bookings=rows) == 11
+
+    snapshot, _ = imported([
+        booking(adjustment, type=0), booking(100, type=0, date="2026-01-01"),
+        booking(3), booking(100, type=2),
+    ])
+    # Current explicit mapping gap: do not silently interpret an actual total,
+    # signed correction, or a January carry-in as a confirmed opening balance.
+    person = snapshot.employees[0]
+    assert person.credit_minutes == person.balance_minutes == 0
+    assert any("Zeitgutschriften" in message for message in snapshot.unresolved)
+    assert all(profile.max_weekly_minutes is None for profile in snapshot.profiles)
+
+
 def test_equal_bookings_remain_distinct_and_round_only_after_summing():
     snapshot, _ = imported([booking(0.006), booking(0.006)])
     assert snapshot.employees[0].target_minutes == 1
