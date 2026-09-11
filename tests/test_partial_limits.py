@@ -343,6 +343,56 @@ def test_unknown_without_incumbent_never_returns_unchecked_assignments(monkeypat
     assert result.metrics["planning_diagnostics"]["employees"]["e0"]["reason"] == "no_valid_plan"
 
 
+@pytest.mark.parametrize("unavoidable_vacancy", [False, True])
+def test_equal_coverage_timeout_can_leave_avoidable_hours_deviation(monkeypatch, unavoidable_vacancy):
+    """Characterize quality starvation, not a breach of a hard hours limit."""
+    from sp5generator.models import Objectives
+
+    snapshot = case(2)
+    if unavoidable_vacancy:
+        snapshot.positions.append(snapshot.positions[0].model_copy(update={
+            "id": "unapproved", "function_id": "unapproved",
+        }))
+        snapshot.demands.append(snapshot.demands[0].model_copy(update={
+            "id": "unfillable", "position_id": "unapproved",
+        }))
+    snapshot.employees[0].target_minutes = 0
+    snapshot.employees[1].target_minutes = 480
+    snapshot.objectives = Objectives(
+        hours=1, changes=0, nights=0, weekends=0, holidays=0, wishes=0,
+        workday_transitions=0,
+    )
+    original = cp_model.CpSolver.solve
+    calls = []
+
+    def first_coverage_incumbent(self, model, *args, **kwargs):
+        # Force one valid incumbent in a COPY, preserving the production model
+        # and both workers' genuine eligibility. Emulate a timeout before proof.
+        restricted = model.clone()
+        index = next(i for i, var in enumerate(restricted.proto.variables)
+                     if var.name == "assign:e0:s")
+        restricted.add(restricted.get_bool_var_from_proto_index(index) == 1)
+        assert original(self, restricted, *args, **kwargs) == cp_model.OPTIMAL
+        calls.append(1)
+        return cp_model.FEASIBLE
+
+    with monkeypatch.context() as patch:
+        patch.setattr(cp_model.CpSolver, "solve", first_coverage_incumbent)
+        timed = solver.solve(snapshot, 3, partial=True)
+    optimized = solver.solve(snapshot, 3, partial=True)
+    assert len(calls) == 1
+    assert timed.solver_status == "FEASIBLE"
+    assert timed.metrics["objective_phase"] == "vacancies"
+    assert timed.metrics["objective_contributions"]["hours"] == 960
+    assert optimized.metrics["objective_phase"] == "quality"
+    assert optimized.metrics["objective_contributions"]["hours"] == 0
+    assert timed.vacancies == optimized.vacancies == ({"unfillable": 1} if unavoidable_vacancy else {})
+    for result in (timed, optimized):
+        checked = validate(snapshot, result.assignments)
+        assert checked.valid and checked.complete is (not unavoidable_vacancy)
+    assert timed.metrics["planning_diagnostics"]["employees"]["e1"]["reason"] == "not_selected_with_candidates"
+
+
 @pytest.mark.parametrize('certified', [False, True])
 def test_saved_partial_plan_is_certified_before_timeout_fallback(monkeypatch, certified):
     snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])

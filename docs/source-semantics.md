@@ -4975,3 +4975,41 @@ This distinguishes missing input capacity from a solver choosing not to use an
 otherwise eligible person; the latter has reason
 `not_selected_with_candidates`, as covered by
 `test_no_rule_requires_every_eligible_employee_to_receive_a_duty`.
+
+### Time-budget bottleneck: coverage before hours and blocks
+
+`solver.solve` builds the existing weighted terms, but initially minimizes only
+`sum(vacancies)` for partial planning. Its final phase transition currently
+requires `phase == "vacancies" and status == cp_model.OPTIMAL`. A first-phase
+`FEASIBLE` result returns without running the hours/block objective. Computing
+and reporting weighted contributions does not mean those terms were optimized.
+This is separate from hard-rule validation and from missing approvals.
+
+`tests/test_partial_limits.py::test_equal_coverage_timeout_can_leave_avoidable_hours_deviation`
+quantifies the consequence using two synthetic eligible workers, one eight-hour
+demand, and targets of zero and eight hours. A controlled first-phase incumbent
+assigns the zero-target worker: total absolute target deviation is 960 minutes.
+The unconstrained quality search assigns the other worker with deviation zero,
+at **identical coverage**. Both independently validate. The test covers both
+full coverage and one additional unfillable demand, and reports the unused
+eligible worker as `not_selected_with_candidates`. The controlled timeout is a
+branch characterization, not a wall-clock benchmark or a reproduction of the
+user's original job. No rule requires assigning both workers.
+
+Prioritized follow-up for the existing CP-SAT implementation (no new optimizer
+dependency needed):
+
+1. Assess bounded incumbent-quality search while maintaining an explicit
+   coverage constraint and preserving the best independently valid incumbent.
+   Do not replace lexicographic coverage priority with arbitrary weighted
+   vacancy penalties or claim proven global quality at an unproven coverage.
+2. Zero vacancies already attains the mathematical lower bound, even if the
+   solver reports only FEASIBLE; assess that early phase transition separately.
+3. Verify fresh-process and HTTP/Worker timeout persistence, quality-phase
+   objective/bound identity, and non-worsening coverage before any runtime
+   change. Compare same-input timed replays; a different search trajectory is
+   not itself proof of improved quality or employee distribution.
+
+Merely increasing hours weights cannot address a search that never reaches
+the weighted phase. Neither turning nominal hours into hard weekly caps nor
+inventing approvals is an acceptable remedy.
