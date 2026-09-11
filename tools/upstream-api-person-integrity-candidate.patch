@@ -1,0 +1,32 @@
+--- a/sp5api/routers/employees.py
++++ b/sp5api/routers/employees.py
+@@ -106,8 +106,27 @@
+     db = get_db()
+     member_ids = db.get_group_members(group_id)
+     employees = db.get_employees(include_hidden=True)
+-    emp_map = {e["ID"]: e for e in employees}
+-    return [emp_map[mid] for mid in member_ids if mid in emp_map]
++    # Check before the join can silently discard memberships or choose an
++    # arbitrary employment/nominal-hours record. Never include source values.
++    emp_map = {}
++    for employee in employees:
++        eid = employee["ID"]
++        if eid in emp_map and emp_map[eid] != employee:
++            raise HTTPException(
++                status_code=500,
++                detail="Personalquelle enthält widersprüchliche Stammsätze.",
++                headers={"X-SP5-Error-Code": "employee_source_unresolved",
++                         "X-SP5-Error-Category": "conflicting_employee"},
++            )
++        emp_map[eid] = employee
++    if any(mid not in emp_map for mid in member_ids):
++        raise HTTPException(
++            status_code=500,
++            detail="Teamzuordnung verweist auf fehlende Personalstammsätze.",
++            headers={"X-SP5-Error-Code": "employee_source_unresolved",
++                     "X-SP5-Error-Category": "orphan_membership"},
++        )
++    return [emp_map[mid] for mid in member_ids]
+ 
+ 
+ # ── Write: Employees ─────────────────────────────────────────

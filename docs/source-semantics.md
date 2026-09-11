@@ -4704,3 +4704,27 @@ project, nor that they caused its reported 24h/week-limit outcomes. The exact
 600-second input/result is still unavailable. No runtime change or release is
 part of this characterization; the last private audit remains applicable to
 the unchanged runtime and is not presented as a successful real plan.
+
+### Person-join correction candidate (2026-09-11)
+
+`tools/upstream-api-person-integrity-candidate.patch` now replaces the lossy
+join in `sp5api/routers/employees.get_group_members`. An orphan membership
+returns HTTP 500 with `employee_source_unresolved` / `orphan_membership`;
+conflicting EMPL records return the same code / `conflicting_employee`, before
+row order can select employment dates or nominal hours. Error bodies contain
+neither IDs, names, dates nor filesystem paths. Identical repeated master rows
+and repeated valid memberships retain the existing successful response shape.
+No missing person or approval is synthesized. Conflicts anywhere in the loaded
+master list block this candidate, including outside the requested group.
+
+The candidate is **not deployed**. Its six synthetic cases apply the actual
+patch to a temporary source-only router and execute its GET function through
+FastAPI. Together with the previous characterization and hierarchy/API tests:
+**303 passed**, two known dependency warnings; Ruff and diff checks pass.
+This is a router-level test, not a packaged full-app/authentication or live API
+acceptance. The unchanged published Docker baseline was not redundantly tested.
+
+Next: equivalent direct-import guard (still vulnerable), packaged middleware
+and Generator error propagation coverage, then private GET-only acceptance
+before activating changes. The API fix cannot by itself protect direct Library
+imports, nor establish the cause of the unavailable original 0.9.29 plan.
