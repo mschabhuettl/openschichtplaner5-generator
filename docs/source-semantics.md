@@ -2095,3 +2095,60 @@ Vor Integration sind diese Änderungen mit dem expliziten Plansichtvertrag
 zu verbinden. Insbesondere darf die OSP5-Meldung „Keine Verstöße gefunden“
 weiterhin nicht als unabhängiges Gütesiegel für Generatorpläne gelten.
 Der Kandidat belegt keine Ursache des nicht vorliegenden 0.9.29-600s-Jobs.
+
+### API-Stundenprüfung: reproduzierte Kalender- und Vollständigkeitsgrenzen
+
+`tools/test_upstream_work_time_boundaries.py` charakterisiert den **ungeänderten**
+API-Prüfer mit sieben synthetischen Tests. Grüne Tests dokumentieren hier die
+Abweichungen, nicht deren Behebung. Vier Fälle stellen dem API-Ergebnis direkt
+den unabhängigen Generatorvalidator gegenüber; die übrigen vergleichen den
+vollen und verkürzten API-Prüfzeitraum beziehungsweise fehlende Quellzeiten.
+
+| Synthetischer Fall | Original-API | Gegenbefund |
+| --- | --- | --- |
+| 08–08 Uhr, 24 reale, 8 bezahlte Stunden, Tageslimit 10h | Keine Verletzung | Generator meldet Tageslimit: 16h am ersten, 8h am zweiten Tag. |
+| Derselbe Dienst, Wochenlimit 10h | Keine Verletzung | Generator meldet Wochenlimit wegen 24 realen Stunden. |
+| 12–12 Uhr, 24 bezahlte Stunden, Tageslimit 12h | 24h am Starttag beanstandet | Generator akzeptiert 12h je Kalendertag. |
+| Sonntag 11.01.2026 20 Uhr bis Montag 08 Uhr, Wochenlimit 6h | 12h in Woche ab 05.01. beanstandet | Generator beanstandet Woche ab 12.01.: dort 8h, vorherige Woche nur 4h. |
+| Montag und Mittwoch je 8h, Wochenlimit 12h | Voller Zeitraum meldet 16h; nur Mittwoch meldet nichts | Identische Quelldaten, aber keine Ergänzung der restlichen Kalenderwoche. |
+| Montag Ende 23 Uhr, Dienstag Beginn 08 Uhr, Mindestruhe 11h | Voller Zeitraum meldet 9h; nur Dienstag meldet nichts | Vorgängerdienst wird am Abfrageanfang ausgefiltert. |
+| Normaldienst mit DURATION=24, ohne STARTEND | 0 Stunden, kein Block, keine Verletzung | Fehlende Arbeitszeiten werden nicht als unvollständige Prüfung ausgewiesen. |
+
+Alle Grenzen sind ausschließlich synthetische Testkonfiguration, **keine neuen
+Nutzerdefaults**. Ein 24h-Dienst ist nicht allein wegen 11h/36h Ruhe verboten.
+Die fehlenden Zeitangaben im letzten Fall erlauben gerade **keinen** Schluss
+auf 24 reale Arbeitsstunden.
+
+**Zusammenhängender Codepfad:** Library
+`sp5lib/calculations.py:shift_hours_on_day` liefert DURATION bei vorhandenem
+STARTEND, nicht verstrichene Dauer. API
+`sp5api/routers/work_time_rules.py:_employee_plan._dated` begrenzt bereits
+Quellzeilen auf `from_date..to_date`; `_collect_day_data` bucht diese Stunden
+vollständig auf das Startdatum. `_check_employee` gruppiert diese Startdaten
+nach ISO-Woche, ohne den Randkontext nachzuladen. Die ISO-Wochennummer an sich
+ist dabei korrekt, die Stundenverteilung nicht gleichwertig zum Generator.
+OSP5 `frontend/src/pages/WorkTimeRules.tsx` zeigt für leere Ergebnisse weiterhin
+„Keine Verstöße gefunden“ bzw. den Gruppen-Entsprechungstext; eine getrennte
+Vollständigkeitsinformation liefert dieser Pfad nicht. Generator
+`sp5generator/validator.py:_validate` prüft dagegen reale lokale Kalenderanteile;
+`solver.py` setzt konfigurierte `max_daily_minutes/max_weekly_minutes` hart um.
+Die vorhandenen Teilplan-/Kalenderregressionen prüfen diese Solvergrenzen mit.
+
+```sh
+PYTHONPATH=/home/hilbert/projects/libopenschichtplaner5:tests SP5_WORK_TIME_ROUTER=/home/hilbert/projects/openschichtplaner5-api/sp5api/routers/work_time_rules.py .venv/bin/python -m pytest -q tools/test_upstream_work_time_boundaries.py tests/test_partial_limits.py tests/test_calendar_limits.py
+```
+
+Ergebnis: **122 bestanden** (7 neue Charakterisierungen, 115 vorhandene
+Generatorregressionen), Ruff bestanden. Keine HTTP-/Browserabnahme und keine
+Änderung von Originalcheckouts, Generatorruntime oder laufender Installation.
+Unveränderte 0.9.31 nicht redundant real getestet; kein Release.
+
+**Korrekturreihenfolge konkretisiert:** Der explizite Ist/Soll-Vertrag allein
+reicht nicht als Gesamtfix. Vor einer positiven Arbeitszeitaussage benötigt der
+API-Prüfer (1) sichtgetreue effektive Dienste, (2) reale Zeitsegmente getrennt von
+Abrechnung, (3) Kalender-/Zeitzonenaufteilung und ausreichenden Randkontext,
+(4) explizite Unvollständigkeit bei fehlenden Zeiten/Kontext. Danach vorhandenen
+Überlappungskandidaten und OSP5-Ergebnisvertrag zusammenführen. Nicht einfach
+alle Quellfenster addieren: Sonderersatz und Abwesenheiten bleiben zu beachten.
+Diese Gegenproben grenzen die API als unabhängige Prüfinstanz ein; sie beweisen
+weiterhin nicht die Ursache des fehlenden Original-0.9.29-Projekts/Jobs/Ergebnisses.
