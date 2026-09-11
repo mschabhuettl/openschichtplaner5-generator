@@ -9,6 +9,32 @@ from sp5generator.solver import solve
 from sp5generator.validator import validate
 
 
+@pytest.mark.parametrize('limit', [float('nan'), float('inf'), float('-inf')])
+def test_nonfinite_time_limit_is_rejected_before_planning(limit, monkeypatch):
+    def unexpected_validation(snapshot):
+        pytest.fail('Invalid time limit reached planning input validation')
+    monkeypatch.setattr('sp5generator.solver.input_diagnostics', unexpected_validation)
+    with pytest.raises(ValueError, match='Zeitlimit.*endliche'):
+        solve(make_demo(), time_limit=limit)
+
+
+@pytest.mark.parametrize('limit', ['nan', 'inf', '-inf'])
+def test_cli_nonfinite_time_limit_reports_input_error_without_result(tmp_path, capsys, limit, monkeypatch):
+    import json
+    from sp5generator.cli import main
+    def unexpected_validation(snapshot):
+        pytest.fail('Invalid CLI time limit reached planning input validation')
+    monkeypatch.setattr('sp5generator.solver.input_diagnostics', unexpected_validation)
+    source = tmp_path / 'synthetic.json'
+    output = tmp_path / 'result.json'
+    source.write_text(make_demo().model_dump_json())
+    assert main(['solve', str(source), '--time-limit=' + limit, '-o', str(output)]) == 2
+    assert not output.exists()
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert 'endliche' in json.loads(captured.err)['message']
+
+
 @pytest.mark.parametrize("case", ["seconds", "microseconds", "offset", "integer", "date", "horizon"])
 def test_invalid_boundaries_return_diagnostics_instead_of_crashing(case):
     snapshot = make_demo()

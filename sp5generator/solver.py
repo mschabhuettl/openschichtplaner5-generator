@@ -2,6 +2,7 @@
 
 from collections import Counter, defaultdict
 from datetime import timedelta
+from math import isfinite
 from time import monotonic
 from ortools.sat.python import cp_model
 from .models import Assignment, Diagnostic, Result, Validation
@@ -33,6 +34,8 @@ SEARCH_WORKERS = 1
 
 
 def solve(snapshot, time_limit=30, partial=False):
+    if not isfinite(time_limit):
+        raise ValueError('Zeitlimit muss eine endliche Zahl in Sekunden sein.')
     started = monotonic()
     deadline = started + time_limit
     timings = {}
