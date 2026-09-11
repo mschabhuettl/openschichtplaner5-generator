@@ -966,3 +966,57 @@ Sonderersetzung, keine vollständige tagbezogene Ersatzauflösung. Das ist
 vor einer Freigabe abweichender Sonderzeiten zu korrigieren, insbesondere
 bei abweichender Dienst-/Arbeitsplatzidentität. Dieser Quellcodebefund ist
 noch **keine** Reproduktion der gemeldeten 24h-Dienste des Originaljobs.
+
+### Synthetisch reproduziert: doppelte Randarbeit bei Sonderersatz
+
+`tests/test_api_adapter.py::test_special_replacement_boundary_matches_library_person_day`
+verfolgt den lesenden HTTP-Import über `/api/schedule` und `/api/einsatzplan`
+bis `Snapshot.boundary_work` und vergleicht ihn mit `calculations.get_work_hours`.
+Die künstliche Quelle enthält am Vortag einen vierstündigen Normaldienst und
+einen nominal-identischen vierstündigen Sonderersatz mit gesetzter `SHIFTID`.
+Nur in diesem Test sind reale Arbeitszeit und bezahlte Dauer bewusst gleich;
+die Library-Stundensumme ist kein allgemeiner Ersatz für reale Zeitintervalle.
+
+| Gegenprobe | Library | importierte Randarbeit | Status |
+|---|---:|---:|---|
+| gleiche Dienst- und Arbeitsplatz-ID | 4 h | 4 h | korrekt |
+| anderer Arbeitsplatz | 4 h | 8 h | belegter Mappingfehler |
+| andere Dienst-ID, gleiche nominale Zeiten | 4 h | 8 h | belegter Mappingfehler |
+
+Alle drei Varianten laufen mit beiden Quellreihenfolgen. Die vier fehlerhaften
+Fälle sind ausdrücklich `xfail(strict=True)` als **offener Sicherheitsvertrag**
+markiert, nicht als bestandene Fehlerkorrektur. Mit `--runxfail` scheitern genau
+diese vier an `480 == 240`. Die zwei identischen Kontrollen bestehen. Es werden
+keine Freigaben bestätigt und keine Sonderzeit-Blocker entfernt. Bereits eine
+nominal akzeptierte Sonderzeile reicht aus, um die Lücke sichtbar zu machen.
+
+Ursache: `import_snapshot` konvertiert die passende Sonderzeile lokal zu
+`kind="shift"`, verarbeitet den manuellen Normaldienst aber weiterhin.
+Die anschließende Rand-Deduplizierung verwendet eine ID aus Person, Datum,
+Dienst, Arbeitsplatz und Gruppe. Ein anderer Dienst oder Arbeitsplatz erzeugt
+eine zweite `BoundaryWork`-Zeile, obwohl die Library tagbezogen ersetzt.
+Dies belegt überzählige, hier auch überlappende Randarbeitsintervalle; es belegt
+weder die Ursache des Originaljobs noch einen zulässigen 24h-Dienst.
+
+`test_library_special_replacement_is_day_wide_and_not_type_selected` sichert
+zusätzlich vier Quellgegenproben: zwei Normaldienste ergeben mit einer
+dreistündigen Sonderzeile **3 h bei gesetzter SHIFTID**, aber **11 h ohne
+SHIFTID**, jeweils für Typ 0 und 1. Der Arbeitsplatz ist dabei verschieden.
+Damit ist eine Normalisierung nur nach gleicher Dienst-ID oder nur Typ 0
+nachweislich unvollständig. Das autorisiert noch keine Interpretation aller
+Typ-1-Zeitfelder als bestätigte Arbeitsintervalle.
+
+**Priorisierte Korrektur, noch offen:**
+
+1. Randarbeit nach Person und Datum aus der Ist-Quelle normalisieren und
+   ersetzte Normalzeilen in der Herkunft nachvollziehbar halten. Echte
+   Zusatzdienste ohne Dienst-ID nicht entfernen; ungeklärte Sonderzeiten
+   weiterhin blockieren. Die vier `xfail`-Markierungen nach Behebung entfernen.
+2. Ist-/Soll-Referenzen gesondert absichern: `_reference_schedule` mischt
+   absichtlich Ist-Sonderkontext mit gewählten regulären Referenzen. Eine
+   globale Zeilenlöschung vor dieser Auswahl könnte Soll-Vergleichsdienste
+   unzulässig entfernen. Nicht aus der Randkorrektur automatisch ableiten.
+3. Danach Wochen-/Tageslimit und Ruhezeit im vollständigen und partiellen
+   Solver gegen den unabhängigen Validator prüfen; relevante Runtimekorrektur
+   erneut privat gegen die API abnehmen. Die hier ergänzten Tests und dieser
+   Befund ändern allein noch keinen Import und rechtfertigen kein Release.

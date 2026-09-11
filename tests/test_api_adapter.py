@@ -364,3 +364,73 @@ def test_special_duty_details_use_live_read_only_endpoint_and_never_guess(transp
     assert detail_calls
     assert all(parse_qs(c.query) == {"date": ["2026-01-06"], "group_id": ["1"]} for c in detail_calls)
     assert all(c.get_method() == "GET" and "/admin/orm" not in c.full_url for c in calls)
+
+
+@pytest.mark.parametrize("special_first", [False, True])
+@pytest.mark.parametrize("identity", [
+    "same",
+    pytest.param("workplace", marks=pytest.mark.xfail(
+        strict=True, reason="Known mapping gap: SPSHI replaces the whole person-day, not only the same workplace")),
+    pytest.param("service", marks=pytest.mark.xfail(
+        strict=True, reason="Known mapping gap: SPSHI replaces the whole person-day, not only the same service")),
+])
+def test_special_replacement_boundary_matches_library_person_day(transport, identity, special_first):
+    """Executable open safety contract; paid and real durations coincide ONLY in this fixture.
+
+    The strict expected failures record an investigated import defect, not an
+    accepted scheduling rule. Remove their markers when day normalization lands.
+    """
+    from sp5lib import calculations as calc
+
+    responses, calls = transport
+    day = date(2026, 1, 5)
+    normal = {"employee_id": 101, "date": day.isoformat(), "kind": "shift",
+              "shift_id": 201, "workplace_id": 301}
+    special = {**normal, "kind": "special_shift", "spshi_type": 0}
+    if identity == "workplace":
+        special["workplace_id"] = 302
+    elif identity == "service":
+        special["shift_id"] = 202
+        responses["/api/shifts"].append({**responses["/api/shifts"][0], "ID": 202})
+    responses[("schedule", "2026", "1", "ist")] = (
+        [special, normal] if special_first else [normal, special])
+    responses["/api/einsatzplan"] = [{
+        "id": 901, "employee_id": 101, "date": day.isoformat(),
+        "shift_id": special["shift_id"], "workplace_id": special["workplace_id"],
+        "type": 0, "startend": "08:00-10:00;11:00-13:00", "duration": 4,
+    }]
+    expected_hours = calc.get_work_hours(
+        calc.EmployeeContext(workdays=(True,) * 8, calcbase=0, hrs_day=8), day, day,
+        holidays={}, shifts_by_id={s["ID"]: s for s in responses["/api/shifts"]},
+        manual_shifts=[{"DATE": day.isoformat(), "SHIFTID": normal["shift_id"]}],
+        special_shifts=[{"DATE": day.isoformat(), "SHIFTID": special["shift_id"],
+                         "DURATION": 4, "TYPE": 0}],
+    )
+    assert expected_hours == 4
+    snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.employees[0].approvals
+    assert not any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved)
+    assert all(c.get_method() == "GET" for c in calls)
+    actual_minutes = sum((segment.end - segment.start).total_seconds() / 60
+                         for work in snapshot.boundary_work for segment in work.segments)
+    assert actual_minutes == expected_hours * 60
+
+
+@pytest.mark.parametrize("special_type", [0, 1])
+@pytest.mark.parametrize("special_shift_id", [0, 202])
+def test_library_special_replacement_is_day_wide_and_not_type_selected(special_type, special_shift_id):
+    """Independent source oracle for the pending normalization, no real fixtures."""
+    from sp5lib import calculations as calc
+
+    day = date(2026, 1, 5)
+    shifts = {sid: {"ID": sid, "DURATION0": 4, "STARTEND0": "08:00-12:00"}
+              for sid in (201, 202)}
+    hours = calc.get_work_hours(
+        calc.EmployeeContext(workdays=(True,) * 8, calcbase=0, hrs_day=8), day, day,
+        holidays={}, shifts_by_id=shifts,
+        manual_shifts=[{"DATE": day.isoformat(), "SHIFTID": 201, "WORKPLACID": 301},
+                       {"DATE": day.isoformat(), "SHIFTID": 202, "WORKPLACID": 302}],
+        special_shifts=[{"DATE": day.isoformat(), "SHIFTID": special_shift_id,
+                         "WORKPLACID": 303, "DURATION": 3, "TYPE": special_type}],
+    )
+    assert hours == (3 if special_shift_id else 11)
