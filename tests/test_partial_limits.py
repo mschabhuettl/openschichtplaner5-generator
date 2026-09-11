@@ -189,6 +189,27 @@ def test_quality_timeout_preserves_independently_validated_partial_incumbent(mon
     assert validate(snapshot, result.assignments).valid
 
 
+def test_feasible_partial_can_finish_before_hours_and_block_optimization(monkeypatch):
+    snapshot = case(1, [shift("a", 5, 8, 8), shift("b", 6, 8, 8)])
+    snapshot.profiles[0].max_weekly_minutes = 480
+    original = cp_model.CpSolver.solve
+    calls = []
+
+    def feasible_without_optimality_proof(self, model, *args, **kwargs):
+        calls.append(1)
+        assert original(self, model, *args, **kwargs) == cp_model.OPTIMAL
+        return cp_model.FEASIBLE  # Exercise the time-limited first-phase branch.
+
+    monkeypatch.setattr(cp_model.CpSolver, "solve", feasible_without_optimality_proof)
+    result = solver.solve(snapshot, 3, partial=True)
+    assert len(calls) == 1
+    assert result.solver_status == "FEASIBLE"
+    assert result.metrics["objective_phase"] == "vacancies"
+    assert len(result.assignments) == 1
+    assert result.validation.valid and not result.validation.complete
+    assert validate(snapshot, result.assignments).valid
+
+
 def test_unknown_without_incumbent_never_returns_unchecked_assignments(monkeypatch):
     monkeypatch.setattr(cp_model.CpSolver, "solve", lambda *args, **kwargs: cp_model.UNKNOWN)
     result = solver.solve(case(1), 3, partial=True)

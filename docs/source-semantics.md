@@ -267,6 +267,12 @@ Sie belegt nicht, welche Grenze im gemeldeten Nutzerprojekt konfiguriert war.
 - UNKNOWN in der Qualitätsphase erhält einen zuvor unabhängig geprüften
   Teilplan als FEASIBLE; UNKNOWN ohne geprüfte Lösung liefert keine Einteilungen.
   Teilmodus lockert Mindestbesetzung, nicht persönliche harte Regeln.
+- FEASIBLE kann bereits aus der ersten Teilplanphase `vacancies` stammen.
+  Dann wurde die Optimierung von Sollabweichung/Blockkosten noch nicht begonnen:
+  Erst nach OPTIMAL für die offenen Mindeststellen fixiert `solve` deren Zahl
+  und startet die gewichtete Qualitätsphase. `metrics.objective_phase` muss
+  deshalb mitgelesen werden; 600 Sekunden Suchzeit garantieren keine optimierte
+  Stundenverteilung. Der Statuszweig ist deterministisch regressionsgeprüft.
 - Drei geeignete Personen bei Höchstbesetzung eins führen rechtmäßig zu zwei
   nicht eingeplanten Personen. Alle einzuplanen wäre eine neue, falsche Pflicht.
 
@@ -297,8 +303,9 @@ war. Harte Regeln und globale Konkurrenz müssen weiterhin mitgeprüft werden.
 Bei abgebrochener Kandidatensuche oder ungültiger Eingabe werden keine
 unvollständigen Kandidatenzahlen als abschließende Diagnose veröffentlicht.
 
-29 neue Regressionen, gesamte Generator-Pythonsuite: **440 bestanden**.
-Die Diagnose liegt im strukturierten Ergebnis/JSON; keine neue UI, keine
+33 neue Regressionen, gesamte Generator-Pythonsuite: **444 bestanden**.
+Die Diagnose liegt im strukturierten Ergebnis/JSON und damit auch in der
+bestehenden „Technischen Auswertung“; keine neue UI, keine
 automatische Profilbestätigung, keine Freigabenübernahme und keine Veröffentlichung
 realer Planungsdaten. Priorisiert offen bleiben die genaue private Reproduktion,
 Sollbuchungen und die Trennung von Vergleichsreferenzen und Planungsblockern.
