@@ -23,5 +23,21 @@
   for(const shift of snapshot.shifts)if(ids.has(shift.id)&&shift.kind==='unconfirmed'){shift.kind=kind;count++;}
   return count;
  }
- const api={groups,apply};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ServiceGroups=api;
+ function suggest(group,start='22:00',end='06:00',minimum=180){
+  const minute=t=>{if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(t))throw Error('Gültige Nachtzeit eingeben.');return +t.slice(0,2)*60 + +t.slice(3);};
+  const a=minute(start),b=minute(end);
+  if(a===b||!Number.isInteger(minimum)||minimum<1||minimum>1440)throw Error('Nachtfenster und Mindestdauer prüfen.');
+  let total=0,night=0,last=-Infinity;
+  for(const [d1,t1,d2,t2] of group.times){
+   const from=d1*1440+minute(t1),to=d2*1440+minute(t2);
+   if(to<=from||from<last||to-from>10080)return null;
+   last=to;total+=to-from;
+   for(let day=Math.floor(from/1440)-1;day<=Math.floor(to/1440);day++){
+    const lo=day*1440+a,hi=day*1440+b+(b<a?1440:0);
+    night+=Math.max(0,Math.min(to,hi)-Math.max(from,lo));
+   }
+  }
+  return total?{kind:night>=minimum?'night':'day',nightMinutes:night}:null;
+ }
+ const api={groups,apply,suggest};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ServiceGroups=api;
 })(globalThis);

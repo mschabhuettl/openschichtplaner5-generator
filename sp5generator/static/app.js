@@ -229,7 +229,7 @@ function renderHistory(){
  const line=el('p',`${p.name} · ${a.evidence_count} beobachtete Einsätze `,content);
  const exists=approved(e,p);const b=button(line,exists?'Im Planungszeitraum freigegeben':'Für Planungszeitraum ausdrücklich freigeben',()=>{setApproval(e,p,true);renderMatrix();renderHistory();});b.disabled=exists;});};});
 }
-function demandLabel(d){const idx=dataIndex();if(idx.demandLabels.has(d.id))return idx.demandLabels.get(d.id);const s=idx.shifts.get(d.shift_id),p=idx.positions.get(d.position_id);const label=`${s?.segments[0]?localDay(s.segments[0].start)+' '+localTime(s.segments[0].start)+' · ':''}${s?.name??'Dienst'} / ${p?.name??'Position'} · ${workplaceName(p?.workplace_id??'')}`;idx.demandLabels.set(d.id,label);return label;}
+function demandLabel(d){const idx=dataIndex();if(idx.demandLabels.has(d.id))return idx.demandLabels.get(d.id);const s=idx.shifts.get(d.shift_id),p=idx.positions.get(d.position_id);const label=`${s?.segments[0]?localDay(s.segments[0].start)+' · ':''}${s?.name??'Dienst'}${p?.name&&p.name!==s?.name?' / '+p.name:''} · ${(s?.segments??[]).map(x=>localTime(x.start)+'–'+localTime(x.end)+(localDay(x.end)!==localDay(x.start)?' (Folgetag)':'')).join(' / ')}`;idx.demandLabels.set(d.id,label);return label;}
 function renderShifts(){
  const view=collection($('shifts'),'shifts',snapshot.shifts,{label:'Schichten',size:30,search:s=>s.name+' '+s.segments.map(x=>localDay(x.start)).join(' '),redraw:renderShifts});
  const body=table(view.content,['Schicht','Dienstart','Zeitfenster']);view.items.forEach(s=>{const tr=el('tr',undefined,body);el('td',s.name,tr);select(el('td',undefined,tr),'Art',s.kind,[['unconfirmed','Noch festzulegen'],['day','Tag'],['night','Nacht']],v=>s.kind=v);el('td',s.segments.map(x=>`${localDay(x.start)} · ${localTime(x.start)}–${localTime(x.end)}`).join(' / '),tr);});
@@ -240,12 +240,18 @@ function renderPositions(){
 }
 function renderDemands(){
  const view=collection($('demands'),'demands',snapshot.demands,{label:'Bedarfe',size:40,search:d=>demandLabel(d)+' '+d.id,redraw:renderDemands});
- const body=table(view.content,['Bedarf','Schicht / Position','Minimum','Maximum','Herkunft']);view.items.forEach(d=>{const tr=el('tr',undefined,body);el('td',d.id,tr);el('td',demandLabel(d),tr);const min=field(el('td',undefined,tr),'Min',d.minimum,v=>d.minimum=v,'number');min.min='0';min.step='1';const maxInput=field(el('td',undefined,tr),'Max (leer = unbegrenzt)',d.maximum,v=>d.maximum=v,'number');maxInput.min='0';maxInput.step='1';maxInput.placeholder='Unbegrenzt';el('td',d.source,tr);});
+ const body=table(view.content,['Dienst und Zeit','Mindestens Personen','Höchstens Personen','Details']);view.items.forEach(d=>{const tr=el('tr',undefined,body);el('td',demandLabel(d),tr);const min=field(el('td',undefined,tr),'Min',d.minimum,v=>d.minimum=v,'number');min.min='0';min.step='1';const maxInput=field(el('td',undefined,tr),'Max (leer = unbegrenzt)',d.maximum,v=>d.maximum=v,'number');maxInput.min='0';maxInput.step='1';maxInput.placeholder='Unbegrenzt';const details=el('details',undefined,el('td',undefined,tr));el('summary','Technische Details',details);el('p',d.id,details);el('p',d.source,details);el('p',workplaceName(dataIndex().positions.get(d.position_id)?.workplace_id??''),details);});
 }
 function renderServiceGroups(){
  let box=$('serviceGroups');if(!box){box=el('section');box.id='serviceGroups';box.className='surface padded';$('profiles').before(box);}box.replaceChildren();
  el('h3','Wiederkehrende Dienste gesammelt einstellen',box);
  el('p','Je Dienst und Zeitmuster einmal Tag oder Nacht wählen. Übernommen werden nur noch offene Vorkommen, einschließlich Randzeitraum. Bereits eingestellte Dienstarten, Freigaben, Bedarfe und Ruheprofile bleiben unverändert.',box);
+ const settings=snapshot.metadata.night_classification??{start:'22:00',end:'06:00',minimum:180};
+ const automatic=el('fieldset',undefined,box);el('legend','Tag/Nacht aus Uhrzeiten erkennen',automatic);
+ el('p','Vorschlagsregel, keine gesetzliche Vorgabe: Nacht bei mindestens der eingestellten Minutenzahl im Nachtfenster, sonst Tag. Geteilte Dienste zählen nur ihre Arbeitsblöcke. Bereits festgelegte Dienstarten bleiben erhalten.',automatic);
+ field(automatic,'Nacht ab',settings.start,v=>settings.start=v,'time');field(automatic,'Nacht bis',settings.end,v=>settings.end=v,'time');
+ const threshold=field(automatic,'Mindestens Minuten im Nachtfenster',settings.minimum,v=>settings.minimum=v,'number');threshold.min='1';threshold.max='1440';
+ button(automatic,'Zeitregel auf offene Dienste anwenden',()=>{const candidates=ServiceGroups.groups(snapshot).filter(g=>g.pending).map(g=>({g,proposal:ServiceGroups.suggest(g,settings.start,settings.end,settings.minimum)}));let count=0;for(const {g,proposal} of candidates)if(proposal)count+=ServiceGroups.apply(snapshot,g.key,proposal.kind);snapshot.metadata.night_classification={...settings};invalidateResult();renderRules();notice(`${count} offene Dienstvorkommen nach Zeitregel eingestellt. Projekt speichern.`);});
  const rows=ServiceGroups.groups(snapshot).filter(g=>g.pending);
  if(!rows.length){el('p','Keine offenen zuordenbaren Dienstmuster.',box);return;}
  const list=el('div',undefined,box);list.className='scroll';
