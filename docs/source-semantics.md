@@ -3002,3 +3002,34 @@ Priorisierte verbleibende Abgrenzung:
    MODEL_INVALID wegen offener Einrichtung, kein realer generierter Vergleich.
    Nächste Abnahme bei relevanter Runtimeänderung oder neuem Release. Dieser
    Versionsvergleich fügt keine fachlichen Regeln hinzu und benötigt kein Release.
+
+### Ruhekontext ist ein eigener Quellenvertrag (11.09.2026)
+
+`tools/test_rest_source_window_contract.py` charakterisiert vier synthetische
+Fälle mit den bestehenden `calendar_source_window`- und `diagnose_pairs`-Helfern:
+jeweils Tages-/ISO-Wochenfenster und vor-/nachgelagerter Randdienst. Ein Samstag
+23:00 bis Sonntag 23:00 laufender Dienst liegt außerhalb des ab Sonntag
+selektierten Kalenderquellenfensters für Montag. Zu Montag 06:00 bleiben aber
+nur sieben Stunden Ruhe. Umgekehrt fehlt nach Sonntag 15:00–23:00 der Montag
+06:00 beginnende Dienst, obwohl der Sonntagsdienst keinen Überhang hat.
+
+Die eingeschränkte Auswahl meldet in allen vier Fällen keinen Paarkonflikt;
+mit dem fehlenden Randdienst werden jeweils 420 statt erforderlicher 660 Minuten
+erkannt. Beide Berichte bleiben ausdrücklich `complete=False`. Der 24h-Dienst
+im ersten Fall ist nicht selbst der beanstandete Verstoß; beanstandet wird der
+Abstand zum Folgedienst. Dies ist ein belegter Integrationsbedarf des isolierten
+Diagnosekandidaten, kein neuer nachgewiesener Fehler im produktiven Generator.
+
+Folgerung: Kalenderlimit- und Ruhequellenfenster getrennt bestimmen und für die
+Selektion zusammenführen; anschließend nur planungsrelevante Paare bewerten.
+Ein zusätzlich geladener Kalendertag darf nicht pauschal als ausreichender
+Ruhekontext gelten. Datierte Profile, längere konfigurierte Ruhe, Nachtblock-
+und Wochenruhe sowie UTC/DST bleiben Teil des noch offenen Vertrags. Auch ein
+korrektes Fenster beweist weder vollständige Quelltabellen noch einen atomaren
+Datenstand. Keine Änderung an produktiver API, Profilen oder Benutzerinstallation.
+
+Prüfung: `PYTHONPATH=.:tests .venv/bin/python -m pytest -q
+tools/test_rest_source_window_contract.py tools/test_duty_conflicts_candidate.py
+tools/test_calendar_limits_candidate.py` — 36 bestanden. Der erste Aufruf ohne
+`tests` im Suchpfad scheiterte bei vier bestehenden Quervergleichstests am
+Fixture-Import; nach korrektem Suchpfad bestanden auch diese.
