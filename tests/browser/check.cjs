@@ -720,6 +720,20 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.match(await page.locator('#calendar thead').innerText(), /Funktion/);
     assert.match(await page.locator('#calendar .shift-badge').first().innerText(), /Testperson/);
     await screenshot('monthly.png');
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      const grid=page.locator('#calendar > .collection-content');
+      const search=page.locator('#calendar .collection-toolbar');
+      const beforeScroll=await search.boundingBox();
+      await grid.evaluate(e=>{e.scrollLeft=500;});
+      assert(await grid.evaluate(e=>e.scrollLeft>0),'Month grid remains horizontally scrollable');
+      assert.deepEqual(await search.boundingBox(),beforeScroll,'Search stays stationary while the calendar moves');
+      assert.equal(await page.locator('#calendar').evaluate(e=>e.scrollLeft),0,'The outer calendar controls never scroll sideways');
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      if(process.env.WEB_TEST_SCREENSHOT_DIR)await page.locator('.calendar-surface').screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`stationary-calendar-${width}.png`)});
+      await grid.evaluate(e=>{e.scrollLeft=0;});
+    }
+    await page.setViewportSize({width:1440,height:1000});
     await reveal('#plan');
     await page.locator('#plan tbody input[type="checkbox"]').first().check();
     // A failing history list must not prevent polling the newly submitted job.

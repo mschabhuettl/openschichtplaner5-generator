@@ -228,3 +228,7 @@ body[data-active-panel=calculate] .project-header { border-bottom: 1px solid var
 [data-rest-defaults] button { min-height: 44px; }
 #weights > p, #weights > button { grid-column: 1 / -1; }
 #weights > button { justify-self: start; }
+/* Keep search, pagination and coverage stationary while the month grid scrolls. */
+#calendar { overflow: visible; }
+body[data-active-panel=plan] #calendar { max-height: none; }
+#calendar > .collection-content { overflow: auto; max-height: 72vh; }
