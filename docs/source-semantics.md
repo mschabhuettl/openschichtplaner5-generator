@@ -1510,3 +1510,49 @@ keine bewiesene Ursache des originalen Generator-600s-Laufs und keine neue
 Generator-Runtimekorrektur. Keine produktive API geändert, kein Live-POST,
 keine Originaldaten verwendet. Ein künftiger Upstream-Fix muss die gewünschte
 Prüfsicht explizit festlegen und Zyklen/Sonderersatz konsistent dazu behandeln.
+
+### Soll-Materialisierung unterdrückt einen Ist-Zyklus vor dem Sichtfilter
+
+Am Library-Stand `0dac443` synthetisch reproduziert: In
+`Database._cycle_shifts_by_employee` (database.py:287–324) enthält `mashi_days`
+alle Person-/Datum-Paare aus MASHI **ohne TYPE-Filter**. Ein ausschließlich
+vorhandener Soll-Eintrag unterdrückt deshalb bereits die Zyklusexpansion.
+`Database.get_schedule` fügt Zyklusdienste als `schedule_type=0` hinzu und
+filtert erst anschließend nach Ist/Soll (database.py:595–619, 704–714).
+
+Gegenprobe mit unveränderter echter `SP5Database.get_schedule` und echter
+`calculations.expand_cycle_assignments`, ausschließlich künstlichen Tabellen:
+CYCLE ID=1/SIZE=1/UNIT=0, CYENT CYCLEEID=1/INDEX=0/SHIFTID=5,
+CYASS EMPLOYEEID=10/CYCLEID=1/START=END=2026-09-07/ENTRANCE=0.
+Leere Sonderdienste/Abwesenheiten/Stammdaten; optional ein MASHI-Eintrag für
+Person 10 am gleichen Datum mit SHIFTID=9. Nur die Tabellenleser und leeren
+Stammdatenleser wurden ersetzt; keine DBF-Datei oder API geändert.
+
+| MASHI am Zyklustag | Ist-Dienste | Soll-Dienste | beide Sichten |
+| --- | --- | --- | --- |
+| keiner | Zyklus 5 | keine | Zyklus 5 |
+| TYPE=0 | Dienst 9 | keine | Dienst 9 |
+| TYPE=1 | **keine** | Dienst 9 | Dienst 9 |
+
+Damit ist die fehlende Ist-Ausgabe im dritten Fall belegt. Der fachlich
+beabsichtigte Ersatzvertrag muss bei einer Upstream-Korrektur explizit bleiben:
+Soll ist eine alternative Sicht, nicht automatisch eine tatsächlich
+materialisierte Ist-Belegung. Nicht pauschal alle MASHI-Unterdrückung entfernen;
+sonst drohen doppelte Dienste im echten Ist-Fall. Sonderersatz und gemeinsame
+Nutzung des Helpers durch `_calc_inputs` ebenfalls berücksichtigen.
+
+Transportpfad: API `sp5api/routers/schedule.py:get_schedule` reicht `plan` an
+die Library durch. OSP5 `frontend/src/api/client.ts:1304` fordert dieselbe
+Schedule-Sicht an. Generator `api_adapter._Database.get_schedule` →
+`sp5_adapter._scope_schedule` erhält nur die schon gefilterten Zeilen;
+`_effective_schedule` liest auch Ist als Ersatzbasis. Fehlende Quelldienste
+können damit Referenz- und Randkontext unvollständig machen. Das ist eine
+Folgerung aus dem Datenfluss, kein Nachweis betroffener realer Personen oder
+der ursprünglichen 0.9.29-Fehlerursache. Fehlende Dienste werden nicht erfunden.
+
+Vorhandene Librarytests `test_soll_ist_plan.py` sowie
+`test_database_calculations.py:test_schedule_read_paths_expand_cycles`:
+5 ausgewählte Tests bestanden am 11.09.2026; die kombinierte Soll-/Zyklusprobe
+oben ist darin nicht abgedeckt. Kein Generator-Runtimefix, kein neues Release;
+Korrekturpriorität: planbewusste Zyklus-Unterdrückung upstream mit diesen drei
+Fällen und Sonderersatz/Kontoberechnung absichern, anschließend Quellenabnahme.
