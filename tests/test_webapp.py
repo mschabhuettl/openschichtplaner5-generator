@@ -217,3 +217,22 @@ def test_remote_import_rejects_unsavable_structure_at_import(tmp_path, monkeypat
         assert result.status_code == 422
         assert 'size_limit' in result.json()['detail']
         assert client.get('/api/snapshots').json() == []
+
+
+def test_history_automation_requires_explicit_import_option(tmp_path, monkeypatch):
+    from sp5generator.demo import make_demo
+    def imported(**kwargs):
+        snapshot = make_demo()
+        person = snapshot.employees[0]
+        person.approvals = []
+        snapshot.metadata['history_matrix'] = [{'employee_id': person.id, 'suggested_approvals': [
+            {'function_id': 'synthetic-service', 'evidence_days': 3}]}]
+        return snapshot
+    monkeypatch.setattr('sp5generator.api_adapter.import_api', imported)
+    payload = {'period_start': '2026-01-01', 'period_end': '2026-01-31', 'timezone': 'UTC', 'team_ids': ['1']}
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        default = client.post('/api/remote-import', json=payload).json()['snapshot']
+        assert default['employees'][0]['approvals'] == []
+        enabled = client.post('/api/remote-import', json={**payload, 'auto_history': True}).json()['snapshot']
+        assert enabled['employees'][0]['approvals'][0]['function_id'] == 'synthetic-service'
+        assert enabled['metadata']['history_automation']['minimum_days'] == 3

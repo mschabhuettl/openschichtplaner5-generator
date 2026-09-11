@@ -29,6 +29,8 @@ class ApiImportRequest(BaseModel):
     team_ids: list[str] | None = None
     timezone: str
     history_plan: Literal['ist', 'soll', 'both'] = 'ist'
+    auto_history: bool = False
+    history_min_days: int = Field(default=3, ge=2, le=1097)
     existing_plan_mode: Literal['reference', 'fixed'] = 'reference'
     history_start: date | None = None
     history_end: date | None = None
@@ -228,9 +230,12 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     def import_source(data: ImportRequest):
         from .sp5_adapter import import_directory
         try:
-            snapshot = import_directory(**data.model_dump())
+            snapshot = import_directory(**data.model_dump(exclude={"auto_history", "history_min_days"}))
         except (OSError, ImportError) as exc:
             raise HTTPException(400, 'Import nicht möglich: Verzeichnis und SP5-Erweiterung prüfen') from exc
+        if data.auto_history:
+            from .history_approvals import apply_history_approvals
+            apply_history_approvals(snapshot, data.history_min_days)
         return {'snapshot': check_project_structure(snapshot), 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
 
     @app.get('/api/remote-source')
@@ -241,7 +246,10 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     @app.post('/api/remote-import')
     def remote_import(data: ApiImportRequest):
         from .api_adapter import import_api
-        snapshot = import_api(**data.model_dump())
+        snapshot = import_api(**data.model_dump(exclude={"auto_history", "history_min_days"}))
+        if data.auto_history:
+            from .history_approvals import apply_history_approvals
+            apply_history_approvals(snapshot, data.history_min_days)
         return {'snapshot': check_project_structure(snapshot), 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
 
     @app.post('/api/snapshots/check')

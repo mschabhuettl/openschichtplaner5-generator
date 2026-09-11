@@ -673,6 +673,7 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
             "observed_assignment_count": 0,
             "observed_shifts": {},
             "approvals": defaultdict(int),
+            "approval_days": defaultdict(set),
             "dates": [],
         }
         for eid in employees
@@ -697,6 +698,8 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
                 or not history_start <= day <= history_end
                 or row.get("kind") not in ("shift", "special_shift")
             ):
+                continue
+            if row.get("kind") == "special_shift" and row.get("spshi_type", 0) != 0:
                 continue
             sid = str(row.get("shift_id") or "")
             wid = row.get("workplace_id")
@@ -731,6 +734,7 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
             observation["first_date"] = min(observation["first_date"], str(day))
             observation["last_date"] = max(observation["last_date"], str(day))
             item["approvals"][sid] += 1
+            item["approval_days"][sid].add(str(day))
             # History is service evidence, not physical permission or demand.
             workplace = str(wid) if wid not in (None, 0, "0", "") else "unresolved"
             pid = f"sp5:position:{sid}:{workplace}"
@@ -757,6 +761,7 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
                         "function_id": f"sp5:service:{sid}",
                         "workplace_id": "*",
                         "evidence_count": count,
+                        "evidence_days": len(item["approval_days"][sid]),
                         "confirmed": False,
                         "source": "historical",
                     }

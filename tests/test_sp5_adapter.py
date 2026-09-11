@@ -469,3 +469,20 @@ def test_requirement_ids_are_scoped_to_the_native_cell():
     snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
     assert len(snapshot.demands) == 2
     assert len({d.id for d in snapshot.demands}) == 2
+
+
+def test_history_distinct_days_and_deviations_do_not_inflate_evidence():
+    from sp5generator.sp5_adapter import historical_matrix
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            return [
+                {'employee_id': 101, 'date': '2026-01-02', 'kind': 'shift', 'shift_id': 201, 'workplace_id': wid}
+                for wid in (0, 301)
+            ] + [{'employee_id': 101, 'date': '2026-01-03', 'kind': 'special_shift',
+                  'shift_id': 201, 'workplace_id': 301, 'spshi_type': 1}]
+    db = Source()
+    snapshot = import_snapshot(db, date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC')
+    history = historical_matrix(db, snapshot, date(2026, 1, 1), date(2026, 1, 5))
+    evidence = history[0]['suggested_approvals'][0]
+    assert evidence['evidence_count'] == 2
+    assert evidence['evidence_days'] == 1
