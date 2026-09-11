@@ -34,13 +34,23 @@ def probe(plan_types: tuple[int, ...], *, cycle: bool = False) -> dict:
     db.get_employee = lambda employee_id: employee
     db.get_shifts = lambda **kwargs: [shift]
     db.get_leave_types = lambda **kwargs: []
+    db.get_employees = lambda **kwargs: [employee]
+    db.get_extracharges = lambda **kwargs: [
+        {"ID": 1, "NAME": "Synthetic all-day", "VALIDITY": 1,
+         "DATE": day, "START": 0, "END": 0}
+    ]
     result = db.calculate_time_balance(10, 2026)
+    charges = db.calculate_extracharge_hours(2026, 9, 10)
+    daily_charges = db.extracharge_hours_by_day(2026, 9, 10)
     month = result["months"][8]
     return {
         "plan_types": plan_types,
         "cycle": cycle,
         "september_actual_hours": month["actual_hours"],
         "annual_actual_hours": result["total_actual_hours"],
+        "surcharge_hours": charges[0]["hours"],
+        "surcharge_employee_days": charges[0]["shift_count"],
+        "daily_surcharge_hours": sum(row["hours"] for row in daily_charges),
     }
 
 
@@ -52,6 +62,9 @@ def main() -> None:
         result = probe(kinds, cycle=cycle)
         assert result["september_actual_hours"] == expected, result
         assert result["annual_actual_hours"] == expected, result
+        assert result["surcharge_hours"] == expected, result
+        assert result["daily_surcharge_hours"] == expected, result
+        assert result["surcharge_employee_days"] == 1, result
         results.append(result)
     print(json.dumps({"synthetic_only": True, "characterization": results}, indent=2))
 

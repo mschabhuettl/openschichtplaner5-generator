@@ -1608,3 +1608,43 @@ zu entfernen ließe bei vorhandener Soll-Materialisierung weiterhin den
 zuvor unterdrückten Ist-Zyklus fehlen. Sonderersatz und Zuschläge bleiben als
 weitere gemeinsame Verbraucher zu prüfen. Keine produktive Quelle geändert,
 keine harten Generatorgrenzen verändert, kein Original-600s-Ursachennachweis.
+
+### Zuschlagsberichte erben dieselbe Ist-/Soll-Vermischung
+
+Die gemeinsame Verbraucherprüfung am selben Library-Stand `0dac443` ist nun
+auch über die beiden unveränderten Fassaden `calculate_extracharge_hours`
+und `extracharge_hours_by_day` reproduziert. Das bestehende synthetische
+Werkzeug `tools/audit_upstream_plan_accounting.py` enthält dafür eine explizite
+Ganztags-Zuschlagsregel am Testdatum. In sämtlichen sechs Fällen stimmen
+Monatszuschlag und Summe der Tageszuschläge mit der obigen 8h/16h-Tabelle
+überein. Insbesondere ergeben identische Ist- und Soll-Einträge zusammen
+**16 Zuschlagsstunden bei nur einem gezählten Mitarbeitertag**; die Tageszahl
+ist daher keine Plausibilitätsprüfung der Stundensumme. Insgesamt bestehen
+jetzt 30 Assertions. Dies charakterisiert den Quellfehler, nicht Sollverhalten.
+
+Konkreter Pfad: `_calc_inputs` / `_plan_kwargs` liefern beide MASHI-Plansichten
+an `calculations.daily_work_intervals`. Die Funktion hängt beide Zeitfenster
+an dieselbe Tagesliste, ohne TYPE-Auswahl oder Vereinigungsbildung.
+`extracharge_hours_on_day` summiert jeden Fensterschnitt separat. Eine bloße
+Intervallvereinigung wäre trotzdem keine vollständige Korrektur: verschiedene
+alternative Ist-/Soll-Zeiten müssen nach Plansicht ausgewählt werden, und die
+zuvor belegte Zyklusunterdrückung muss dazu passen. `NOEXTRA` wird hier bewusst
+berücksichtigt; Zuschlagsintervalle sind deshalb auch unabhängig von diesem
+Fehler kein vollständiger Arbeitszeitnachweis für harte Tages-/Wochenlimits.
+
+API `sp5api/routers/master_data.py` reicht Monats-/Zeitraum- und Tageswerte
+an `/api/v1/extracharges/summary` beziehungsweise `/api/v1/extracharges/by-day`
+weiter; `routers/reports.py` verwendet die Monatsfassade ebenfalls.
+OSP5 `frontend/src/api/client.ts:getExtrachargesByDay` →
+`pages/Berichte.tsx:reportExtrachargesByDay` übernimmt die Tageswerte für
+Druck/CSV, mit Gruppenfilter, aber ohne Plansichtkorrektur.
+Generator `api_adapter.py` und `sp5_adapter.py` rufen diese Zuschlagsfassaden
+nicht auf. Das Ergebnis grenzt die Verlässlichkeit externer Vergleichswerte
+ein, belegt aber weiterhin keinen direkten Generatorfehler und keine Ursache
+des fehlenden Original-600s-Laufs.
+
+Vorhandene Librarytests `test_extracharge_hours_by_day_splits_at_midnight`,
+`test_extracharge_validdays_compact_format_counts_all_days` und
+`test_noextra_shift_yields_no_charge` sichern andere Zuschlagsaspekte;
+die zusätzliche Probe deckt die plansichtübergreifende Doppelzählung ab.
+Keine produktive Library/API geändert, keine privaten Daten verwendet.
