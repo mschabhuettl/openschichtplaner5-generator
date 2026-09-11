@@ -59,6 +59,17 @@ def test_deleted_records_are_legitimately_absent_from_parsed_count():
     assert read_dbf_buffer(synthetic_dbf([b' 0010', b'*0020'])) == [{'ID': 10}]
 
 
+@pytest.mark.parametrize('field_name', [b'MIN', b'MAX', b'WEEKDAY'])
+@pytest.mark.parametrize('raw_value', [b'nope', b'    ', b'   .'])
+def test_invalid_or_empty_numeric_staffing_fields_currently_become_zero(field_name, raw_value):
+    # Reuse the byte fixture, changing only the field descriptor. A valid
+    # zero and malformed numeric source become indistinguishable upstream
+    # of the Library/API/Generator mappings.
+    payload = bytearray(synthetic_dbf([b' ' + raw_value]))
+    payload[32:43] = field_name.ljust(11, b'\0')
+    assert read_dbf_buffer(bytes(payload)) == [{field_name.decode(): 0}]
+
+
 def test_same_size_same_mtime_replacement_keeps_stale_cache(tmp_path):
     import os
 

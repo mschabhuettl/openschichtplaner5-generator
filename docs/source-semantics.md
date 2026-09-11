@@ -3667,3 +3667,25 @@ Dies ist zunächst eine Typvertrags-/Diagnose-Inkonsistenz, kein Beleg für eine
 Überschreitung harter Stundenlimits. Vor einer Verschärfung native DBF-Zahltypen
 und SPDEM prüfen; nicht allein aus der HTTP-Darstellung eine fachliche Grenze
 ableiten. Vorhandene MIN/MAX-Sonderwertsemantik unverändert lassen.
+
+### Numerischer Quellverlust bereits im Library-DBF-Reader
+
+Anschließend anhand des vorhandenen Upstream-Prüfwerkzeugs belegt:
+`tools/test_upstream_source_read_integrity.py` erweitert die bestehende
+synthetische DBF-Bytefixture um neun MIN/MAX/WEEKDAY-Fälle. Die rohe Zahl
+`nope`, ein leeres Feld und `.` werden jeweils zu Ganzzahl 0, wie eine echte
+Null. Alle 16 Reader-Charakterisierungen bestehen gegen den Library-Checkout.
+Quellpfad: `sp5lib.dbf_reader._parse_record_specs`, N/F-Zweig setzt bei leerem
+Inhalt sowie ValueError auf 0; numerische Dezimalwerte werden abhängig von
+Inhalt/Feldpräzision dagegen als float geliefert. Die Library-Methoden
+`get_staffing_requirements` und `get_special_staffing` reichen MIN/MAX durch.
+API-GET und Generator können eine zuvor verlorene Rohzahl nicht rekonstruieren.
+
+Damit kann eine strengere Generator-Typprüfung allein diesen Quellverlust
+nicht erkennen. Null darf nicht pauschal verboten werden: MIN=0/MAX=0 und
+WEEKDAY=0 sind gültige, unterschiedlich bedeutsame Angaben. Ein nachfolgender
+Korrekturschritt muss den bestehenden Reader-Integritätsvertrag und dessen
+strikten Kandidaten prüfen, Fehlerprovenienz erhalten und Library/API gemeinsam
+berücksichtigen. Keine Änderung am produktiven Reader oder API-Bestand in
+diesem Prüfschritt. Keine Behauptung, dass die private Quelle solche Werte
+enthält oder dies den gemeldeten 0.9.29-Plan verursacht hat.
