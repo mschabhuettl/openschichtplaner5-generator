@@ -320,3 +320,33 @@ def test_failed_input_check_does_not_publish_candidate_analysis():
     result = solver.solve(snapshot, 3, partial=True)
     assert result.solver_status == "MODEL_INVALID"
     assert "planning_diagnostics" not in result.metrics
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("missing", ["approval", "team", "kind"])
+def test_fixed_boundary_time_still_requires_assignment_eligibility(partial, missing):
+    """Document why clearing context mapping diagnostics is not a safe fix.
+
+    Known historical time currently uses the assignment contract, not a
+    separate person/time ledger. Even a fully confirmed input cannot bypass
+    its placement checks, including in partial mode.
+    """
+    snapshot = case(1, [shift("boundary", 5, 8, 8), shift("new", 7, 8, 8)])
+    snapshot.period_start = date(2026, 1, 7)
+    snapshot.assignments = [Assignment(employee_id="e0", demand_id="boundary", fixed=True)]
+    if missing == "approval":
+        snapshot.employees[0].approvals[0].valid_from = snapshot.period_start
+    elif missing == "team":
+        snapshot.shifts[0].team_id = "unresolved-source-team"
+    else:
+        snapshot.shifts[0].kind = "unconfirmed"
+    from sp5generator.domain import input_diagnostics
+    assert not input_diagnostics(snapshot)
+    checked = validate(snapshot, plan(snapshot))
+    assert not checked.valid
+    assert any(d.code == missing and d.demand_id == "boundary" for d in checked.diagnostics)
+    result = solver.solve(snapshot, 3, partial=partial)
+    assert result.solver_status == "INFEASIBLE"
+    assert not result.assignments
+    assert any(d.code == "fixed_conflict" and d.demand_id == "boundary"
+               and missing in d.message for d in result.validation.diagnostics)

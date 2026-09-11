@@ -556,3 +556,35 @@ Profil samt 2400-Minuten-Grenze, während eine Person ohne Profil das
 gewählte bestätigte Profil erhält. Tages-/Wochenfelder speichern bereits
 Minuten unverändert; die vorhandenen Browserchecks belegen 720/2400 Minuten.
 Nur das separate Perioden-Soll wird von Stunden in Minuten umgerechnet.
+
+## Randzeit ist derzeit an Besetzungszulässigkeit gekoppelt
+
+`sp5_adapter.import_snapshot` legt bekannte Randzeiten als `Shift` mit
+`source=sp5:existing`, `kind=unconfirmed`, künstlichem `Position` und einem
+`Demand(minimum=1, maximum=1)` samt fixer `Assignment` an. Das erhält die
+Zeitintervalle, ist aber kein unabhängiges personenbezogenes Arbeitszeitkonto.
+Die Gruppen-/Bedarfsdiagnosen sind deshalb nicht der einzige Blocker.
+
+`domain.eligibility` prüft auch diese Einteilungen auf Team, Diensttyp,
+persönliche Freigabe, Beschäftigung, Abwesenheit und Verfügbarkeit.
+`solver.solve` beendet sich bei einer unzulässigen Fixierung mit
+`INFEASIBLE/fixed_conflict`; `validator._validate` prüft dieselbe Zulässigkeit
+vor der Summierung der Arbeitszeiten. `profiles_for` ist hingegen bereits
+personen- und datumsbezogen, nicht teambezogen.
+
+Sechs synthetische Regressionen in
+`test_partial_limits.test_fixed_boundary_time_still_requires_assignment_eligibility`
+belegen für Voll- und Teilplanung: Selbst ohne Eingabediagnosen blockiert ein
+Randdienst wegen fehlender damaliger Freigabe, ungeklärtem Team oder Diensttyp.
+Im Freigabefall ist der neue Dienst ausdrücklich weiterhin freigegeben; nur
+der historische Tag liegt außerhalb der Freigabegültigkeit. Der unabhängige
+Validator benennt den Randbedarf, der Solver liefert keine Einteilungen.
+
+**Priorisierte Korrekturrichtung, noch nicht implementiert:** bestätigte
+personenbezogene Randintervalle getrennt von zu besetzenden Bedarfen abbilden.
+Sie müssen weiterhin zwingend in Überlappung, tägliche/wöchentliche reale
+Minuten, Ruhe und Serien eingehen. Unbekannte Nachtart darf nicht verschwinden;
+Quellvollständigkeit und tatsächliche Zeitabweichungen bleiben eigene
+Bestätigungsfragen. Historie darf keine zukünftige Freigabe erzeugen. Das
+pauschale Löschen von `unresolved`, Umbenennen von `unconfirmed` oder Umgehen
+von `eligibility` für beliebige Fixierungen ist kein geeigneter Fix.
