@@ -9,7 +9,7 @@ Abnahme aller Originaltabellen. Keine realen Datensätze sind enthalten.
 
 ## Aktueller Korrekturstand gegenüber 0.9.29
 
-Konsolidierter Code-/Teststand: `7f05dee` (11.09.2026). Die nachfolgenden
+Konsolidierter Code-/Teststand: `9581f28` (11.09.2026). Die nachfolgenden
 Detailabschnitte dokumentieren auch **historische** Fehlerzustände; offene
 Formulierungen dort sind nicht automatisch offene Fehler im aktuellen Code.
 Diese Übersicht ist keine Release- oder Echtdatenfreigabe.
@@ -37,19 +37,26 @@ Diese Übersicht ist keine Release- oder Echtdatenfreigabe.
 - Mehrdeutige Team-/Arbeitsplatzzuordnung echter Referenzen bleibt sichtbar:
   Quellmitgliedschaft ist kein eindeutiger Einsatzteamnachweis. Die Korrekturen
   erfinden keine Bedarfe, Freigaben oder Zuordnungen.
-- Die letzte private Abnahme des veröffentlichten Runtime-Stands `b5617f9`
-  belegt Import/Speicherung, nicht erfolgreiche Neuplanung: beide Plansichten
-  bleiben wegen fehlender Einrichtung MODEL_INVALID, ohne generierte
-  Einteilungen. Kein unabhängig gültiger realer Vergleichsplan liegt vor.
+- Die private Abnahme des veröffentlichten Stands 0.9.30 (`56cf7cf`) sowie
+  die spätere Abnahme mit vollständigem Runtime-Overlay `9581f28` belegen
+  Import/Speicherung, nicht erfolgreiche Neuplanung: beide Plansichten bleiben
+  wegen fehlender Einrichtung MODEL_INVALID, ohne generierte Einteilungen.
+  Das Overlay ist kein veröffentlichtes Image. Kein unabhängig gültiger realer
+  Vergleichsplan liegt vor.
 
 ### Geschlossener Korrekturumfang und verbleibende Gates
 
 Die drei zusammengehörigen Sicherheitsbereiche sind Profilzuordnung,
 Zeitgrenzen einschließlich Randarbeit sowie Ist-Sonderersetzung. Die obigen
 Tests decken ihre Einzelverträge und den HTTP-Import bis Teilplan/Validator ab.
-Lokaler Gesamttest am Stand `7f05dee`: 663 bestanden, zwei bekannte
-Deprecation-Warnungen. Der CI-Stand ist separat zu prüfen; ein lokaler
-Python-Test ersetzt Paket-, Browser- und Container-Gates nicht.
+Die vollständige [CI für `9581f28`](https://github.com/mschabhuettl/openschichtplaner5-generator/actions/runs/34603999074)
+ist erfolgreich abgeschlossen. Die vollständige lokale Suite am selben
+Runtime-Stand besteht mit 753 Tests (zwei bekannte Deprecation-Warnungen).
+Ein lokaler Python-Test ersetzt Paket-,
+Browser- und Container-Gates nicht. Seit 0.9.30 sind zusätzlich datierte
+Istbuchungs-/Abwesenheitsnachweise (ohne automatische Anrechnung), vollständige
+Tages-/Wochendiagnosen und bestätigte Profilabdeckung für tatsächlichen
+Dienstüberhang umgesetzt; die Detailabschnitte unten belegen diese Änderungen.
 
 Vor einer Freigabe dieses gesamten Umfangs: abschließende CI des ausgewählten
 Commits prüfen, erforderliche veröffentlichte Docker-Abnahme privat und lesend
@@ -1415,3 +1422,50 @@ fehlendes/unbestätigtes/bestätigtes Folgeprofil sowie Dienstende exakt um
 Mitternacht gegenüber tatsächlicher Arbeit am Folgetag. Für ein Ende um 00 Uhr
 wird kein Profil für den nicht gearbeiteten Folgetag verlangt. Vier ursprüngliche
 Gegenproben schlugen vor der Korrektur wegen fälschlich gültiger Validierung fehl.
+
+
+### API-Ruheprüfung ist bei Nullabstand und Überlappung kein Abnahmenachweis
+
+Weiterer konkreter Quellenbefund am unveränderten API-Stand `d578f21`:
+`routers/work_time_rules.py:_check_employee` meldet tägliche Ruhe ausschließlich
+bei `0 < rest_hours < min_rest`. Bei direkt anschließenden Diensten (0 Minuten)
+oder überlappenden Diensten (negativer Abstand) entsteht dort **keine**
+Ruheverletzung; eine gesonderte Überlappungsprüfung enthält die Funktion nicht.
+Andere Grenzen können trotzdem Meldungen auslösen. Eine leere Meldungsliste
+ist deshalb kein Nachweis gültiger Ruhe oder überschneidungsfreier Einteilung.
+
+Der zusammenhängende Pfad ist `MASHI/CYASS/SPSHI` → API `_employee_plan` →
+`_collect_day_data` (Library `calculations.parse_startend` für Zeitfenster,
+`shift_hours_on_day` für getrennte Stundenbewertung) → `_check_employee` →
+OSP5 `frontend/src/pages/WorkTimeRules.tsx` (Aufruf `api.checkWorkTimeRules`)
+→ `ViolationList`.
+Die Anzeige verwendet die zurückgegebenen Verletzungen und zeigt bei einer
+leeren Liste „Keine Verstöße gefunden“; sie prüft die Intervalle nicht erneut.
+Der Generator übernimmt diese Prüfantwort nicht als Zertifikat:
+`domain.pair_conflict` prüft Überschneidung und Ruhe, und wird von
+`solver.solve` und `validator.validate` verwendet.
+
+Synthetische isolierte Gegenprobe am 11.09.2026: Originalfunktion
+`_check_employee` per AST unverändert aus dem lokalen Checkout geladen, nur
+`_collect_day_data` durch zwei künstliche Vierstundenblöcke ersetzt. Keine
+API-Verbindung und keine Personaldaten. Start des ersten Dienstes 07.09.2026
+08:00 UTC, zweiter Dienst jeweils nach untenstehendem Abstand. Tages-/Wochen-
+und Seriengrenzen für diese isolierte Ruheprobe auf 100h/100h/365 gesetzt;
+11h tägliche Ruhe. Generatorfixture `tests/test_calendar_limits.py:sample`
+mit denselben Intervallen und 660 Minuten Mindestruhe verwendet.
+
+| Abstand zum Dienstende | API-Ruheverletzungen | Generator: beide Einteilungen gültig | Vollplan | Teilplan |
+| --- | --- | --- | --- | --- |
+| −60 Minuten | keine | nein, Überschneidung | INFEASIBLE | ein Dienst, gültig |
+| 0 Minuten | keine | nein, Ruhe | INFEASIBLE | ein Dienst, gültig |
+| 60 Minuten | eine | nein, Ruhe | INFEASIBLE | ein Dienst, gültig |
+| 660 Minuten | keine | ja | OPTIMAL | beide Dienste, gültig |
+
+Die bestehenden API-Tests `test_min_rest_violation` und
+`test_sufficient_rest_no_violation` prüfen positive 3h beziehungsweise 16h
+Abstände; sie belegen nicht die Null-/Negativfälle. Diese Gegenprobe isoliert
+nur die Prüfentscheidung, nicht den vollständigen API-Transport oder das
+Mapping. Es wurde kein Generatorfehler in diesen vier Fällen gefunden und
+keine produktive API oder OSP5-Installation verändert. Die API-Lücke ist als
+separater Korrekturpunkt vorgemerkt; sie beweist nicht die Ursache des originalen
+0.9.29-Laufs. Die unabhängige Generatorprüfung bleibt für die Abnahme notwendig.
