@@ -1792,3 +1792,40 @@ Sollzeilen als nachträglichen Override nicht verhindern. Dies ist zunächst ein
 Codebefund, noch keine hier ausgeführte Tages-/Wochen-Reproduktion. Vor
 Produktivintegration diese Ansichten mit unterschiedlichen Ist-/Soll-Diensten
 und umgekehrter Quellreihenfolge gegen die Monatsansicht abgleichen.
+
+### Tages-/Wochenansichten: Quellreihenfolge reproduziert
+
+`tools/audit_upstream_schedule_views.py` prüft die echten Library-Fassaden
+mit rein synthetischen, unterschiedlichen Ist-/Soll-Diensten. Vier Eingaben
+(Ist, Soll, Ist→Soll, Soll→Ist), **20 Assertions bestanden**. Bei beiden
+Planarten bleibt die Monatsansicht in `get_schedule(plan="ist"/"soll")`
+korrekt getrennt. Tages- und Wochenansicht wählen dagegen jeweils die letzte
+MASHI-Zeile: bloßes Umkehren der Quellreihenfolge ändert den sichtbaren Dienst.
+Dies ist eine Fehlercharakterisierung, kein Sollverhaltenstest.
+
+Datenfluss und Reichweite:
+
+- Library `database.py:get_schedule_day/get_schedule_week`: ungefilterter
+  MASHI-Override in ein Dictionary pro Person/Datum, ohne Planargument.
+- API `routers/schedule.py:get_schedule_day/get_schedule_week`: delegiert an
+  diese Methoden; nachgelagerter Abwesenheitsfilter trennt keine Planarten.
+- OSP5 `api/client.ts:getScheduleDay/getScheduleWeek`: kein Planparameter;
+  Nutzer unter anderem `Einsatzplan.tsx`, `DienstBoard.tsx`,
+  `TeamUebersicht.tsx` und `Wochenansicht.tsx`.
+- Generator `sp5_adapter.py:_scope_schedule` (Aufruf von `get_schedule`)
+  und `api_adapter.py:get_schedule` verwenden den Monatsweg. Der neue Befund
+  beweist daher **keinen Generator-Importfehler und keine Ursache des
+  600s-Teilplans**. Er erklärt, warum ein visueller OSP5-Tages-/Wochenvergleich
+  nicht ohne explizite Plansicht als Referenz für den Generator gelten darf.
+
+```sh
+PYTHONPATH=/home/hilbert/projects/libopenschichtplaner5 .venv/bin/python tools/audit_upstream_schedule_views.py
+```
+
+Priorisierte zusammenhängende Korrekturentscheidung: zuerst einen expliziten
+Planvertrag für Library-Tages-/Wochenfassaden, API-Parameter und OSP5-Aufrufer
+vorsehen; nicht nur die MASHI-Reihenfolge sortieren. `both` benötigt eine
+Darstellung mehrerer Einträge statt eines verlustbehafteten Person/Datum-
+Dictionaries. Danach Stundenprüfung und Referenzvergleich an denselben
+Vertrag binden. Bisherige Ist-only-Stundenkandidaten bleiben experimentell.
+Keine Änderungen an Originalcheckouts, produktiver API oder Benutzerinstallation.
