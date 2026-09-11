@@ -4247,3 +4247,36 @@ source mutation or Generator runtime change is involved. The exact 0.9.29
 project/job/result is still unavailable, so this is not a causal reproduction of
 the reported 600-second result. Next investigate date/weekday source integrity
 and its effect on selected-period demand, without inferring missing demand.
+
+### Temporal descriptors: OSP5 filtering differs from Generator import (2026-09-11)
+
+`tools/test_upstream_staffing_source_contract.py::test_missing_staffing_temporal_descriptor`
+now exercises synthetic SHDEM/SPDEM with valid counts and all three identity
+descriptors, but missing WEEKDAY/DATE. The current identity/count contract accepts
+these files. Library `get_staffing_requirements` emits `weekday=None`;
+`get_special_staffing` emits `date=""`. Both API routes return HTTP 200, and team
+filtering alone preserves the malformed rows. An SPDEM request with
+`date=2026-09-01` instead returns an empty list because Library filters before
+mapping. This is a source-integrity gap, not proof that any real table is malformed.
+
+The downstream distinction matters:
+
+* OSP5 `frontend/src/pages/Personalbedarf.tsx`, special-staffing `load`, passes
+  `filterDate` to `api.getSpecialStaffing`; `frontend/src/api/client.ts` forwards
+  it as the API date query. The filtered view can hide the malformed source row.
+* Generator `api_adapter._Database.get_special_staffing` sends **only group_id**.
+  `sp5_adapter.import_snapshot` checks the returned special row with `calc.to_date`
+  before period filtering and records `SPDEM: Ungültiges Datum.`. Its regular
+  demand mapping also rejects non-integer/out-of-range weekdays. Therefore this
+  missing-DATE example does **not** demonstrate silent demand loss in Generator.
+* Reusing `read_dbf(required_fields=...)` with DATE/WEEKDAY rejects missing
+  descriptors as categorized HTTP 500 `structure` before filtering. The paired
+  test verifies this mechanism; the activation patch is not yet expanded.
+
+Source-contract suite: **175 passed**, two existing dependency warnings. Initial
+invocation via the pytest executable failed collection (`tools` not importable);
+the repository-root `python -m pytest` invocation passes. Next: verify temporal
+descriptor types/values and valid empty/deleted tables before extending activation.
+Do not conflate a required descriptor with a valid date or weekday value. No
+runtime or release changed, so the unchanged private API baseline was not rerun.
+The original 0.9.29 project/job/result remains necessary for causal reproduction.

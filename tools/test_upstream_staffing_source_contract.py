@@ -293,6 +293,44 @@ def staffing_columns(fields, records=()):
 
 
 @pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('require_temporal', [False, True])
+def test_missing_staffing_temporal_descriptor(
+        source, client, monkeypatch, table, url, method, require_temporal):
+    """Missing DATE is hidden by date filtering, not by Generator's team-only GET."""
+    db, reader, path = source
+    fields = ('MIN', 'MAX', 'GROUPID', 'SHIFTID', 'WORKPLACID')
+    temporal = 'DATE' if table == 'SPDEM' else 'WEEKDAY'
+    (path / f'5{table}.DBF').write_bytes(
+        staffing_columns(fields, [b' ' + b'0001' * len(fields)]))
+    original_read = db._read
+
+    def read(name):
+        if name == table:
+            return reader.read_dbf(
+                db._table(name), strict=True, numeric_fields=('MIN', 'MAX'),
+                required_fields=fields[2:] + ((temporal,) if require_temporal else ()))
+        return original_read(name)
+
+    monkeypatch.setattr(db, '_read', read)
+    http, sanitized = client
+    queries = ('', '?group_id=1', '?group_id=1&date=2026-09-01')
+    responses = [http.get(url + query) for query in queries]
+    if require_temporal:
+        for response in responses:
+            assert response.status_code == 500
+            assert_source_error(response, 'structure')
+    else:
+        assert all(response.status_code == 200 for response in responses)
+        rows = [(response.json()['shift_requirements'] if table == 'SHDEM'
+                 else response.json()) for response in responses]
+        assert len(rows[0]) == len(rows[1]) == 1
+        assert rows[0] == rows[1]
+        assert rows[0][0][temporal.lower()] == ('' if table == 'SPDEM' else None)
+        assert rows[2] == ([] if table == 'SPDEM' else rows[0])
+    assert sanitized == []
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
 @pytest.mark.parametrize('require_identity', [False, True])
 @pytest.mark.parametrize('missing,output', [('GROUPID', 'group_id'),
                                            ('SHIFTID', 'shift_id'),
