@@ -2330,3 +2330,52 @@ Zone/Fold → UTC-Dauer → lokale Tages-/ISO-Wochenteilung mit Randkontext. Ers
 nach belegter Umsetzung dürfen entsprechende Unvollständigkeitsgründe entfallen.
 Der fehlende Original-0.9.29-600s-Job ist weiterhin nicht reproduziert. Unveränderte
 veröffentlichte 0.9.31 nicht erneut ohne neue Laufzeitänderung realgetestet.
+
+### Effektive Segmente: vorhandene Zuschlagsfunktion nicht als Prüforakel verwenden
+
+Weitere acht synthetische Charakterisierungen in
+`tools/test_upstream_effective_segments.py` grenzen den nächsten Korrekturschritt ab:
+
+- Library `calculations.daily_work_intervals` ist laut Implementierung ein
+  **Anrechnungs-Schnitt für Zuschläge**, kein vollständiger Arbeitszeitnachweis.
+  Sie entfernt `SHIFT.NOEXTRA`, bei ersetzendem SPSHI das NOEXTRA der referenzierten
+  Schicht und bei additivem SPSHI dessen eigenes NOEXTRA. In allen drei Tests
+  verbleiben acht Stunden in `get_work_hours`, während die Intervallliste leer
+  ist. Eine ungeprüfte Wiederverwendung würde reale Dienste verschwinden lassen.
+  Bestehende Library-Tests `test_calculations.py` und
+  `test_facade_write_roundtrip.py` behandeln NOEXTRA bereits als Zuschlagsoption.
+- API `work_time_rules._collect_day_data._add_block` verdichtet mehrere
+  STARTEND-Fenster zu einer Hülle: 08–12 und 16–20 werden 08–20. Acht bezahlte
+  Stunden, acht lokale Segmentstunden und zwölf Stunden Dienstspanne sind hier
+  drei getrennte Größen. Der Ersatz von DURATION durch Hüllendauer wäre deshalb
+  **keine korrekte Reparatur** der belegten 24h/8h-Lücke. Die Library erhält die
+  beiden Fenster, jedoch mit der oben beschriebenen Zuschlagsfilterung.
+- Die API-Hilfsfunktion liest ABSEN überhaupt nicht: ganztägige, vormittägliche,
+  nachmittägliche und stundenweise Einträge ändern dieselbe Dienstliste nicht.
+  Library `database.get_schedule` liefert Dienst und Abwesenheit nebeneinander;
+  OSP5 `Schedule.tsx` verarbeitet diese als getrennte Eintragsarten. Generator
+  `sp5_adapter.import_snapshot` verwendet Abwesenheiten als Verfügbarkeitssperren
+  und getrennte Herkunft/Anrechnung (siehe oben). Daraus folgt weder, dass ein
+  bestehender Ist-Dienst tatsächlich gearbeitet wurde, noch eine Erlaubnis,
+  Abwesenheiten pauschal von Arbeitssegmenten abzuziehen. Diese fachliche
+  Auflösung bleibt ausdrücklich offen.
+
+Priorisierte Umsetzung: Quellenauswahl und Ersatzregel erhalten, Arbeit und
+Zuschlagsberechtigung trennen, ursprüngliche Segmente plus Dienstidentität
+bewahren; erst anschließend Zone/UTC-Dauer/Kalenderteilung berechnen. Keine
+neue Intervallbibliothek nötig: Parser und bestehende Generator-Zeitfunktionen
+sind vorhanden. NOEXTRA darf keine Arbeit entfernen; eine Hülle darf nicht
+als Arbeitsdauer summiert werden. Abwesenheitskonflikte brauchen eine sichtbare
+ungeklärte Bewertung, keine erfundene Löschregel.
+
+Nachweis (Originalcheckouts, keine API-Verbindung/Originaldaten):
+
+```sh
+SP5_WORK_TIME_ROUTER=../openschichtplaner5-api/sp5api/routers/work_time_rules.py \
+PYTHONPATH=.:tests:../libopenschichtplaner5 .venv/bin/pytest -q \
+  tools/test_upstream_effective_segments.py tools/test_upstream_work_time_boundaries.py \
+  tests/test_partial_limits.py tests/test_calendar_limits.py tests/test_spill_rest.py
+```
+
+**147 passed**, davon acht neue Charakterisierungen. Keine Runtimeänderung,
+kein Release, kein Nachweis der Originalursache des fehlenden 600s-Jobs.
