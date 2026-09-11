@@ -3210,3 +3210,45 @@ veralteten privaten Imports. Warten auf TTL würde weiterhin keine Atomarität
 herstellen. Verifikation: 201 API-/Teilplan-/Kalenderlimit-Tests, drei Cachefälle,
 Ruff und `git diff --check` bestanden. Nur Analyse-/Teständerungen, kein Release;
 unveränderte private Dockerabnahme nicht wiederholt.
+
+### Datierte Kalenderwochenruhe: direkte Modellierung und Nachprüfung
+
+Neuer synthetischer Befund 2026-09-11, `tests/test_dated_calendar_rest.py`:
+Planungszeitraum nur Montag, optionaler Dienst Montag 16–24 Uhr; fester
+Randkontext Mittwoch 08–16, Freitag 00–16 und Sonntag 00–08 Uhr. Zugeordnetes,
+bestätigtes Wochenruheprofil gilt nur Samstag derselben Woche: 36h Kalenderruhe,
+11h tägliche Ruhe, keine zusätzlichen Stundenmaxima. Mit Montag beträgt die
+längste Wochenruhe 32h, ohne Montag 56h; die tägliche Ruhe ist nicht verletzt.
+
+- `validator.weekly_windows` erzeugt die Planungs-Kalenderwoche;
+  `validator.validate` prüft das Profil, wenn seine Gültigkeit das Wochenfenster
+  überlappt. Deshalb lehnt er den Montagdienst ab.
+- `solver.solve` bildet `active_weeks` dagegen aus Profiltagen **innerhalb des
+  Planungszeitraums**; ohne Überhang aktiviert das Samstagprofil keine direkte
+  Wochenruheklausel. Der erste Modellkandidat verletzt daher die Wochenruhe.
+- Die bestehende unabhängige Nachprüfung erkennt dies und schließt die Auswahl
+  aus. Ergebnis: gültiger optimaler Teilplan mit drei unveränderten Fixdiensten,
+  Montag offen, genau eine `separation_rounds`-Runde. Ein Montagprofil braucht
+  keine solche Runde; ein nicht zugeordnetes Profil wirkt in beiden Fällen nicht.
+- Eine fünfte Regression erzwingt `UNKNOWN` nach dem verworfenen Kandidaten:
+  Es werden **keine Einteilungen** ausgegeben und `validation.valid` bleibt falsch.
+  Das ist ein kontrollierter Status-Test, kein echter 600-Sekunden-Lauf.
+
+Damit ist eine konkrete Lücke in der direkten Modellabdeckung belegt, **kein
+Durchlassen eines ungültigen Ergebnisses**. Sie kann zusätzliche Suchrunden
+verursachen; ein Einfluss auf Laufzeit oder Ursache des Originaljobs ist nicht
+gemessen. Priorisierte Korrektur: direkte Kalenderwochenruheklauseln auf denselben
+datumsbezogenen Fensterumfang wie den bestehenden Validator ausrichten und die
+bedingte Überhangaktivierung erhalten. Nicht die Nachprüfung abschwächen und
+nicht diese Wochenfenstersemantik pauschal auf Tages-/Stundenlimits übertragen.
+
+Einordnung im zusammenhängenden Quellenbefund: Library/API liefern bisher keinen
+übernommenen autoritativen datierten persönlichen Ruheprofilvertrag; Generator-
+Profile und Freigaben bleiben explizite Einrichtung. Dieser Test verwendet bewusst
+ein synthetisch bestätigtes Profil, keine abgeleitete Ist-Historienfreigabe. Die
+bereits belegten 0.9.29-Stunden-/Überhangfehler, fehlenden Originaljob-Artefakte und
+der private `MODEL_INVALID`-Einrichtungsblocker bleiben davon getrennt.
+
+Prüfung: 167 Tests (`test_dated_calendar_rest`, `test_partial_limits`,
+`test_spill_rest`, `test_core_rules`) bestanden; Ruff grün. Nur Tests/Analyse,
+keine Runtimeänderung, kein Release und kein erneuter identischer Dockerabnahmelauf.
