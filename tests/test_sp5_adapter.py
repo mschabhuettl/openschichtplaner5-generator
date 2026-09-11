@@ -616,3 +616,29 @@ def test_empty_soll_reference_does_not_fall_back_to_ist_or_accept_both():
     assert len(snapshot.demands) == 1
     with pytest.raises(ValueError, match='Referenzplansicht'):
         import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC', reference_plan='both')
+
+
+@pytest.mark.parametrize('reason', ['missing_demand', 'team_mismatch', 'workplace_mismatch', 'zero_capacity', 'ambiguous'])
+def test_reference_reason_explains_first_failed_filter_without_creating_demand(reason):
+    class Source(ExistingPlanDatabase):
+        def get_staffing_requirements(self):
+            row = super().get_staffing_requirements()['shift_requirements'][0]
+            if reason == 'missing_demand':
+                return {'shift_requirements': []}
+            if reason == 'zero_capacity':
+                row = {**row, 'min': 0, 'max': 0}
+            return {'shift_requirements': [row, {**row, 'id': 402}] if reason == 'ambiguous' else [row]}
+
+        def get_schedule(self, year, month, **kw):
+            return [{**row, **({'group_id': 2} if reason == 'team_mismatch' else {}),
+                     **({'workplace_id': 999} if reason == 'workplace_mismatch' else {})}
+                    for row in super().get_schedule(year, month, **kw)]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC')
+    reference = snapshot.metadata['reference_schedule'][0]
+    assert reference['resolution_reason'] == reason
+    assert reference['resolution'] == ('ambiguous' if reason == 'ambiguous' else 'unmatched')
+    assert len(reference['candidate_demand_ids']) == (2 if reason == 'ambiguous' else 0)
+    assert not snapshot.assignments and not snapshot.employees[0].approvals
+    assert snapshot.metadata['unresolved_native']['reference_schedule'][0] == reference
+    assert len(snapshot.demands) == (0 if reason == 'missing_demand' else 2 if reason == 'ambiguous' else 1)

@@ -460,16 +460,18 @@ def import_snapshot(
                     if explicit_group not in (None, 0, "", "0"):
                         member_teams &= {f"sp5:group:{explicit_group}"}
                     wid = row.get("workplace_id")
-                    candidates = [
+                    date_service_candidates = [
                         demand for demand in demands
                         if demand.source in ("sp5:SHDEM", "sp5:SPDEM")
                         and shifts[demand.shift_id].segments[0].start.date() == d
-                        and shifts[demand.shift_id].team_id in member_teams
                         and positions[demand.position_id].function_id == f"sp5:service:{row['shift_id']}"
-                        and (wid in (None, "") or positions[demand.position_id].workplace_id
-                             in {f"sp5:workplace:{wid}", "sp5:workplace:0"})
-                        and demand.maximum != 0
                     ]
+                    team_candidates = [demand for demand in date_service_candidates
+                                       if shifts[demand.shift_id].team_id in member_teams]
+                    workplace_candidates = [demand for demand in team_candidates
+                                            if wid in (None, "") or positions[demand.position_id].workplace_id
+                                            in {f"sp5:workplace:{wid}", "sp5:workplace:0"}]
+                    candidates = [demand for demand in workplace_candidates if demand.maximum != 0]
                     reference = {**safe, "candidate_demand_ids": [v.id for v in candidates]}
                     metadata["reference_schedule"].append(reference)
                     if len(candidates) == 1:
@@ -482,6 +484,12 @@ def import_snapshot(
                             assignments.append(assignment)
                     else:
                         reference["resolution"] = "unmatched" if not candidates else "ambiguous"
+                        reference["resolution_reason"] = (
+                            "missing_demand" if not date_service_candidates else
+                            "team_mismatch" if not team_candidates else
+                            "workplace_mismatch" if not workplace_candidates else
+                            "zero_capacity" if not candidates else "ambiguous"
+                        )
                         metadata["unresolved_native"].setdefault("reference_schedule", []).append(reference)
                         unresolved.append(
                             f"Bestehender Dienst {eid} {d}: keine eindeutige Zuordnung zum tatsächlichen Besetzungsbedarf."

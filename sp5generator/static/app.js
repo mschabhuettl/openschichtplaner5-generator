@@ -293,6 +293,7 @@ function renderReferenceImport(){
  if(snapshot.metadata.context_plan==='ist')el('p','Normale Vergleichsdienste aus der gewählten Plansicht. Abwesenheiten, Sonderdienste und Randkontext bleiben aus dem Istplan.',box).className='helper-text';
  el('p','Importstand, keine aktuelle Planprüfung: Die historische Planbasis betrifft frühere Einsätze und ändert diese Referenz nicht. Nur eindeutig zugeordnete Dienste wurden als Einteilungen übernommen.',box).className='helper-text';
  const status=row=>row&&typeof row==='object'?(typeof row.demand_id==='string'&&row.demand_id?'matched':row.resolution==='unmatched'?'unmatched':row.resolution==='ambiguous'?'ambiguous':'unknown'):'unknown';
+ const reasons={missing_demand:'Kein Bedarf für dieses Datum und diesen Dienst.',team_mismatch:'Kein passender Bedarf im zugeordneten Team.',workplace_mismatch:'Kein passender Bedarf für diesen Arbeitsplatz.',zero_capacity:'Passender Bedarf hat überall Maximum 0.',ambiguous:'Mehrere passende Bedarfsgruppen; Zuordnung fachlich klären.'};
  const labels={matched:'Eindeutig zugeordnet',unmatched:'Ohne Zuordnung',ambiguous:'Mehrdeutig',unknown:'Zuordnung nicht dokumentiert'};
  const counts={matched:0,unmatched:0,ambiguous:0,unknown:0};for(const row of rows)counts[status(row)]++;
  const list=el('ul',undefined,box);for(const [key,count] of Object.entries(counts))if(key!=='unknown'||count)el('li',`${labels[key]}: ${count}`,list);
@@ -303,13 +304,20 @@ function renderReferenceImport(){
  el('p','Danach Regelprofile und offene Importangaben fachlich bearbeiten. Unter Berechnen zeigt die automatische Vorprüfung den aktuellen Eingabestand; erst die Berechnung und Ergebnisprüfung belegen einen gültigen Plan.',box).className='helper-text';
  if(!rows.length)return;
  const details=el('details',undefined,box);el('summary','Vergleichsdienste einzeln ansehen',details);
+ const state=pageState('referenceImport',10),filter=el('div',undefined,details);filter.className='details-content';
  const content=el('div',undefined,details);content.className='details-content';
- const render=()=>{const view=collection(content,'referenceImport',rows,{size:10,label:'Vergleichsdienste',redraw:render});
+ const filterLabel=el('label','Zuordnung filtern',filter);filterLabel.htmlFor='referenceResolutionFilter';
+ const filterSelect=el('select',undefined,filter);filterSelect.id='referenceResolutionFilter';
+ for(const [value,label] of [['all','Alle Vergleichsdienste'],['unmatched','Ohne Zuordnung'],['ambiguous','Mehrdeutig'],['matched','Eindeutig zugeordnet'],['unknown','Nicht dokumentiert']])el('option',label,filterSelect).value=value;
+ filterSelect.value=state.filter??'all';filterSelect.onchange=()=>{state.filter=filterSelect.value;state.page=0;render();};
+ const render=()=>{const filtered=rows.filter(row=>!state.filter||state.filter==='all'||status(row)===state.filter);
+  const view=collection(content,'referenceImport',filtered,{size:10,label:'Vergleichsdienste',redraw:render});
   for(const row of view.items){const item=el('div',undefined,view.content);item.className='card';
    const person=dataIndex().employees.get(`sp5:employee:${row?.employee_id}`);
    const service=(snapshot.metadata.services??[]).find(service=>service.function_id===`sp5:service:${row?.shift_id}`);
    el('strong',`${row?.date??'Datum unbekannt'} · ${person?.name??'Person nicht zugeordnet'} · ${service?.name??'Dienst nicht zugeordnet'}`,item);
    el('p',labels[status(row)],item);
+   if(status(row)!=='matched')el('p',reasons[row?.resolution_reason]??'Konkrete Ursache im Import nicht dokumentiert. Datum, Dienst, Team, Arbeitsplatz und Bedarf fachlich prüfen.',item);
   }
  };
  details.addEventListener('toggle',()=>{if(details.open)render();});

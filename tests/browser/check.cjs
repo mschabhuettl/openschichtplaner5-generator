@@ -93,7 +93,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.match(await page.locator('#referenceImport').innerText(),/Istplan/);
     assert.match(await page.locator('#referenceImport').innerText(),/0 Vergleichsdienste/);
     const referenceFixture=structuredClone(snapshot);
-    referenceFixture.metadata.reference_schedule=Array.from({length:13},(_,i)=>({employee_id:101,date:'2026-02-02',shift_id:201,...(i===0?{demand_id:snapshot.demands[0].id}:i===1?{resolution:'ambiguous'}:{resolution:'unmatched'})}));
+    referenceFixture.metadata.reference_schedule=Array.from({length:13},(_,i)=>({employee_id:101,date:'2026-02-02',shift_id:201,...(i===0?{demand_id:snapshot.demands[0].id}:i===1?{resolution:'ambiguous',resolution_reason:'ambiguous'}:{resolution:'unmatched',...(i%3===0?{resolution_reason:'zero_capacity'}:i%3===2?{resolution_reason:'missing_demand'}:{})})}));
     const referencePath=path.join(state,'reference-overview.json');
     const originalPath=path.join(state,'reference-original.json');
     fs.writeFileSync(referencePath,JSON.stringify(referenceFixture));fs.writeFileSync(originalPath,JSON.stringify(snapshot));
@@ -113,6 +113,31 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.match(await referenceBox.locator('.card').first().innerText(),/Testperson 001.*Dienst A/);
     await referenceBox.getByRole('button',{name:'Vergleichsdienste: nächste Seite',exact:true}).click();
     assert.equal(await referenceBox.locator('.card').count(),3);
+    const unfilteredState=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())}));
+    const referenceFilter=referenceBox.getByLabel('Zuordnung filtern',{exact:true});
+    await referenceFilter.selectOption('unmatched');
+    assert.equal(await referenceBox.locator('.card').count(),10,'Changing filters returns to page one');
+    assert.match(await referenceBox.innerText(),/Kein Bedarf für dieses Datum und diesen Dienst/);
+    assert.match(await referenceBox.innerText(),/Passender Bedarf hat überall Maximum 0/);
+    assert.match(await referenceBox.innerText(),/Konkrete Ursache im Import nicht dokumentiert/);
+    await referenceBox.getByRole('button',{name:'Vergleichsdienste: nächste Seite',exact:true}).click();
+    assert.equal(await referenceBox.locator('.card').count(),1);
+    await referenceFilter.selectOption('ambiguous');
+    assert.equal(await referenceBox.locator('.card').count(),1);
+    assert.match(await referenceBox.innerText(),/Mehrere passende Bedarfsgruppen/);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      if(process.env.WEB_TEST_SCREENSHOT_DIR)await referenceBox.locator('details').screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`reference-reason-${width}.png`)});
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    }
+    await referenceFilter.selectOption('unknown');
+    assert.equal(await referenceBox.locator('.card').count(),0);
+    await referenceFilter.selectOption('matched');
+    assert.equal(await referenceBox.locator('.card').count(),1);
+    assert.doesNotMatch(await referenceBox.locator('.card').innerText(),/Ursache/);
+    await referenceFilter.selectOption('all');
+    assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())})),unfilteredState,'Read-only filtering never invalidates results or changes the project');
+
     const untouched=await page.evaluate(()=>JSON.stringify(currentSnapshot()));
     await referenceBox.getByRole('button',{name:'Team & Freigaben prüfen',exact:true}).click();
     assert.equal(await page.locator('#teamTitle').evaluate(e=>document.activeElement===e),true);
@@ -130,6 +155,13 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await reveal('#referencePlan');
     assert.equal(await page.locator('#referencePlan').inputValue(),'ist');
     await page.selectOption('#referencePlan','soll');
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});await page.locator('#referencePlan').scrollIntoViewIfNeeded();
+      if(process.env.WEB_TEST_SCREENSHOT_DIR)await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`reference-selection-${width}.png`)});
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    }
+    await page.setViewportSize({width:1440,height:1000});
+
     assert.equal(await page.locator('#historyPlan').inputValue(),'ist');
     assert.match(await page.locator('#referencePlanHelp').innerText(),/Abwesenheiten, Sonderdienste und Randkontext bleiben aus dem Istplan/);
     const sollImported=page.waitForResponse(r=>r.url().endsWith('/api/remote-import')&&r.request().method()==='POST');
