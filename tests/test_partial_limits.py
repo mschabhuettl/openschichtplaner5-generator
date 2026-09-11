@@ -678,3 +678,45 @@ def test_objective_and_bound_remain_in_their_search_phase(monkeypatch, partial, 
             assert result.objective_value == result.best_bound == 0
         else:
             assert result.objective_value is None and result.best_bound is None
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("constraint,code", [
+    ("weekly", "weekly_limit"), ("rest", "rest"), ("overlap", "overlap"),
+])
+def test_individual_candidates_do_not_claim_joint_feasibility(partial, constraint, code):
+    """An eligible person can be blocked by immutable personal work context."""
+    from sp5generator.domain import eligibility
+    from sp5generator.models import BoundaryWork
+
+    snapshot = case(2, [shift("new", 7, 8, 8)])
+    snapshot.period_start = date(2026, 1, 7)
+    profile = snapshot.profiles[0]
+    profile.min_rest_minutes = 660
+    profile.weekly_rest_minutes = 2160
+    if constraint == "weekly":
+        previous = shift("context", 5, 8, 8)
+        profile.max_weekly_minutes = 480
+    elif constraint == "rest":
+        previous = shift("context", 6, 22, 8)
+    else:
+        previous = shift("context", 6, 22, 12)
+    snapshot.boundary_work = [BoundaryWork(
+        id="context", employee_id="e0", segments=previous.segments, kind="day",
+    )]
+    assert eligibility(snapshot, snapshot.employees[0], snapshot.demands[0]) == []
+    counterfactual = validate(snapshot, [Assignment(employee_id="e0", demand_id="new")])
+    assert not counterfactual.valid
+    assert code in {d.code for d in counterfactual.diagnostics}
+
+    result = solver.solve(snapshot, 3, partial=partial)
+    assert result.solver_status == "OPTIMAL" and result.validation.complete
+    assert [(a.employee_id, a.demand_id) for a in result.assignments] == [("e1", "new")]
+    assert validate(snapshot, result.assignments).valid
+    diagnostics = result.metrics["planning_diagnostics"]
+    assert "not a joint feasibility" in diagnostics["semantics"]
+    assert diagnostics["employees"]["e0"] == {
+        "positive_capacity_demands": 1, "eligible_demands": 1,
+        "eligible_required_demands": 1, "exclusions": {},
+        "assigned_demands": 0, "reason": "not_selected_with_candidates",
+    }

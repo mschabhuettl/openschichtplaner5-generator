@@ -3358,3 +3358,32 @@ Runtimeänderung, keine automatische Übernahme dieser synthetischen Profile in
 reale Projekte. Bestehende Library/API/OSP5-Vertragslücken und der private
 Einrichtungsblocker bleiben unverändert. Deshalb keine identische API-Abnahme
 wiederholt und kein Release erstellt.
+
+### Nicht eingeplant trotz individueller Eignung: feste Arbeitszeit als Gegenbeweis
+
+2026-09-11: `test_individual_candidates_do_not_claim_joint_feasibility` ergänzt
+sechs synthetische Fälle (Voll-/Teilplanung × Wochenmaximum/tägliche Ruhe/
+Überlappung). Beide Personen besitzen gültige persönliche Freigaben, Team- und
+Profilzuordnung. Nur die erste hat unveränderlichen Arbeitszeitkontext. Ein
+explizites synthetisches 8h-Wochenmaximum ist bereits ausgeschöpft, alternativ
+verletzt der neue Dienst 11h Ruhe oder überlappt einen am Vortag begonnenen
+Dienst. 36h Kalenderwochenruhe bleibt aktiviert. Dieses 8h-Maximum ist eine
+Testkonfiguration, keine behauptete Nutzerregel oder importierte SP5-Grenze.
+
+`domain.eligibility` liefert dennoch korrekt keine individuellen Ausschlüsse:
+die gemeinsamen Zeitbedingungen werden in `solver.solve` und `validator.validate`
+separat geprüft. Der unabhängig validierte Gegenplan für die erste Person
+verletzt jeweils `weekly_limit`, `rest` oder `overlap`. Der Solver besetzt den
+Bedarf vollständig mit der zweiten Person; die erste erhält korrekt
+`not_selected_with_candidates`, einen Kandidaten und keine individuellen
+Ausschlüsse. Der Diagnosevertrag sagt ausdrücklich „not a joint feasibility or
+causal optimality proof“. Diese Kategorie darf daher weder als reine
+Zielfunktionsentscheidung noch als bestätigte zusätzlich mögliche Einteilung
+interpretiert werden. Die konkrete Ursache wird hier durch den synthetischen
+Gegenplan nachgewiesen, nicht durch den Kandidatenzähler.
+
+Die erste Überlappungsfixture begann versehentlich innerhalb des Planungszeitraums
+und wurde zutreffend als `boundary_period` abgewiesen. Korrigiert wurde nur die
+Fixture: Beginn am Vortag mit Überhang. Keine Runtimeänderung. 191 Tests aus
+Teilplangrenzen, Randarbeitszeit und Kernregeln bestanden. Die unveränderte private
+API-Abnahme wird nicht wiederholt; Originaljob 0.9.29 weiterhin nicht reproduziert.
