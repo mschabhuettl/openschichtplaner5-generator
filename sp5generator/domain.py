@@ -302,6 +302,7 @@ def input_diagnostics(snapshot):
         employee_ids = {e.id for e in snapshot.employees}
         demand_ids = {d.id for d in snapshot.demands}
         profile_ids = {p.id for p in snapshot.profiles}
+        assigned_profile_ids = {pid for e in snapshot.employees for pid in e.profile_ids}
         for s in snapshot.shifts:
             spans = segments(s)
             if (
@@ -317,6 +318,25 @@ def input_diagnostics(snapshot):
                 snapshot.context_end + timedelta(days=1), snapshot.timezone
             ):
                 issue("context", "Dienst außerhalb des Kontextzeitraums: " + s.id)
+            first = local_day(spans[0][0], snapshot.timezone)
+            last = local_day(spans[-1][1] - 1, snapshot.timezone)
+            if (snapshot.period_start <= first <= snapshot.period_end
+                    and (date.max - last).days < 7):
+                # A long planning duty may spill beyond the period's already
+                # checked date margin. Its final ISO week must still fit the
+                # supported calendar before solver/validator add day offsets.
+                for p in snapshot.profiles:
+                    if p.id not in assigned_profile_ids or not (
+                        p.max_weekly_minutes is not None
+                        or (p.weekly_rest_minutes and p.weekly_rest_frame == "calendar_week")
+                    ):
+                        continue
+                    finish = min(last, p.valid_until)
+                    if finish <= snapshot.period_end or finish < p.valid_from:
+                        continue
+                    if (date.max - finish).days < 7 - finish.weekday():
+                        issue("date_range", "Kalenderwoche eines Dienstüberhangs liegt außerhalb des unterstützten Datumsbereichs.")
+                        break
         for d in snapshot.demands:
             if (
                 d.shift_id not in shift_ids

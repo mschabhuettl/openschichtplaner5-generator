@@ -671,3 +671,24 @@ Ruhe**, nicht 47h. Die beiden rollierenden Bezugsrahmen erkannten genau
 diese Reproduktion bereits vorher; ihre Algorithmen wurden hier nicht
 verändert. Daraus folgt keine vollständige Abnahme beliebig langer
 Überhänge bei rollierenden Regeln.
+
+### Gegenprobe mit dem unveränderten Release 0.9.29
+
+Die drei oben beschriebenen Gegenbeispiele (Tagesmaximum, Wochenmaximum,
+Kalenderwochenruhe) wurden zusätzlich mit den aus Tag `v0.9.29`, Commit
+`714b9f7284364263ae1be03e3a21a9a552f25525`, unverändert exportierten
+Python-Modulen ausgeführt. Alle sechs Voll-/Teilprüfungen lieferten dort
+`OPTIMAL`, `valid=true`, `complete=true`; die Stundenfälle jeweils eine,
+der Wochenruhefall fünf Einteilungen. Damit sind die Codefehler auch in
+der gemeldeten Version reproduziert, weiterhin **nicht** im unbekannten
+Original-Nutzerjob.
+
+Die erweiterte Kalenderprüfung besitzt außerdem eine technische
+Datumsbereichsvorprüfung: Ein außergewöhnlich langer Überhang am Ende des
+darstellbaren Jahresbereichs darf keine Kalenderwoche jenseits Jahr 9999
+berechnen. Ein synthetischer Gegenfall löste zunächst `OverflowError` aus.
+`domain.input_diagnostics` meldet dafür jetzt `date_range`, bevor Solver oder
+Validator Kalenderarithmetik ausführen. Fünf Regressionen in
+`tests/test_input_boundaries.py` prüfen Wochenhöchstzeit und Kalenderwochenruhe
+in Voll-/Teilplanung sowie einen weiterhin zulässigen Fall ohne Wochenregel.
+Diese technische Grenze ist keine fachliche Dienstlängen- oder Wochenregel.

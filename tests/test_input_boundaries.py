@@ -9,6 +9,53 @@ from sp5generator.solver import solve
 from sp5generator.validator import validate
 
 
+def maximum_date_spill():
+    from datetime import UTC, datetime
+    from test_core_rules import case
+    from sp5generator.models import Interval
+
+    snapshot = case(1)
+    snapshot.period_start = snapshot.period_end = date(9999, 12, 22)
+    snapshot.context_start, snapshot.context_end = date(9999, 12, 1), date(9999, 12, 30)
+    profile = snapshot.profiles[0]
+    profile.valid_from, profile.valid_until = snapshot.context_start, snapshot.context_end
+    profile.min_rest_minutes = 0
+    employee = snapshot.employees[0]
+    employee.employment_start, employee.employment_end = profile.valid_from, profile.valid_until
+    employee.approvals[0].valid_from, employee.approvals[0].valid_until = profile.valid_from, profile.valid_until
+    snapshot.shifts[0].segments = [Interval(
+        start=datetime(9999, 12, 22, 23, tzinfo=UTC),
+        end=datetime(9999, 12, 30, 8, tzinfo=UTC),
+    )]
+    return snapshot
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("rule", ["hours", "rest"])
+def test_spill_week_outside_supported_calendar_is_diagnosed_not_crashed(partial, rule):
+    from sp5generator.models import Assignment
+
+    snapshot = maximum_date_spill()
+    if rule == "hours":
+        snapshot.profiles[0].max_weekly_minutes = 20000
+    else:
+        snapshot.profiles[0].weekly_rest_minutes = 2160
+    assert "date_range" in {d.code for d in input_diagnostics(snapshot)}
+    checked = validate(snapshot, [Assignment(employee_id="e0", demand_id="s")])
+    assert not checked.valid
+    assert "date_range" in {d.code for d in checked.diagnostics}
+    result = solve(snapshot, 2, partial=partial)
+    assert result.solver_status == "MODEL_INVALID"
+    assert "date_range" in {d.code for d in result.validation.diagnostics}
+
+
+def test_date_guard_does_not_invent_a_weekly_rule_for_daily_only_spill():
+    snapshot = maximum_date_spill()
+    snapshot.profiles[0].max_daily_minutes = 20000
+    assert not input_diagnostics(snapshot)
+    assert solve(snapshot, 2).validation.complete
+
+
 @pytest.mark.parametrize('limit', [float('nan'), float('inf'), float('-inf')])
 def test_nonfinite_time_limit_is_rejected_before_planning(limit, monkeypatch):
     def unexpected_validation(snapshot):
