@@ -91,7 +91,8 @@ def test_parent_import_includes_children_preserves_demand_teams_and_deduplicates
     assert snapshot.employees[0].team_ids == ["sp5:group:1", "sp5:group:2", "sp5:group:3"]
     regular = [s for s in snapshot.shifts if s.source == "sp5:SHIFT"]
     assert {s.team_id for s in regular} == {"sp5:group:2", "sp5:group:3"}
-    assert len(snapshot.assignments) == 1
+    assert not snapshot.assignments
+    assert len(snapshot.boundary_work) == 1
     assert len(snapshot.metadata["context_schedule"]) == 1
     assert len(snapshot.restrictions) == 2
     history = historical_matrix(db, snapshot, date(2026, 1, 1), date(2026, 1, 5))
@@ -103,7 +104,7 @@ def test_parent_import_includes_children_preserves_demand_teams_and_deduplicates
 def test_single_direct_membership_does_not_prove_context_assignment_team(explicit_group, partial):
     """Ancestor expansion alone can make one direct membership ambiguous.
 
-    Preserve the known person/time as fixed context; do not silently confirm
+    Preserve the known person/time as personal work; do not silently confirm
     its placement or infer personal approval from the source schedule.
     """
     pytest.importorskip("sp5lib")
@@ -134,19 +135,17 @@ def test_single_direct_membership_does_not_prove_context_assignment_team(explici
     assert snapshot.metadata["direct_group_memberships"][employee.id] == [2]
     assert employee.team_ids == ["sp5:group:1", "sp5:group:2"]
     assert not employee.approvals
-    context = [s for s in snapshot.shifts if s.source == "sp5:existing"]
+    context = snapshot.boundary_work
     assert len(context) == 1
     duty = context[0]
     assert sum((s.end - s.start).total_seconds() / 60 for s in duty.segments) == 240
-    assert len(snapshot.assignments) == 1
-    assert snapshot.assignments[0].fixed
+    assert not snapshot.assignments
     provenance = snapshot.metadata["provenance"][duty.id]
-    assert provenance["team_confirmed"] is (explicit_group is not None)
-    ambiguous = [s for s in snapshot.unresolved if "konkrete Gruppe" in s]
-    assert bool(ambiguous) is (explicit_group is None)
-    # Even an explicit source team does not confirm duty/approval semantics.
-    assert duty.kind == "unconfirmed"
-    assert any("Zuordnung zum Besetzungsbedarf und Freigaben" in s for s in snapshot.unresolved)
+    assert provenance["schedule_group_id"] == explicit_group
+    assert not hasattr(duty, "team_id")
+    assert not any("konkrete Gruppe" in s for s in snapshot.unresolved)
+    assert duty.kind == "unknown"
+    assert not any("Zuordnung zum Besetzungsbedarf und Freigaben" in s for s in snapshot.unresolved)
 
     from sp5generator.domain import input_diagnostics
     from sp5generator.models import Approval
@@ -171,12 +170,65 @@ def test_single_direct_membership_does_not_prove_context_assignment_team(explici
         function_id="sp5:service:201", workplace_id="sp5:workplace:301",
         valid_from=snapshot.period_start, valid_until=snapshot.context_end,
     )]
+    assert "boundary_kind" in {d.code for d in input_diagnostics(snapshot)}
+    assert solve(snapshot, 3, partial=partial).solver_status == "MODEL_INVALID"
+    duty.kind = "day"  # Explicit synthetic setup, not inferred from history.
     assert not input_diagnostics(snapshot)
-    checked = validate(snapshot, snapshot.assignments)
-    boundary_id = snapshot.assignments[0].demand_id
-    assert any(d.code == "approval" and d.demand_id == boundary_id for d in checked.diagnostics)
+    assert validate(snapshot, []).valid
     result = solve(snapshot, 3, partial=partial)
-    assert result.solver_status == "INFEASIBLE"
-    assert not result.assignments
-    assert any(d.code == "fixed_conflict" and d.demand_id == boundary_id
-               and "approval" in d.message for d in result.validation.diagnostics)
+    assert result.solver_status == "OPTIMAL"
+    assert result.validation.valid
+    assert len(result.assignments) == 1
+    assert all(a.demand_id in {d.id for d in snapshot.demands} for a in result.assignments)
+    assert employee.approvals[0].valid_from == snapshot.period_start
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("maximum, assigned", [(479, False), (480, True)])
+def test_imported_boundary_counts_real_weekly_time_without_historical_approval(partial, maximum, assigned):
+    """Real import -> explicit synthetic setup -> solver AND independent validator."""
+    pytest.importorskip("sp5lib")
+    from test_sp5_adapter import SyntheticDatabase
+    from sp5generator.sp5_adapter import import_snapshot
+    from sp5generator.models import Approval, Assignment
+    from sp5generator.solver import solve
+    from sp5generator.validator import validate
+
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kwargs):
+            return ([{"employee_id": 101, "date": "2026-01-05", "kind": "shift",
+                      "shift_id": 201}] if (year, month) == (2026, 1) else [])
+        def get_shifts(self, **kwargs):
+            # Four hours of real work, one paid hour. No workplace/team on history.
+            return [{**s, **{f"DURATION{i}": 1 for i in range(8)}}
+                    for s in super().get_shifts(**kwargs)]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.assignments
+    work, = snapshot.boundary_work
+    assert work.kind == "unknown"
+    # This deliberately complete synthetic source is confirmed only here.
+    # Real audit scripts must not clear missing source/setup prerequisites.
+    snapshot.unresolved = []
+    snapshot.restrictions = []
+    snapshot.context_complete = True
+    profile = snapshot.profiles[0]
+    profile.confirmed = True
+    profile.max_weekly_minutes = maximum
+    work.kind = "day"
+    for shift in snapshot.shifts:
+        shift.kind = "day"
+    person = snapshot.employees[0]
+    person.approvals = [Approval(function_id="sp5:service:201", workplace_id="sp5:workplace:301",
+                                 valid_from=snapshot.period_start, valid_until=snapshot.period_end)]
+    proposed = [Assignment(employee_id=person.id, demand_id=snapshot.demands[0].id)]
+    checked = validate(snapshot, proposed)
+    assert checked.valid is assigned
+    assert ("weekly_limit" in {d.code for d in checked.diagnostics}) is (not assigned)
+    result = solve(snapshot, 3, partial=partial)
+    assert result.solver_status == ("OPTIMAL" if assigned or partial else "INFEASIBLE")
+    assert bool(result.assignments) is assigned
+    if assigned:
+        assert result.validation.valid and result.validation.complete
+    elif partial:
+        assert result.validation.valid and not result.validation.complete

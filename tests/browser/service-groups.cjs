@@ -27,3 +27,28 @@ snapshot.positions.push({id:'q',function_id:'service-b'});snapshot.demands.push(
  example.shifts[0].segments[0].end='2026-01-01T20:00:00Z';
  assert.equal(preview(example,rule).skipped,2);
 }
+{
+ const {preview}=require('../../sp5generator/static/service-groups.js');
+ const {prepare}=require('../../sp5generator/static/setup-assistant.js');
+ const work=(id,kind='unknown')=>({id,employee_id:'e',kind,source:'sp5:existing',segments:shift(id,'01').segments});
+ const example={timezone:'UTC',positions:[],shifts:[],demands:[],employees:[],profiles:[],unresolved:['source still unconfirmed'],boundary_work:[work('a'),work('b','day'),work('orphan')],metadata:{adapter:'sp5lib',provenance:{a:{function_id:'service-a',name:'A'},b:{function_id:'service-a',name:'A'}}}};
+ const before=structuredClone(example),rule={start:'22:00',end:'06:00',minimum:180};
+ const report=preview(example,rule);
+ assert.equal(report.pending,2);assert.equal(report.night,1);assert.equal(report.skipped,1);
+ assert.deepEqual(example,before,'Boundary preview never confirms history');
+ assert.equal(apply(example,report.rows[0].group.key,'night'),1);
+ assert.equal(example.boundary_work[0].kind,'night');assert.equal(example.boundary_work[1].kind,'day');
+ assert.equal(example.boundary_work[2].kind,'unknown');
+ assert.deepEqual(example.demands,[]);assert.deepEqual(example.employees,[]);assert.deepEqual(example.unresolved,before.unresolved);
+ const reused=prepare(before,example,{sameSource:true});
+ assert.equal(reused.boundary_work[0].kind,'unknown','Conflicting previous kinds never choose one');
+ assert(reused.metadata.setup_review.review.some(s=>s.includes('widersprüchliche')));
+ const old=structuredClone(example);old.boundary_work[1].kind='night';
+ const consistent=prepare(before,old,{sameSource:true});
+ assert.equal(consistent.boundary_work[0].kind,'night','Confirmed boundary pattern can be reused explicitly');
+ assert.equal(consistent.boundary_work[1].kind,'day','Already confirmed kind in new input stays unchanged');
+ assert.equal(consistent.boundary_work[2].kind,'unknown');
+ const automatic=prepare(before,null,{classify:true,rule});
+ assert.equal(automatic.boundary_work[0].kind,'night');assert.equal(automatic.metadata.setup_review.classified,1);
+ assert.deepEqual(automatic.demands,[]);assert.deepEqual(automatic.profiles,[]);
+}

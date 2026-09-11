@@ -11,6 +11,7 @@ from .hierarchy import group_tree, resolve_group_selection
 from .domain import MAX_PLANNING_DAYS
 
 from .models import (
+    BoundaryWork,
     Employee,
     Objectives,
     Interval,
@@ -352,6 +353,7 @@ def import_snapshot(
     )
     employee_map = {e.id: e for e in employees}
     shifts, positions, demands, restrictions, assignments = {}, {}, [], [], []
+    boundary_work = {}
     rows = _unique_rows(list(requirements.get("shift_requirements", [])) + [values[0] for values in special_cells.values() if len(values) == 1])
     for row in rows:
         gid = row.get("group_id")
@@ -599,60 +601,23 @@ def import_snapshot(
                     workplace = "unresolved" if workplace in (None, "") else str(workplace)
                     sid = (f"sp5:context:{row['employee_id']}:{d}:{row['shift_id']}"
                            f":workplace:{workplace}:group:{row.get('group_id') or 'unresolved'}")
-                    if sid in shifts:
-                        # The source may expose a nominal entry and an identical
-                        # special replacement; this is one duty, not two.
+                    if sid in boundary_work:
+                        # Nominal duty and an identical special replacement
+                        # describe the same personal work, not two duties.
                         continue
-                    pid = f"sp5:context-position:{row['shift_id']}:{workplace}"
-                    positions[pid] = Position(
-                        id=pid,
-                        name=native.get("NAME", ""),
-                        function_id=f"sp5:service:{row['shift_id']}",
-                        workplace_id=f"sp5:workplace:{workplace}",
-                        qualifications_required=False,
-                    )
-                    member_teams = [
-                        g
-                        for g in employee_map[eid].team_ids
-                        if g in {f"sp5:group:{v}" for v in scope}
-                    ]
-                    explicit_group = row.get("group_id")
-                    if explicit_group not in (None, 0, "", "0"):
-                        member_teams = [g for g in member_teams if g == f"sp5:group:{explicit_group}"]
-                    if len(member_teams) != 1:
-                        unresolved.append(
-                            f"Bestehender Dienst {eid} {d}: konkrete Gruppe bei mehrfacher oder fehlender Mitgliedschaft bestätigen."
-                        )
                     metadata["provenance"][sid] = {
-                        "team_source": "schedule_group" if explicit_group not in (None, 0, "", "0") else "employee_membership",
-                        "team_confirmed": len(member_teams) == 1,
+                        "function_id": f"sp5:service:{row['shift_id']}",
+                        "name": native.get("NAME", ""),
+                        "schedule_group_id": row.get("group_id"),
+                        "workplace_id": row.get("workplace_id"),
+                        "time_source": f"sp5:SHIFT.STARTEND{idx}",
                     }
-                    shifts[sid] = Shift(
+                    boundary_work[sid] = BoundaryWork(
                         id=sid,
-                        name=native.get("NAME", ""),
-                        kind="unconfirmed",
-                        team_id=next(iter(member_teams), f"sp5:group:{native_team}"),
+                        employee_id=eid,
                         segments=segments,
-                        paid_minutes=_minutes(native.get(f"DURATION{idx}")),
-                        holiday=d in holidays,
+                        kind="unknown",
                         source="sp5:existing",
-                    )
-                    demand_id = sid + ":fixed"
-                    demands.append(
-                        Demand(
-                            id=demand_id,
-                            shift_id=sid,
-                            position_id=pid,
-                            minimum=1,
-                            maximum=1,
-                            source="sp5:existing",
-                        )
-                    )
-                    assignments.append(
-                        Assignment(employee_id=eid, demand_id=demand_id, fixed=True)
-                    )
-                    unresolved.append(
-                        f"Bestehender Dienst {eid} {d}: Zuordnung zum Besetzungsbedarf und Freigaben bestätigen."
                     )
                 except ValueError as exc:
                     unresolved.append(f"Bestehender Dienst {eid} {d}: {exc}")
@@ -692,6 +657,7 @@ def import_snapshot(
         objectives=Objectives(workday_transitions=100),
         restrictions=restrictions,
         assignments=assignments,
+        boundary_work=list(boundary_work.values()),
         unresolved=list(dict.fromkeys(unresolved)),
     )
     if "metadata" in Snapshot.model_fields:

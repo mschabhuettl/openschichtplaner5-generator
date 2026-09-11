@@ -557,7 +557,10 @@ gewählte bestätigte Profil erhält. Tages-/Wochenfelder speichern bereits
 Minuten unverändert; die vorhandenen Browserchecks belegen 720/2400 Minuten.
 Nur das separate Perioden-Soll wird von Stunden in Minuten umgerechnet.
 
-## Randzeit ist derzeit an Besetzungszulässigkeit gekoppelt
+## Ursprünglicher Fehler: Randzeit an Besetzungszulässigkeit gekoppelt
+
+**Historischer Analysebefund vor der unten dokumentierten Randarbeitsintegration.**
+Alte explizite Fixierungen behalten diesen Vertrag; neue Importe nicht.
 
 `sp5_adapter.import_snapshot` legt bekannte Randzeiten als `Shift` mit
 `source=sp5:existing`, `kind=unconfirmed`, künstlichem `Position` und einem
@@ -580,7 +583,7 @@ Im Freigabefall ist der neue Dienst ausdrücklich weiterhin freigegeben; nur
 der historische Tag liegt außerhalb der Freigabegültigkeit. Der unabhängige
 Validator benennt den Randbedarf, der Solver liefert keine Einteilungen.
 
-**Priorisierte Korrekturrichtung, noch nicht implementiert:** bestätigte
+**Damals priorisierte Korrekturrichtung (inzwischen unten umgesetzt):** bestätigte
 personenbezogene Randintervalle getrennt von zu besetzenden Bedarfen abbilden.
 Sie müssen weiterhin zwingend in Überlappung, tägliche/wöchentliche reale
 Minuten, Ruhe und Serien eingehen. Unbekannte Nachtart darf nicht verschwinden;
@@ -652,12 +655,14 @@ keine neuen Defaults oder aus dem Nutzerauftrag abgeleiteten Grenzen.
    niemals ungeklärte Sonderzeitabweichungen ersetzen oder dieselbe Quelle
    gleichzeitig als alte fixe Einteilung und neue Randarbeit zählen.
 
-Diese Gegenproben und Integrationsgrenzen sind implementierter Prüfumfang,
-**noch keine eingeführte neue Randdatenkollektion und keine Behebung des
-Original-600s-Laufs**. Ein neuer Datentyp allein ohne Solver, unabhängigen
+Diese Gegenproben und Integrationsgrenzen waren zunächst nur Prüfumfang,
+**noch keine eingeführte neue Randdatenkollektion**. Die anschließende Umsetzung
+ist unten dokumentiert; der Original-600s-Lauf bleibt nicht reproduziert. Ein neuer Datentyp allein ohne Solver, unabhängigen
 Validator, Import und Persistenz würde diese Anforderungen nicht erfüllen.
 
-### Durchgängiger Importbeleg statt nur handgebauter Solver-Eingabe
+### Ursprünglicher durchgängiger Importbeleg
+
+**Historischer Fehlernachweis; der Test prüft inzwischen die Korrektur (siehe unten).**
 
 `tests/test_hierarchy.py:test_single_direct_membership_does_not_prove_context_assignment_team`
 prüft jetzt beide Teamvarianten jeweils als Voll- und Teilplanung bis zum
@@ -850,10 +855,51 @@ ungültige Eingaben/Doppelerfassung, Personenisolation, Hash-/JSON-Roundtrip,
 HTTP/Persistenz/separater Worker, beide rollierenden Ruhebezüge und Nachtblock
 mit bzw. ohne echten verbindenden Randdienst. Keine realen Eingaben verwendet.
 
-**Noch nicht umgestellt:** `sp5_adapter` erzeugt weiterhin die bisherigen
-Randfixierungen. Die neue Kollektion ist eine verwendbare JSON-/API-
-Kernfunktion, noch keine automatische Bereinigung echter Importe. Nächster
-Schritt ist die gezielte Übernahme eindeutig bekannter normaler Quellzeiten
-mit ehrlicher Diagnose ungeklärter Nachtart. Sonderzeitabweichungen,
-Quellvollständigkeit und tatsächliche neue persönliche Freigaben bleiben
-unverändert zu klären. Der Original-600s-Job ist weiterhin nicht reproduziert.
+### Umgesetzt: Randarbeitsimport und ausdrückliche Dienstart-Einrichtung
+
+`sp5_adapter.import_snapshot` übernimmt normale Dienste außerhalb der Periode
+jetzt in `boundary_work`. Der bestehende Ist-Kontext bleibt von der gewählten
+Ist-/Soll-Referenzsicht innerhalb der Periode getrennt. Person und reale
+`SHIFT.STARTEND0..7`-Segmente reichen für die Arbeitszeitprüfung; Team,
+Arbeitsplatz, SHDEM-ID und historische Dienstfreigabe werden nicht erfunden.
+Es entstehen keine `sp5:existing`-Bedarfe, Positionen oder fixen Assignments.
+Nominale Dienste und identische nominale Sonderersetzungen werden weiterhin
+nur einmal gezählt; unterschiedliche Arbeitsplatz-/Gruppeneinträge bleiben
+getrennte Quelldatensätze und werden nicht heimlich zusammengeführt.
+
+Quellenbeleg: `sp5lib.database.SP5Database.get_schedule` bildet MASHI auf
+Person, Datum, Dienst und Arbeitsplatz ab, nicht auf einen konkreten Bedarf
+oder eine Einsatzgruppe. `sp5api.routers.schedule.get_schedule` reicht den
+Gruppenfilter an diese personenbezogene Sicht weiter. Die OSP5-Personengruppierung
+liefert ebenfalls keinen zusätzlichen Einsatzteam-Beleg. Die bisherige
+Zuordnungsanforderung war für reine Randarbeitszeit daher sachlich unnötig;
+für Bedarfsdeckung **innerhalb** der Periode bleibt sie unverändert notwendig.
+
+`metadata.provenance[work.id]` hält Dienstidentität, Anzeigename, Quellgruppe,
+Arbeitsplatz und verwendeten STARTEND-Slot nachvollziehbar fest. `kind=unknown`
+bleibt ein harter `boundary_kind`-Blocker. `static/service-groups.js` bietet
+Randarbeitsmuster ohne bezahlte Stunden separat zur ausdrücklichen Tag-/Nacht-
+Bestätigung an, auch wenn der Dienst in der Planungsperiode keinen Bedarf hat.
+Vorschau verändert nichts, bereits bestätigte Arten bleiben bestehen.
+`setup-assistant.js` übernimmt Randarten nur bei ausdrücklich gewählter
+Wiederverwendung derselben Quelle und eindeutig bestätigtem bisherigen Muster;
+widersprüchliche Arten werden nicht entschieden. Keine Freigaben oder
+Regelprofile werden dadurch bestätigt.
+
+Nachweise: `test_sp5_adapter` sichert Person/Zeit ohne künstliche Bedarfe,
+Quellidentität und nominale Sonderersetzungen; `test_api_adapter` prüft alle
+acht Zeit-Slots über die HTTP-Fassade und die getrennte Ist-/Soll-Sicht.
+`test_hierarchy.test_single_direct_membership_does_not_prove_context_assignment_team`
+belegt den Import bei einer Direktgruppe und mehreren effektiven Vorfahrengruppen:
+ursprünglich MODEL_INVALID, nach expliziter synthetischer Einrichtung planbar,
+ohne rückwirkende Freigabe. Vier zusätzliche Voll-/Teil-Gegenproben in
+`test_imported_boundary_counts_real_weekly_time_without_historical_approval`
+sichern die scharfe 480/479-Minuten-Grenze bei jeweils 240 realen, aber nur
+60 bezahlten Minuten. Solver und unabhängiger Validator stimmen überein.
+Browserprüfungen sichern Vorschau/Bestätigung einschließlich Randarbeit,
+Desktop/Mobil, unveränderte übrige Eingaben und die Wiederverwendungsregeln.
+
+Unverändert offen: abweichende Sonderdienste, Quellvollständigkeit,
+wirksame bestätigte Profile und tatsächliche neue persönliche Freigaben.
+Bestehende gespeicherte Projekte werden **nicht** automatisch migriert.
+Der Original-600s-Job ist weiterhin nicht reproduziert.

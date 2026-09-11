@@ -401,7 +401,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});
       await timeRuleBox.getByRole('button',{name:'Zeitregel-Vorschau anzeigen',exact:true}).click();
-      assert.match(await timePreview.innerText(),/3 offene Dienstvorkommen: 1 Tag · 1 Nacht · 1 ohne Vorschlag/);
+      assert.match(await timePreview.innerText(),/5 offene Dienstvorkommen: 3 Tag · 1 Nacht · 1 ohne Vorschlag/);
       assert.match(await timePreview.innerText(),/480/);
       assert(await timeRuleBox.locator('fieldset').first().evaluate(e=>{const a=e.getBoundingClientRect(),b=e.parentElement.getBoundingClientRect();return a.width<=b.width&&a.left>=b.left&&a.right<=b.right;}),'The full rule fieldset fits its card, not merely the document scroll width');
       if(process.env.WEB_TEST_SCREENSHOT_DIR)await timeRuleBox.locator('fieldset').first().screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`time-rule-preview-${width}.png`)});
@@ -424,6 +424,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const expectedTimeApply=structuredClone(beforeTimeApply);
     expectedTimeApply.shifts.find(s=>s.id===timeRuleIds[0]).kind='night';
     expectedTimeApply.shifts.find(s=>s.id===timeRuleIds[1]).kind='day';
+    for(const work of expectedTimeApply.boundary_work)work.kind='day';
     expectedTimeApply.metadata.night_classification.minimum=240;
     assert.deepEqual(await page.evaluate(()=>currentSnapshot()),expectedTimeApply,'Only previewed open kinds and the adopted rule change');
     await timeRuleBox.getByRole('button',{name:'Zeitregel-Vorschau anzeigen',exact:true}).click();

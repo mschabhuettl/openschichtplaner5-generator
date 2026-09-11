@@ -134,16 +134,22 @@ def test_http_time_slots_match_library_for_demand_and_boundary(transport, slot, 
     assert calc.day_index(duty_day, holidays) == slot
     expected = calc.parse_startend(native[f"STARTEND{slot}"])
     source = "sp5:existing" if boundary else "sp5:SHIFT"
-    duties = [s for s in snapshot.shifts if s.source == source]
+    duties = [s for s in (snapshot.boundary_work if boundary else snapshot.shifts) if s.source == source]
     assert len(duties) == 1
     duty = duties[0]
     assert [(s.start.hour * 60 + s.start.minute, s.end.hour * 60 + s.end.minute)
             for s in duty.segments] == expected
     assert day_minutes(duty, snapshot.timezone) == {duty_day: 90}
-    assert duty.paid_minutes == (slot + 1) * 60
-    assert duty.holiday is (slot == 7)
-    assert len(snapshot.assignments) == 1
-    assert snapshot.assignments[0].fixed is boundary
+    if boundary:
+        assert not hasattr(duty, "paid_minutes")
+        assert not snapshot.assignments
+        assert duty.kind == "unknown"
+        assert snapshot.metadata["provenance"][duty.id]["time_source"] == f"sp5:SHIFT.STARTEND{slot}"
+    else:
+        assert duty.paid_minutes == (slot + 1) * 60
+        assert duty.holiday is (slot == 7)
+        assert len(snapshot.assignments) == 1
+        assert not snapshot.assignments[0].fixed
     assert not snapshot.employees[0].approvals
     assert all(request.get_method() == "GET" for request in calls)
 
@@ -255,7 +261,8 @@ def test_parent_team_imports_nested_people_without_duplicates(transport):
     regular = [d for d in snapshot.demands if d.source == 'sp5:SHDEM']
     assert len(regular) == 1
     assert next(s for s in snapshot.shifts if s.id == regular[0].shift_id).team_id == 'sp5:group:2'
-    assert len(snapshot.assignments) == 1
+    assert not snapshot.assignments
+    assert len(snapshot.boundary_work) == 1
     assert snapshot.metadata['history_matrix'][0]['observed_assignment_count'] == 1
     assert not any('/api/groups/4/members' in c.full_url for c in calls)
     assert any('group_id=3' in c.full_url for c in calls)

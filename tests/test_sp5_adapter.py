@@ -183,7 +183,7 @@ def test_ambiguous_and_nonexistent_source_clock_blocked():
             _local(d, 150, ZoneInfo("Europe/Berlin"))
 
 
-def test_existing_context_is_fixed_not_an_absence():
+def test_existing_context_is_personal_work_not_staffing_or_absence():
     class Source(SyntheticDatabase):
         def get_schedule(self, year, month, **kw):
             if (year, month) == (2026, 1):
@@ -199,11 +199,15 @@ def test_existing_context_is_fixed_not_an_absence():
             return []
 
     s = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
-    assert len(s.assignments) == 1 and s.assignments[0].fixed
+    assert not s.assignments
     assert not s.employees[0].unavailable
-    demand = next(d for d in s.demands if d.id == s.assignments[0].demand_id)
-    shift = next(v for v in s.shifts if v.id == demand.shift_id)
-    assert shift.segments[0].start.date() < s.period_start
+    work, = s.boundary_work
+    assert work.segments[0].start.date() < s.period_start
+    assert work.employee_id == s.employees[0].id
+    assert work.kind == "unknown"
+    assert not any(d.source == "sp5:existing" for d in s.demands)
+    assert not s.employees[0].approvals
+    assert not any("Besetzungsbedarf und Freigaben" in issue for issue in s.unresolved)
 
 
 def test_service_identity_separates_services_and_preserves_workplaces():
@@ -438,12 +442,11 @@ def test_context_records_for_different_workplaces_have_distinct_ids():
                      "shift_id": 201, "workplace_id": workplace}
                     for workplace in (0, 301, 302)]
     snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
-    assert len(snapshot.assignments) == 3
-    assert len({assignment.demand_id for assignment in snapshot.assignments}) == 3
-    assert len({demand.id for demand in snapshot.demands}) == len(snapshot.demands)
-    context_positions = [p for p in snapshot.positions if p.id.startswith("sp5:context-position:")]
-    assert {p.workplace_id for p in context_positions} == {
-        "sp5:workplace:0", "sp5:workplace:301", "sp5:workplace:302"}
+    assert not snapshot.assignments
+    assert len(snapshot.boundary_work) == 3
+    assert len({work.id for work in snapshot.boundary_work}) == 3
+    assert {snapshot.metadata["provenance"][w.id]["workplace_id"] for w in snapshot.boundary_work} == {0, 301, 302}
+    assert not any(p.id.startswith("sp5:context-position:") for p in snapshot.positions)
 
 
 def test_context_uses_explicit_group_for_multi_group_member():
@@ -458,9 +461,10 @@ def test_context_uses_explicit_group_for_multi_group_member():
             return [{"employee_id": 101, "date": "2026-01-05", "kind": "shift",
                      "shift_id": 201, "workplace_id": 301, "group_id": 2}]
     snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), timezone="UTC", team_ids=["1", "2"])
-    context = next(shift for shift in snapshot.shifts if shift.source == "sp5:existing")
-    assert context.team_id == "sp5:group:2"
-    assert snapshot.metadata["provenance"][context.id]["team_confirmed"] is True
+    context, = snapshot.boundary_work
+    assert snapshot.metadata["provenance"][context.id]["schedule_group_id"] == 2
+    assert not hasattr(context, "team_id")
+    assert not any("konkrete Gruppe" in issue for issue in snapshot.unresolved)
 
 
 def test_identical_context_nominal_and_special_entries_count_once():
@@ -473,8 +477,9 @@ def test_identical_context_nominal_and_special_entries_count_once():
                      "startend": "08:00-10:00 11:00-13:00", "duration": 4}
                     for kind in ("shift", "special_shift")]
     snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
-    assert len(snapshot.assignments) == 1
-    assert len([demand for demand in snapshot.demands if demand.source == "sp5:existing"]) == 1
+    assert not snapshot.assignments
+    assert len(snapshot.boundary_work) == 1
+    assert not any(demand.source == "sp5:existing" for demand in snapshot.demands)
 
 
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "not-a-number"])
@@ -638,7 +643,8 @@ def test_reference_selection_never_switches_context_absences_or_special_duties(p
     assert reference.fixed is fixed
     context = [r for r in snapshot.metadata['context_schedule'] if r['date'] != '2026-01-06']
     assert len(context) == 2 and all(r['shift_id'] == 201 for r in context)
-    assert all(a.fixed for a in snapshot.assignments if a != reference)
+    assert snapshot.assignments == [reference]
+    assert len(snapshot.boundary_work) == 2
     assert snapshot.employees[0].unavailable[0].start.hour == 8
     special = next(r for r in snapshot.metadata['context_schedule'] if r['kind'] == 'special_shift')
     assert special['duration'] == 1

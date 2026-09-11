@@ -14,6 +14,17 @@
    if(!rows.has(key))rows.set(key,{key,name:shift.name,times,paidMinutes:shift.paid_minutes,shiftIds:[],pending:0});
    const row=rows.get(key);row.shiftIds.push(shift.id);if(shift.kind==='unconfirmed')row.pending++;
   }
+  for(const work of snapshot.boundary_work??[]){
+   const origin=snapshot.metadata?.provenance?.[work.id];
+   if(!origin?.function_id||!work.segments.length)continue;
+   const anchor=parts(work.segments[0].start).day;
+   const times=work.segments.map(s=>{const a=parts(s.start),b=parts(s.end);return [a.day-anchor,a.time,b.day-anchor,b.time];});
+   // Boundary work has no paid-time contract. Keep its confirmation separate
+   // from staffing patterns, whose key also includes paid minutes.
+   const key=JSON.stringify([origin.function_id,times,null,'boundary']);
+   if(!rows.has(key))rows.set(key,{key,name:(origin.name||origin.function_id)+' (Randarbeit)',times,paidMinutes:null,shiftIds:[],boundaryIds:[],pending:0});
+   const row=rows.get(key);row.boundaryIds.push(work.id);if(work.kind==='unknown')row.pending++;
+  }
   return [...rows.values()];
  }
  function apply(snapshot,key,kind){
@@ -21,6 +32,8 @@
   const group=groups(snapshot).find(g=>g.key===key);if(!group)throw Error('Dienstmuster nicht mehr vorhanden.');
   const ids=new Set(group.shiftIds);let count=0;
   for(const shift of snapshot.shifts)if(ids.has(shift.id)&&shift.kind==='unconfirmed'){shift.kind=kind;count++;}
+  const boundaryIds=new Set(group.boundaryIds??[]);
+  for(const work of snapshot.boundary_work??[])if(boundaryIds.has(work.id)&&work.kind==='unknown'){work.kind=kind;count++;}
   return count;
  }
  function suggest(group,start='22:00',end='06:00',minimum=180){
@@ -42,7 +55,7 @@
  function preview(snapshot,rule){
   suggest({times:[]},rule.start,rule.end,rule.minimum);
   const rows=groups(snapshot).filter(g=>g.pending).map(group=>({group,proposal:suggest(group,rule.start,rule.end,rule.minimum)}));
-  const pending=snapshot.shifts.filter(s=>s.kind==='unconfirmed').length;
+  const pending=snapshot.shifts.filter(s=>s.kind==='unconfirmed').length+(snapshot.boundary_work??[]).filter(w=>w.kind==='unknown').length;
   let day=0,night=0;
   for(const {group,proposal} of rows)if(proposal?.kind==='day')day+=group.pending;else if(proposal?.kind==='night')night+=group.pending;
   return {rows,pending,day,night,skipped:pending-day-night};

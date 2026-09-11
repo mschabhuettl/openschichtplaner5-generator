@@ -49,7 +49,8 @@
    if(next.metadata.history_automation?.applied){const freshIds=new Set(report.newPeople);next.metadata.history_automation.applied=next.metadata.history_automation.applied.filter(a=>freshIds.has(a.employee_id));}
    if(previous.restrictions?.length||previous.wishes?.length)report.review.push('Individuelle Dienstsperren und datierte Wünsche aus dem bisherigen Projekt separat prüfen; nicht automatisch kopiert.');
    const priorShifts=new Map(previous.shifts.map(s=>[s.id,s]));
-   const kinds=new Map(root.ServiceGroups.groups(previous).map(g=>[g.key,new Set(g.shiftIds.map(id=>priorShifts.get(id).kind).filter(k=>['day','night'].includes(k)))]));
+   const priorBoundary=new Map((previous.boundary_work??[]).map(w=>[w.id,w]));
+   const kinds=new Map(root.ServiceGroups.groups(previous).map(g=>[g.key,new Set([...g.shiftIds.map(id=>priorShifts.get(id).kind),...(g.boundaryIds??[]).map(id=>priorBoundary.get(id).kind)].filter(k=>['day','night'].includes(k)))]));
    for(const group of root.ServiceGroups.groups(next)){const found=kinds.get(group.key);if(found?.size===1)root.ServiceGroups.apply(next,group.key,[...found][0]);else if(found?.size>1)report.review.push('Ein bisheriges Zeitmuster hat widersprüchliche Dienstarten; Zuordnung prüfen.');}
    if(previous.metadata.night_classification)next.metadata.night_classification=structuredClone(previous.metadata.night_classification);
   }else{report.newPeople=next.employees.map(e=>e.id);report.newServices=[...new Set(next.positions.map(p=>p.function_id))];}
