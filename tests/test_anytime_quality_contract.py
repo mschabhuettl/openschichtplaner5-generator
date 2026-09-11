@@ -105,9 +105,10 @@ def test_neighbourhood_optimal_does_not_prove_fixed_coverage_quality(monkeypatch
     # never be presented as a proof for unrestricted fixed-coverage quality.
 
 
+@pytest.mark.parametrize('native_lns', [False, True])
 @pytest.mark.parametrize('rule', ['weekly_cap', 'daily_cap', 'rest', 'approval',
                                        'overlap', 'daily_elapsed', 'weekly_elapsed'])
-def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule):
+def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule, native_lns):
     snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
     profile = snapshot.profiles[0]
     if rule == 'weekly_cap':
@@ -140,8 +141,8 @@ def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule):
     quality.add(sum(variables(quality, 'vacancy:')) == 1)
     quality.minimize(sum(variables(quality, 'hours:')))
     paid = 60 if rule in ('daily_elapsed', 'weekly_elapsed') else 480
-    assert checked_search(snapshot, primary) == (1, paid)
-    assert checked_search(snapshot, quality) == (1, paid)
+    assert checked_search(snapshot, primary, native_lns=native_lns) == (1, paid)
+    assert checked_search(snapshot, quality, native_lns=native_lns) == (1, paid)
 
     # Full coverage must remain impossible in both independent models.
     for model in (primary, quality):
@@ -149,6 +150,8 @@ def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule):
         search = cp_model.CpSolver()
         search.parameters.num_search_workers = 1
         search.parameters.max_time_in_seconds = 3
+        search.parameters.interleave_search = native_lns
+        search.parameters.use_lns_only = native_lns
         assert search.solve(model) == cp_model.INFEASIBLE
 
 
@@ -184,7 +187,8 @@ def test_quality_clone_does_not_invent_a_24_hour_duty_ban(monkeypatch):
     assert checked_search(snapshot, quality) == (0, 480)
 
 
-def test_conditional_quality_unknown_keeps_valid_coverage_result(monkeypatch):
+@pytest.mark.parametrize('native_quality', [False, True])
+def test_conditional_quality_unknown_keeps_valid_coverage_result(monkeypatch, native_quality):
     snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
     snapshot.profiles[0].max_weekly_minutes = 480
     original = cp_model.CpSolver.solve
@@ -193,6 +197,9 @@ def test_conditional_quality_unknown_keeps_valid_coverage_result(monkeypatch):
     def coverage_then_unknown(self, model, *args, **kwargs):
         budgets.append(self.parameters.max_time_in_seconds)
         if len(budgets) == 2:
+            self.parameters.interleave_search = native_quality
+            self.parameters.use_lns_only = native_quality
+            assert self.parameters.num_search_workers == 1
             return cp_model.UNKNOWN
         assert original(self, model, *args, **kwargs) == cp_model.OPTIMAL
         return cp_model.FEASIBLE
@@ -242,7 +249,8 @@ def test_trace_does_not_count_validator_rejected_candidate_as_incumbent(monkeypa
     assert result.validation.valid
 
 
-def test_conditional_quality_shares_original_deadline(monkeypatch):
+@pytest.mark.parametrize('native_quality', [False, True])
+def test_conditional_quality_shares_original_deadline(monkeypatch, native_quality):
     snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
     snapshot.profiles[0].max_weekly_minutes = 480
     original = cp_model.CpSolver.solve
@@ -252,6 +260,13 @@ def test_conditional_quality_shares_original_deadline(monkeypatch):
 
     def exhaust_phase(self, model, *args, **kwargs):
         budgets.append(self.parameters.max_time_in_seconds)
+        if len(budgets) == 2:
+            self.parameters.interleave_search = native_quality
+            self.parameters.use_lns_only = native_quality
+            assert self.parameters.num_search_workers == 1
+        else:
+            assert not self.parameters.interleave_search
+            assert not self.parameters.use_lns_only
         status = original(self, model, *args, **kwargs)
         assert status == cp_model.OPTIMAL
         elapsed[0] += budgets[-1]
@@ -280,11 +295,12 @@ def test_conditional_quality_shares_original_deadline(monkeypatch):
     assert first['weighted_quality_cost'] >= second['weighted_quality_cost']
 
 
+@pytest.mark.parametrize('native_quality', [False, True])
 @pytest.mark.parametrize('change_weight', [0, 100, 600])
 @pytest.mark.parametrize('quality_presolve', [False, True])
 @pytest.mark.parametrize('unfillable', [False, True])
 def test_certified_hint_allows_real_fixed_coverage_quality_gain(
-    monkeypatch, quality_presolve, unfillable, change_weight,
+    monkeypatch, quality_presolve, unfillable, change_weight, native_quality,
 ):
     """Move a certified hint only when the complete weighted cost improves."""
     snapshot = case(2, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
@@ -313,6 +329,9 @@ def test_certified_hint_allows_real_fixed_coverage_quality_gain(
             self.parameters.stop_after_first_solution = True
         elif len(calls) == 3:
             self.parameters.stop_after_first_solution = False
+            self.parameters.interleave_search = native_quality
+            self.parameters.use_lns_only = native_quality
+            assert self.parameters.num_search_workers == 1
             self.parameters.cp_model_presolve = quality_presolve
             assert not self.parameters.fix_variables_to_their_hinted_value
             assert len(model.proto.solution_hint.vars) == len(model.proto.variables)

@@ -5425,3 +5425,34 @@ needs integrated shared-deadline, incumbent fallback, status/proof-scope and Wor
 checks. Native LNS keeps the model's original feasible region; unlike an explicit
 two-addition restriction, no application-level neighbourhood constraint is added.
 Its mere use still does not establish optimal quality or maximum contiguous rest.
+
+### Quality-only native LNS integration contracts (2026-09-12)
+
+The candidate portfolio is now exercised inside the actual `solver.solve` phase
+loop by test-local parameter injection, without changing production defaults.
+`test_conditional_quality_shares_original_deadline` runs real native quality
+search after a controlled FEASIBLE coverage phase: the budgets remain 2.4 and
+0.45 seconds for a three-second request (including the existing finalization
+allowance). Native quality OPTIMAL still returns overall FEASIBLE when global
+coverage is unproven. The companion UNKNOWN regression injects a no-result
+quality status and verifies preservation of the independently valid coverage
+incumbent; it tests fallback handling, not native timeout frequency.
+
+`test_certified_hint_allows_real_fixed_coverage_quality_gain` additionally runs
+the native one-worker interleaved portfolio for both presolve settings, with and
+without an unfillable demand, and change weights 0/100/600. Full objective costs
+remain 0/200/960: the last case correctly retains the original personnel
+allocation because transferring a duty costs more than its hours-deviation gain.
+Only quality receives candidate parameters; coverage and hint certification keep
+their production settings. These deterministic small cases establish contracts,
+not a large-instance performance improvement or a requirement to staff everyone.
+
+The hard-constraint clone matrix also runs with native interleaving for all seven
+cases: paid weekly/daily limits, elapsed weekly/daily limits, inter-duty rest,
+overlap and dated personal approval. Forcing full coverage remains infeasible
+where those configured constraints prohibit it. The fresh-process demo regression
+runs three native-portfolio and three unchanged sequential searches on the
+12-person, 14-day demo; all exit cleanly with independently complete validation.
+This extends the known crash regression, but is not a guarantee against native
+failures on other data. Controlled private full-Worker/deadline comparison and
+relevant API gates remain prerequisites for runtime promotion.
