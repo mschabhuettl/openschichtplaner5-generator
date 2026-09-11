@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.9.30** bündelt Sicherheitskorrekturen für Profilzuordnungen, harte Zeitgrenzen bei Dienstüberhängen und personenbezogene Randarbeit sowie den Import von Ist-Sonderersetzungen und Sollbuchungen. Die [Releasehinweise](docs/release-0.9.30.md) erläutern die Änderungen und die Kontrolle bestehender Projekte. Die [Quellanalyse](docs/source-semantics.md) trennt belegte Fehler von offenen fachlichen Angaben. Der gemeldete 600-Sekunden-Lauf ist ohne seinen exakten Projekteingang nicht reproduziert; eine erfolgreiche echte Neuplanung ist noch nicht nachgewiesen. Die 11/36-Ruhevorschläge und das weiche Dienstblockziel aus 0.9.29 bleiben erhalten, ebenso die bereits vorhandene Neugestaltung und feste Kalenderbedienleiste.
+**Version 0.9.31** ergänzt die Sicherheitskorrekturen aus 0.9.30: bestätigte Profile für tatsächlich gearbeitete Folgetage, vollständige Tages-/Wochendiagnosen und datierte Istbuchungs-/Abwesenheitsnachweise ohne automatische Gutschrift. Die [Releasehinweise](docs/release-0.9.31.md) erläutern Umfang und Grenzen; die [Quellanalyse](docs/source-semantics.md) enthält den zusammenhängenden Library/API/OSP5-Abgleich. Der gemeldete 600-Sekunden-Lauf ist ohne seinen exakten Projekteingang nicht reproduziert; eine erfolgreiche echte Neuplanung ist noch nicht nachgewiesen. Bestehende Ruhevorschläge, Blockziel und Oberfläche bleiben erhalten.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -53,7 +53,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.9.30-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.9.31-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
