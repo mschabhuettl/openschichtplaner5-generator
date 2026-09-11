@@ -1,0 +1,35 @@
+--- a/sp5lib/database.py
++++ b/sp5lib/database.py
+@@ -1882,9 +1882,13 @@
+             if sid:  # only non-zero shift IDs mean "has a shift"
+                 cycle_entries[cid][idx] = sid
+ 
+-        # Vorhandene Planeinträge des Monats sammeln (alle drei Tabellen)
+-        # Zusätzlich shift_ids je MA und Datum für die Wochenstunden-Berechnung führen
++        # Month entries control overwrite/skip; weekly accounting also needs
++        # both adjacent month tails in ISO weeks touched by this month.
+         prefix = f"{year:04d}-{month:02d}"
++        month_weeks = {
++            _date(year, month, day).isocalendar()[:2]
++            for day in range(1, _cal.monthrange(year, month)[1] + 1)
++        }
+         existing_entries: set = set()  # (employee_id, date_str)
+         existing_shift_map: dict = {}  # (employee_id, date_str) -> shift_id
+         for r in self._read("MASHI"):
+@@ -1893,7 +1897,15 @@
+                 eid = r.get("EMPLOYEEID")
+                 if eid is not None:
+                     existing_entries.add((eid, d))
+-                    existing_shift_map[(eid, d)] = r.get("SHIFTID")
++            # Preserve the existing one-normal-duty-per-person/day accounting
++            # policy; this change only expands its ISO-week context window.
++            try:
++                context_day = _date.fromisoformat(d)
++            except (TypeError, ValueError):
++                continue
++            eid = r.get("EMPLOYEEID")
++            if eid is not None and context_day.isocalendar()[:2] in month_weeks:
++                existing_shift_map[(eid, d)] = r.get("SHIFTID")
+         for table in ("SPSHI", "ABSEN"):
+             for r in self._read(table):
+                 d = r.get("DATE", "")

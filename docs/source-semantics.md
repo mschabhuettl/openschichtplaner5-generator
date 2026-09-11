@@ -4925,3 +4925,30 @@ its existing paid-duration/HRSWEEK policy, and explicitly keep that policy
 separate from Generator configured elapsed-time caps. Do not silently promote
 HRSWEEK to a new Generator hard rule or attribute this finding to the unavailable
 0.9.29 job.
+
+### Staged cycle-generator ISO-week context correction
+
+`tools/upstream-library-cycle-week-context-candidate.patch` separates the
+month-local overwrite/skip set from the normal-duty hours map. The latter now
+includes all MASHI dates in ISO weeks touched by the requested month, including
+both adjacent month tails and ISO-year transitions. This preserves the upstream
+HRSWEEK / weekday DURATION policy; it does **not** introduce a Generator cap,
+count elapsed duration instead of paid duration, or change source data.
+
+`tools/test_upstream_cycle_week_context_candidate.py` applies the patch to a
+throwaway copy and exercises the actual method with synthetic tables and a
+write trap. Together with the baseline characterization, **25 tests pass**
+against both the installed Library and the source checkout. Coverage includes
+both month edges, adjacent nonmatching weeks, the ISO-year boundary, force
+on/off, disabled/positive limits, and the existing eight-hour paid / 24-hour
+elapsed distinction. Candidate is undeployed; no API POST was performed.
+
+Separate reproduced issue, intentionally not hidden by that bounded patch:
+`generate_schedule_from_cycle` checks accumulated hours plus a proposed duty
+**before** testing whether that same person/day will be skipped or replaced.
+An existing eight-hour duty with an eight-hour cap is reported as
+`hours_exceeded` even for a no-op skip; `force=True` also counts old plus new
+before replacement. Two characterization tests preserve this finding. Correct
+replacement accounting needs its own write-failure/rollback and dry-run tests;
+multiple normal duties per person/day and special-duty accounting are likewise
+not resolved by the month-context correction.

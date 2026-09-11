@@ -3,7 +3,7 @@ from sp5lib import database
 import pytest
 
 
-def run_cycle(monkeypatch, tmp_path, weekly=8, existing_day=None, duration=8):
+def run_cycle(monkeypatch, tmp_path, weekly=8, existing_day=None, duration=8, year=2026, month=9, start="2026-09-02", force=False):
     monkeypatch.setattr(database._paths, 'api_data_dir', lambda: str(tmp_path))
     rows = {
         'CYCLE': [{'ID': 1, 'SIZE': 31, 'UNIT': 0}],
@@ -17,9 +17,9 @@ def run_cycle(monkeypatch, tmp_path, weekly=8, existing_day=None, duration=8):
     db = object.__new__(database.SP5Database)
     db._read = lambda table: rows.get(table, [])
     db.get_cycle_assignments = lambda: [
-        {'employee_id': 1, 'cycle_id': 1, 'start': '2026-09-02'}]
+        {'employee_id': 1, 'cycle_id': 1, 'start': start}]
     db.add_schedule_entry = lambda *args: pytest.fail('characterization must not write')
-    return db.generate_schedule_from_cycle(2026, 9, dry_run=True)
+    return db.generate_schedule_from_cycle(year, month, dry_run=True, force=force)
 
 
 @pytest.mark.parametrize('weekly,created', [(7, 0), (8, 1), (0, 1)])
