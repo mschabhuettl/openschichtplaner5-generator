@@ -17,7 +17,7 @@
      """
      Liest eine .DBF-Datei und liefert die Datensätze als Liste von dicts.
      Zeichenfelder werden als UTF-16 LE dekodiert (wie von Schichtplaner5
-@@ -226,19 +227,93 @@
+@@ -226,19 +227,108 @@
      try:
          with open(filepath, "rb") as f:
              data = f.read()
@@ -53,7 +53,15 @@
 +        super().__init__(code)
 +
 +
-+def _validate_dbf_structure(data: bytes) -> None:
++class DBFValueError(ValueError):
++    """Unresolved field content, not evidence of structural corruption."""
++
++    def __init__(self, code: str):
++        self.code = code
++        super().__init__(code)
++
++
++def _validate_dbf_structure(data: bytes) -> tuple:
 +    if len(data) < 32:
 +        raise DBFStructureError("short_header")
 +    count, header_size, record_size = struct.unpack_from("<IHH", data, 4)
@@ -85,6 +93,12 @@
 +    for position in range(header_size, header_size + count * record_size, record_size):
 +        if data[position] not in (0x20, 0x2A):
 +            raise DBFStructureError("invalid_deletion_marker")
++    return header_size, count, record_size, numeric_fields
++
++
++def _validate_dbf_numbers(data: bytes, layout: tuple) -> None:
++    header_size, count, record_size, numeric_fields = layout
++    for position in range(header_size, header_size + count * record_size, record_size):
 +        if data[position] == 0x2A:
 +            continue  # Deleted rows are not delivered by the existing reader.
 +        for offset, width, decimals in numeric_fields:
@@ -92,15 +106,15 @@
 +            try:
 +                number = chunk.decode("ascii").strip()
 +            except UnicodeDecodeError:
-+                raise DBFStructureError("invalid_numeric_value") from None
++                raise DBFValueError("invalid_numeric_value") from None
 +            if not number or number == ".":
-+                raise DBFStructureError("missing_numeric_value")
++                raise DBFValueError("missing_numeric_value")
 +            try:
 +                value = float(number) if "." in number or decimals > 0 else int(number)
 +            except ValueError:
-+                raise DBFStructureError("invalid_numeric_value") from None
++                raise DBFValueError("invalid_numeric_value") from None
 +            if isinstance(value, float) and not math.isfinite(value):
-+                raise DBFStructureError("nonfinite_numeric_value")
++                raise DBFValueError("nonfinite_numeric_value")
 +
 +
 +def read_dbf_buffer(data: bytes, *, strict: bool = False) -> list[dict[str, Any]]:
@@ -111,7 +125,8 @@
      — wichtig bei langsamen Bind-Mounts/Netzpfaden.
      """
 +    if strict:
-+        _validate_dbf_structure(data)
++        layout = _validate_dbf_structure(data)
++        _validate_dbf_numbers(data, layout)
      if len(data) < 32:
          return []
      f = io.BytesIO(data)

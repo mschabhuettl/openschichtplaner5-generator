@@ -175,7 +175,7 @@ def test_strict_numeric_source_failure_is_not_zero(reader, name, kind, raw, deci
     data[32:43] = name.ljust(11, b'\0')
     data[43:44] = kind
     data[49] = decimals
-    with pytest.raises(reader.DBFStructureError) as error:
+    with pytest.raises(reader.DBFValueError) as error:
         reader.read_dbf_buffer(bytes(data), strict=True)
     assert error.value.code == code
     assert str(error.value) == code
@@ -201,7 +201,7 @@ def test_strict_numeric_failure_propagates_through_table_bridge(reader, tmp_path
     db = SP5Database(str(tmp_path))
     assert db._read('SHDEM') == [{'ID': 0}]
     strict = StrictSourceTables(db, reader.read_dbf)
-    with pytest.raises(reader.DBFStructureError, match='^invalid_numeric_value$'):
+    with pytest.raises(reader.DBFValueError, match='^invalid_numeric_value$'):
         strict._read('SHDEM')
 
 
@@ -216,7 +216,7 @@ def test_writer_blank_is_not_evidence_of_corruption(reader, value, kind):
     data = bytearray(synthetic_dbf([b' ' + encoded]))
     data[43] = ord(kind)
     assert reader.read_dbf_buffer(bytes(data)) == [{'ID': 0}]
-    with pytest.raises(reader.DBFStructureError, match='^missing_numeric_value$'):
+    with pytest.raises(reader.DBFValueError, match='^missing_numeric_value$'):
         reader.read_dbf_buffer(bytes(data), strict=True)
 
 
@@ -233,7 +233,56 @@ def test_actual_append_distinguishes_omitted_numeric_from_explicit_zero(
     assert reader.read_dbf(str(path)) == [{'ID': 0}]
     if record.get('ID') is None:
         assert path.read_bytes()[66:70] == b'    '
-        with pytest.raises(reader.DBFStructureError, match='^missing_numeric_value$'):
+        with pytest.raises(reader.DBFValueError, match='^missing_numeric_value$'):
             reader.read_dbf(str(path), strict=True)
     else:
         assert reader.read_dbf(str(path), strict=True) == [{'ID': 0}]
+
+
+@pytest.mark.parametrize('raw', [b'    ', b'nope', b' NaN'])
+def test_structural_failure_takes_precedence_over_unresolved_numbers(reader, raw):
+    data = bytearray(synthetic_dbf([b' ' + raw, b'!0000']))
+    data[49] = 1
+    with pytest.raises(reader.DBFStructureError, match='^invalid_deletion_marker$'):
+        reader.read_dbf_buffer(bytes(data), strict=True)
+
+
+@pytest.mark.parametrize('raw,code', [(b'    ', 'missing_numeric_value'),
+                                     (b'nope', 'invalid_numeric_value'),
+                                     (b' NaN', 'nonfinite_numeric_value')])
+def test_valid_layout_with_unresolved_number_is_not_structural_corruption(reader, raw, code):
+    data = bytearray(synthetic_dbf([b' ' + raw]))
+    data[49] = 1
+    # File layout can be validated independently; it does not certify values.
+    reader._validate_dbf_structure(bytes(data))
+    with pytest.raises(reader.DBFValueError) as error:
+        reader.read_dbf_buffer(bytes(data), strict=True)
+    assert not isinstance(error.value, reader.DBFStructureError)
+    assert str(error.value) == code
+
+
+@pytest.mark.parametrize('table,method', [('SHDEM', 'get_staffing_requirements'),
+                                         ('SPDEM', 'get_special_staffing')])
+@pytest.mark.parametrize('field', ['MIN', 'MAX'])
+@pytest.mark.parametrize('raw,code', [(b'0000', None), (b'    ', 'missing_numeric_value'),
+                                     (b'nope', 'invalid_numeric_value')])
+def test_staffing_library_mapping_preserves_value_failure(reader, tmp_path, monkeypatch,
+                                                        table, method, field, raw, code):
+    # Actual Library mapping, actual synthetic DBF read, no real source access.
+    data = bytearray(synthetic_dbf([b' ' + raw]))
+    data[32:43] = field.encode().ljust(11, b'\0')
+    (tmp_path / f'5{table}.DBF').write_bytes(bytes(data))
+    (tmp_path / '5DADEM.DBF').write_bytes(synthetic_dbf([]))
+    db = SP5Database(str(tmp_path))
+    monkeypatch.setattr(db, 'get_shifts', lambda **kwargs: [])
+    monkeypatch.setattr(db, 'get_workplaces', lambda **kwargs: [])
+    legacy = getattr(db, method)()
+    rows = legacy['shift_requirements'] if table == 'SHDEM' else legacy
+    assert rows[0][field.lower()] == 0
+    strict = StrictSourceTables(db, reader.read_dbf)
+    monkeypatch.setattr(db, '_read', strict._read)
+    if code:
+        with pytest.raises(reader.DBFValueError, match=f'^{code}$'):
+            getattr(db, method)()
+    else:
+        assert getattr(db, method)() == legacy

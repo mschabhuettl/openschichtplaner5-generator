@@ -3760,3 +3760,32 @@ Keine Runtimeänderung/Release, keine produktiven Schreibzugriffe. Nächste
 Integration muss Feldvollständigkeit von struktureller Integrität trennen und
 ungeklärte Pflichtzahlen als quellfreie API-Diagnose erhalten. Die gemeldete
 0.9.29-Planung bleibt ohne Originaljob nicht kausal reproduziert.
+
+### Strukturfehler und ungeklärte Zahlen getrennt (isolierter Kandidat)
+
+Der strikte Reader-Kandidat verwendet jetzt `DBFValueError` für fehlende,
+ungültige und nichtendliche Zahlen. `DBFStructureError` bleibt ausschließlich
+für Header-/Datensatzstrukturfehler; `DBFReadError` für fehlende/unlesbare
+Dateien. `_validate_dbf_structure` prüft zuerst die **gesamte** Struktur,
+`_validate_dbf_numbers` anschließend die Zahlen. Ein später ungültiger
+Datensatzmarker wird damit nicht mehr durch ein früheres Leerfeld verdeckt.
+Strukturell gültig bedeutet weiterhin nicht fachlich vollständig.
+
+18 zusätzliche synthetische Regressionen belegen diese Unterscheidung und
+den Durchstich durch die echten Library-Methoden
+`SP5Database.get_staffing_requirements` (SHDEM) sowie `get_special_staffing`
+(SPDEM): MIN/MAX mit expliziter Null bleiben Null, Leer-/Textwerte liefern im
+Legacy-Pfad irreführend Null und im strikten Pfad eine quellfreie Wertkategorie.
+Die Tests verwenden ausschließlich erzeugte Dateien und keine produktiven
+Schreibzugriffe. **136 Reader-/Writer-/Library-Bridge-Tests bestanden.**
+
+API-Integrationslücke bleibt ausdrücklich offen: In `routers/master_data.py`
+reicht `get_staffing_requirements` Library-Ausnahmen ungefangen weiter;
+`get_special_staffing` fängt jede Exception über `_sanitize_500` ab. Eine neue
+Library-Fehlerklasse allein ist daher **noch kein stabiler API-Fehlervertrag**.
+Vor Integration müssen beide GET-Routen dieselben quellfreien Kategorien
+transportieren, ohne eine kaputte Teilantwort oder einen gültigen Nullbedarf
+vorzutäuschen. Der Kandidat bleibt opt-in und wird nicht global eingesetzt:
+Die Frage optionaler numerischer Felder außerhalb dieses Bedarfsvertrags ist
+nicht geklärt. Kein Runtimefix/Release und kein Nachweis, dass diese Quellwerte
+im Originaljob 0.9.29 vorkamen.
