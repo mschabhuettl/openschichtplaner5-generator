@@ -3717,3 +3717,46 @@ API-Fehlervertrag ist damit noch nicht implementiert. Der normale Readerpfad
 bleibt kompatibel. Kein erneuter identischer privater Release-Test nötig;
 keine Aussage über Vorkommen dieser Quellwerte in echten Daten oder die Ursache
 des weiterhin nicht vorliegenden Originaljobs 0.9.29.
+
+### Gegenprobe: leere Zahlen entstehen auch im vorhandenen Schreibpfad
+
+`sp5lib.dbf_writer._encode_field` schreibt für `None` ausdrücklich Leerzeichen;
+der N/F-Zweig schreibt bei ValueError/TypeError dieselben Bytes.
+`append_record` verwendet `record.get(fname)`: Auch ein ausgelassenes Feld wird
+damit leer geschrieben. Neun zusätzliche synthetische Regressionen im
+Strict-Reader-Test prüfen N/F mit None/leerem Text/ungültigem Text sowie echte
+Dateianhänge mit ausgelassener ID, None und expliziter Null. Der Legacyreader
+liefert in allen drei Anhangfällen 0; der Kandidat unterscheidet explizite Null
+von fehlender Zahl, kann aber die Herkunft der fehlenden Zahl nicht erkennen.
+**Ein Leerfeld ist damit kein ausreichender Beleg für Dateibeschädigung.**
+Das belegt noch nicht, dass MIN/MAX/WEEKDAY fachlich optional sind.
+
+Der konkrete Bedarfs-Schreibvertrag ist enger: `SP5Database.set_staffing_requirement`
+füllt bei Neuanlage ID/GROUPID/WEEKDAY/SHIFTID/WORKPLACID/MIN/MAX ausdrücklich
+(WORKPLACID=0). `create_special_staffing` füllt die entsprechenden datierten
+Felder einschließlich MIN/MAX ebenfalls. In API `routers/master_data.py`
+verlangt `StaffingRequirementSet` min/max und weekday; `SpecialStaffingCreate`
+setzt ausgelassene min/max ausdrücklich auf 0. `SpecialStaffingUpdate` erlaubt
+None, aber die Route `update_special_staffing` filtert None vor dem DB-Aufruf:
+None bedeutet dort keine Änderung, nicht Zahl löschen. OSP5
+`frontend/src/api/client.ts` bietet diese drei Schreibaufrufe an;
+`pages/Personalbedarf.tsx` verwendet sie beim Speichern der regulären bzw.
+datumsbezogenen Bedarfe. Diese Quellbelege rechtfertigen keine globale
+Leerwert-Ablehnung aller Tabellen und keine zusätzlichen Personalregeln.
+
+Prüfung: **118 Reader-/Schreib-/Bridge-Tests bestanden**, Ruff und diff-check
+grün. Für die Bridge-Tests ist der vorhandene **Worktime-Contract-Kandidat**
+als `SP5_WORK_TIME_ROUTER` erforderlich, nicht der unveränderte API-Router
+(dessen Selektor hat noch nicht die erforderliche plan-Signatur):
+
+```sh
+PYTHONPATH=/home/hilbert/projects/libopenschichtplaner5:tests:tools \
+SP5_STRICT_READER=/tmp/sp5-numeric-reader-candidate/sp5lib/dbf_reader.py \
+SP5_WORK_TIME_ROUTER=/tmp/sp5-worktime-contract/sp5api/routers/work_time_rules.py \
+.venv/bin/python -m pytest -q tools/test_upstream_strict_reader.py tools/test_upstream_source_read_integrity.py
+```
+
+Keine Runtimeänderung/Release, keine produktiven Schreibzugriffe. Nächste
+Integration muss Feldvollständigkeit von struktureller Integrität trennen und
+ungeklärte Pflichtzahlen als quellfreie API-Diagnose erhalten. Die gemeldete
+0.9.29-Planung bleibt ohne Originaljob nicht kausal reproduziert.

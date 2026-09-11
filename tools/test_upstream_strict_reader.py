@@ -12,6 +12,7 @@ import pytest
 
 from test_upstream_source_read_integrity import synthetic_dbf
 from sp5lib.database import SP5Database
+from sp5lib import dbf_writer
 from tools.audit_upstream_work_time_plan import load_helpers
 from tools.selected_work_segments_candidate import StrictSourceTables, measure_selected
 
@@ -202,3 +203,37 @@ def test_strict_numeric_failure_propagates_through_table_bridge(reader, tmp_path
     strict = StrictSourceTables(db, reader.read_dbf)
     with pytest.raises(reader.DBFStructureError, match='^invalid_numeric_value$'):
         strict._read('SHDEM')
+
+
+@pytest.mark.parametrize('value', [None, '', 'invalid'])
+@pytest.mark.parametrize('kind', ['N', 'F'])
+def test_writer_blank_is_not_evidence_of_corruption(reader, value, kind):
+    # The real writer deliberately represents None as spaces, and also uses
+    # spaces on conversion failure. Neither reader can recover that origin.
+    field = {'name': 'ID', 'type': kind, 'len': 4, 'dec': 0}
+    encoded = dbf_writer._encode_field(value, field)
+    assert encoded == b'    '
+    data = bytearray(synthetic_dbf([b' ' + encoded]))
+    data[43] = ord(kind)
+    assert reader.read_dbf_buffer(bytes(data)) == [{'ID': 0}]
+    with pytest.raises(reader.DBFStructureError, match='^missing_numeric_value$'):
+        reader.read_dbf_buffer(bytes(data), strict=True)
+
+
+@pytest.mark.parametrize('record', [{}, {'ID': None}, {'ID': 0}])
+def test_actual_append_distinguishes_omitted_numeric_from_explicit_zero(
+    reader, tmp_path, monkeypatch, record,
+):
+    # Local synthetic file only; disable unrelated journal/index side effects.
+    path = tmp_path / 'synthetic.dbf'
+    path.write_bytes(synthetic_dbf())
+    monkeypatch.setattr(dbf_writer, '_after_write', lambda *args, **kwargs: None)
+    fields = [{'name': 'ID', 'type': 'N', 'len': 4, 'dec': 0}]
+    dbf_writer.append_record(str(path), fields, record)
+    assert reader.read_dbf(str(path)) == [{'ID': 0}]
+    if record.get('ID') is None:
+        assert path.read_bytes()[66:70] == b'    '
+        with pytest.raises(reader.DBFStructureError, match='^missing_numeric_value$'):
+            reader.read_dbf(str(path), strict=True)
+    else:
+        assert reader.read_dbf(str(path), strict=True) == [{'ID': 0}]
