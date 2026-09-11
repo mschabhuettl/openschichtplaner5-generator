@@ -4788,3 +4788,45 @@ known dependency warnings; Ruff and diff checks pass. No runtime code, deployed
 API, or published Docker image changed. The unchanged private baseline is not
 retested or claimed as a successful plan. These synthetic defects are not yet
 linked to the unavailable original 0.9.29 project/job/result.
+
+
+### Native person DBF identities before equality/join (2026-09-11)
+
+The combined opt-in candidate now applies
+`tools/upstream-library-person-identity-activation-candidate.patch` after the
+existing strict/temporal/exact-identity reader patches. In
+`SP5Database._read`, `strict_staffing=True` also reads `GRASG` with required
+numeric identities `GROUPID, EMPLOYEEID`, and `EMPL` with `ID`. This happens
+before `get_group_members` / `get_all_group_members` group equality and before
+`get_employees` can feed the API dictionary join. The permissive source cache
+is bypassed; no second parser or inferred replacement person is introduced.
+
+`tools/person_reader_contract.py:check_person_reader`, executed inside the
+rebuilt package, checks all three fields with integer N, integral decimal N/F,
+fractional N, logical L, character C, blank and malformed numeric values.
+Integral `1.0` remains an integer ID; fractions, boolean-typed and character
+IDs fail. Missing descriptors fail, preloaded permissive cache entries cannot
+bypass the checks, and a corrected source succeeds after a failed read.
+
+`tools/person_full_app_contract.py:check_native_person_source` additionally
+runs synthetic native DBF files through the actual Library, employees router,
+API middleware and Generator `APIClient`, under both `/api` and `/api/v1`.
+Nine malformed table/field/type cases per prefix return HTTP 500, not a 200
+empty membership list; Generator raises `APIImportError` without caching the
+failure. Unauthenticated access remains 401 and valid integral-decimal source
+recovers to a successful person join. The current middleware response is still
+**generic**: this does not yet provide the category-specific employee-source
+headers for DBF read errors. That propagation remains a concrete follow-up.
+
+This closes the native DBF entry point only in the staged candidate. Direct
+Generator Python/API rows and arbitrary API database implementations still need
+identity-shape checks before set/dictionary construction. Existing upstream
+checkouts and deployed services are untouched. No claim is made that these
+synthetic cases caused the user's missing persons, 24-hour duties or weekly
+excesses; the exact 0.9.29 input/job/result is still needed for that attribution.
+
+Verification: combined packaged/reader/person/API gate **395 passed**, two
+known dependency warnings; Ruff and diff checks pass. The initial new patch
+had an incorrect hunk length; corrected before the successful rebuilt gate.
+No Generator runtime or released image changed, so the unchanged private
+baseline was not redundantly rerun. Remote CI remains unverified (`gh` absent).

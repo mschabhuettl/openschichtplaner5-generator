@@ -44,6 +44,7 @@ def test_packaged_staffing_runtime(tmp_path, prefix):
         'upstream-library-staffing-activation-candidate.patch',
         'upstream-library-staffing-temporal-activation-candidate.patch',
         'upstream-library-staffing-identity-activation-candidate.patch',
+        'upstream-library-person-identity-activation-candidate.patch',
         'upstream-api-staffing-source-contract-candidate.patch',
         'upstream-api-staffing-activation-candidate.patch',
         'upstream-api-person-integrity-candidate.patch',

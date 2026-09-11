@@ -79,6 +79,9 @@ def run_contract(prefix):
         sys.modules[spec.name] = database
         spec.loader.exec_module(database)
     from sp5lib.database import SP5Database
+    if os.environ.get('SP5_PACKAGED_RUNTIME'):
+        from person_reader_contract import check_person_reader
+        check_person_reader(Path(os.environ['SP5_DB_PATH']) / 'person-source')
     from test_upstream_staffing_source_contract import staffing_columns, assert_source_error
     from fastapi.testclient import TestClient
     from sp5api.main import app, _sessions
@@ -124,6 +127,9 @@ def run_contract(prefix):
             if os.environ.get('SP5_PERSON_ACTIVATION'):
                 from person_full_app_contract import check_person_join
                 check_person_join(http, headers, prefix)
+                if os.environ.get('SP5_PACKAGED_RUNTIME'):
+                    from person_full_app_contract import check_native_person_source
+                    check_native_person_source(http, headers, prefix, root / 'person-http')
             del _sessions[token]
             assert http.get(prefix + '/staffing-requirements', headers=headers).status_code == 401
             print('full-app contract passed')

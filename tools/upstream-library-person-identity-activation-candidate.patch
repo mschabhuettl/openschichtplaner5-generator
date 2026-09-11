@@ -1,0 +1,14 @@
+--- a/sp5lib/database.py
++++ b/sp5lib/database.py
+@@ -153,5 +153,11 @@
+         der Cache ist reine Lese-Beschleunigung, die DBF bleibt Quelle der Wahrheit.
+         """
++        # Validate native identities before group equality or employee joins.
++        # Reuse exact DBF identity parsing; never read a permissive cache entry.
++        if self.strict_staffing and name in ("GRASG", "EMPL"):
++            return read_dbf(
++                self._table(name), strict=True,
++                identity_fields=("GROUPID", "EMPLOYEEID") if name == "GRASG" else ("ID",))
+         # Opt-in source contract: never reuse a permissively parsed cache entry.
+         # Scope is intentionally limited to the two staffing tables.
+         # Reuse the existing strict reader; failures remain source-free and uncached.
