@@ -155,6 +155,9 @@ class _Database:
     def get_bookings(self, **params):
         return self.rows("/api/bookings", **params)
 
+    def get_leave_types(self, include_hidden=False):
+        return self.rows("/api/leave-types", include_hidden=str(include_hidden).lower())
+
     def get_shifts(self, **kw):
         return self.rows("/api/shifts", include_hidden="true")
 

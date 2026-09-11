@@ -707,6 +707,13 @@ def import_snapshot(
         boundary_work=list(boundary_work.values()),
         unresolved=list(dict.fromkeys(unresolved)),
     )
+    from .absence_evidence import absence_evidence
+
+    for native_id, evidence in absence_evidence(
+        db, source_employees, metadata["context_schedule"],
+        period_start, period_end, holidays,
+    ).items():
+        metadata["provenance"][f"sp5:employee:{native_id}"]["absence_accounting"] = evidence
     if "metadata" in Snapshot.model_fields:
         payload["metadata"] = metadata
     else:

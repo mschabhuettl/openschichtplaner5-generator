@@ -36,6 +36,7 @@ def transport(monkeypatch, tmp_path):
         "/api/workplaces": source.get_workplaces(),
         "/api/holidays": source.get_holidays(),
         "/api/bookings": [],
+        "/api/leave-types": [],
         "/api/staffing-requirements": source.get_staffing_requirements(),
         "/api/staffing-requirements/special": [],
         "/api/restrictions": source.get_restrictions(),

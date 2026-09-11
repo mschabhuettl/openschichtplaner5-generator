@@ -1330,3 +1330,42 @@ in zwei Wochen, explizite synthetische Neunstunden-Tages-/Wochenlimits. Erwartet
 werden beide Tages- und beide Wochenmeldungen. Vollplanung bleibt INFEASIBLE;
 Teilplanung lässt beide Dienste offen und verletzt keine harten Grenzen.
 Die synthetischen Neunstundenwerte sind keine Nutzerdefaults.
+
+### Abwesenheitsstunden getrennt bewerten, nicht als Arbeitszeit übernehmen
+
+`api_adapter._Database.get_leave_types(include_hidden=True)` ergänzt den
+vorhandenen lesenden API-Endpunkt `master_data.get_leave_types`. Die Library
+liest dabei LEAVT einschließlich ausgeblendeter, historisch verwendeter Arten.
+Nur die bereits im sichtbaren Schedule gelieferte Typ-ID wird aufgelöst;
+anonymisierte IDs werden nicht rekonstruiert. `database.get_schedule` bildet
+ABSEN.DATE/LEAVETYPID/INTERVAL/START/END auf die datierten Schedule-Felder ab.
+Die OSP5-Kontoansicht `frontend/src/pages/Zeitkonto.tsx` zeigt aggregierte
+Konten und Abwesenheitstage; das ist keine replanning-sichere Zeitgutschrift.
+
+Der Generator erhält nun in `metadata.provenance[employee_id].absence_accounting`
+eine Bewertung jeder sichtbaren, deduplizierten Abwesenheit innerhalb des
+Planungszeitraums. `absence_evidence.absence_evidence` verwendet unverändert
+`calculations.EmployeeContext.from_record` und `absence_sums`; diese rufen
+`absence_hours` und `charge_factor` auf und klemmen an die Beschäftigung.
+Die drei Ergebnisse bleiben getrennt: `charged`, `charged_deduct_actual`,
+`raw_deduct_overtime`. Es erfolgt keine neue Stundenarithmetik und keine
+Übernahme in Zielstunden, Gutschrift, Anfangssaldo oder Arbeitszeitlimits.
+`applied: false` bleibt auch bei erfolgreicher Bewertung bestehen.
+
+Fehlende Typdefinitionen und ungültige Zeitintervalle sind ausdrücklich
+`unresolved`, ohne einen Stundenwert. Gleiche Start-/Endminute bleibt wie in
+der bisherigen Generator-Verfügbarkeitsprüfung ungeklärt, obwohl die Library
+diese rechnerisch als 24 Stunden bewertet; dies ist keine Aussage über die
+Zulässigkeit von 24-Stunden-Diensten. Die Schedule-Quelle liefert keine
+ABSEN-Datensatz-ID und wird teamübergreifend dedupliziert: Die Einzelbewertungen
+sind deshalb **keine zertifizierte vollständige Kontensumme** und werden nicht
+automatisch addiert oder bestätigt. Freitext wird nicht übernommen.
+
+`tests/test_absence_evidence.py` prüft Anrechnung/Abzüge, feste Tageswerte,
+ganze/halbe/stundenweise Abwesenheiten, Mitternacht, Arbeitstage, ganze/halbe
+Feiertage, COUNTALL, Beschäftigungsgrenzen, fehlende Definitionen,
+Scope/Deduplizierung, JSON-Erhaltung sowie GET-Transport einschließlich
+ausgeblendeter Arten. Bestehende Library-Tests in `tests/test_calculations.py`
+belegen dieselbe Anrechnungssemantik. Ungeklärte persönliche Freigaben,
+Profile und die fehlende Originaleingabe des 600-Sekunden-Falls bleiben davon
+unberührt.
