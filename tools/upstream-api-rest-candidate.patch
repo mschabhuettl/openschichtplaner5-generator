@@ -1,0 +1,37 @@
+--- a/sp5api/routers/work_time_rules.py
++++ b/sp5api/routers/work_time_rules.py
+@@ -281,10 +281,22 @@
+             })
+ 
+     # ── Min rest between shifts ───────────────────────────────────
+-    for prev, curr in zip(shift_blocks, shift_blocks[1:], strict=False):
++    # Keep the furthest previous end: nested duties must not hide conflicts.
++    prev = shift_blocks[0] if shift_blocks else None
++    for curr in shift_blocks[1:]:
+         # Tatsächliche Ruhezeit in Stunden zwischen Vor-Ende und Ist-Beginn
+         rest_hours = (curr["start"] - prev["end"]).total_seconds() / 3600
+-        if 0 < rest_hours < min_rest:
++        if rest_hours < 0:
++            violations.append({
++                "type": "shift_overlap",
++                "date": curr["date"].isoformat(),
++                "employee_id": employee_id,
++                "description": "Shift starts before a previous duty has ended",
++                "severity": "error",
++                "value": round(-rest_hours, 2),
++                "limit": 0.0,
++            })
++        elif rest_hours < min_rest:
+             violations.append({
+                 "type": "min_rest_hours_between_shifts",
+                 "date": curr["date"].isoformat(),
+@@ -297,6 +309,9 @@
+                 "value": round(rest_hours, 2),
+                 "limit": min_rest,
+             })
++
++        if curr["end"] > prev["end"]:
++            prev = curr
+ 
+     # ── Max consecutive working days ──────────────────────────────
+     worked_dates = sorted(day_hours.keys())

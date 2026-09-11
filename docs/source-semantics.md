@@ -2047,3 +2047,51 @@ Nächster zusammenhängender Schritt: expliziten Ist-/Soll-Vertrag des separaten
 API-Arbeitszeitprüfers mit OSP5 `WorkTimeRules.tsx` und den belegten realen
 Zeit-/Überlappungsgrenzen verbinden. Den Quellansichtskandidaten bis zur
 vollständigen API-/Aufruferabnahme isoliert lassen; keine neue UI-/Release-Serie.
+
+### Isolierter API-Ruhe-Korrekturkandidat: verschachtelte Dienste
+
+`tools/upstream-api-rest-candidate.patch` korrigiert ausschließlich den
+Intervallvergleich in `_check_employee`; `tools/upstream-osp5-rest-candidate.patch`
+ergänzt die deutsche Bezeichnung des neuen Diagnosecodes in `WorkTimeRules.tsx`.
+Keine Originalcheckouts, Generatorruntime oder produktiven Regeln geändert.
+
+**Zusätzlicher reproduzierter Fehler:** Ein einfacher Nachbarvergleich reicht
+nicht. Bei Intervallen Montag 08:00–Dienstag 08:00, Montag 10:00–12:00 und
+Dienstag 00:00–04:00 erkennt das Original den zweiten Konflikt nicht: Es
+vergleicht mit dem bereits beendeten kurzen statt dem noch laufenden langen
+Dienst. Der Kandidat behält das maximale bisherige Dienstende. Negative
+Abstände werden `shift_overlap` (auch bei Mindestruhe null), Nullabstände bei
+positiver Mindestruhe werden Ruheverletzungen. Exakt erreichte Mindestruhe
+bleibt zulässig. Ein einzelner 24h-Dienst wird durch diesen Vergleich nicht
+verboten. Tages-/Wochenhöchstgrenzen sind eine separate Prüfung.
+
+`shift_overlap.value` ist der Abstand des aktuellen Beginns zum noch offenen
+vorherigen Ende in Stunden, **nicht** die Schnittmengendauer oder aufsummierte
+Überlappungszeit. Der Kandidat meldet einen Konflikt je betroffenem aktuellen
+Block, keine vollständige Liste aller kollidierenden Paare.
+
+Reproduktion mit Original-Library (keine DBF-/HTTP-Zugriffe):
+
+```sh
+cp /home/hilbert/projects/openschichtplaner5-api/sp5api/routers/work_time_rules.py /tmp/sp5-rest-candidate.py
+# Patch in einer isolierten API-Kopie mit gleicher Verzeichnisstruktur anwenden;
+# SP5_REST_ROUTER anschließend auf deren work_time_rules.py setzen.
+PYTHONPATH=/home/hilbert/projects/libopenschichtplaner5 SP5_REST_ROUTER=/tmp/sp5-rest-candidate.py .venv/bin/python -m pytest -q tools/test_upstream_rest_candidate.py
+```
+
+Die obige unveränderte Kopie liefert zunächst **5 fehlgeschlagene, 5 bestandene**
+Tests; mit angewandtem Kandidaten **10 bestanden**. Zusätzlich bestehen die
+**18 bestehenden synthetischen Quellkombinationen (72 Assertions)** und
+**8 unveränderten Upstream-Helfertests** via `audit_upstream_work_time_plan.py`
+ohne `--candidate` (Plansichtfilter absichtlich unverändert). Generator:
+**115 Tests** in `test_partial_limits.py` und `test_calendar_limits.py` bestanden.
+Ruff und `git apply --check` gegen beide Originalrepos bestanden.
+
+**Kein vollständiger API-Fix:** Die Blöcke sind weiterhin Spannweiten über
+Quellfenster; Plansichtvermischung, bezahlte statt reale Tages-/Wochenstunden,
+fehlender Randkontext, fehlende Zeitangaben und Zeitzonen bleiben offen.
+Die neue Bezeichnung ist keine vollständige Browser-/Endpointabnahme.
+Vor Integration sind diese Änderungen mit dem expliziten Plansichtvertrag
+zu verbinden. Insbesondere darf die OSP5-Meldung „Keine Verstöße gefunden“
+weiterhin nicht als unabhängiges Gütesiegel für Generatorpläne gelten.
+Der Kandidat belegt keine Ursache des nicht vorliegenden 0.9.29-600s-Jobs.

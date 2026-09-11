@@ -1,0 +1,10 @@
+--- a/frontend/src/pages/WorkTimeRules.tsx
++++ b/frontend/src/pages/WorkTimeRules.tsx
+@@ -48,6 +48,7 @@
+ }
+ 
+ const VIOLATION_LABELS: Record<string, string> = {
++  shift_overlap:               'Dienstüberschneidung',
+   max_hours_per_day:             'Tägliche Höchstarbeitszeit überschritten',
+   max_hours_per_week:            'Wöchentliche Höchstarbeitszeit überschritten',
+   min_rest_hours_between_shifts: 'Mindestruhezeit zwischen Schichten unterschritten',
