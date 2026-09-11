@@ -5041,3 +5041,32 @@ budget already consumed there. The measured configured 600-second case with
 hundreds of vacancies therefore still needs the separately prioritized bounded
 incumbent-quality strategy. Merely proving this zero-vacancy branch correct does
 not establish improved performance on that real case.
+
+### Bounded-quality design: three synthetic phase-isolation counterexamples
+
+`tests/test_anytime_quality_contract.py` captures and clones the **actual generated
+CP model** before search, using one eligible employee, two eight-hour demands,
+and an eight-hour period target. There is no weekly cap inferred from that target.
+All examined assignments independently validate. Three native CP-SAT OPTIMAL
+results establish concrete hazards for a future anytime strategy:
+
+- Switching to the hours objective without a coverage constraint chooses one
+  duty (zero target deviation) instead of two (zero vacancies).
+- Fixing an incumbent at one vacancy allows a quality OPTIMAL result, but the
+  untouched primary model proves zero vacancies. That quality result is only
+  conditional, not global lexicographic OPTIMAL.
+- Retaining a quality non-worsening bound when resuming coverage still blocks
+  the second duty, even without a fixed-vacancy equality. Coverage search must
+  not inherit quality-phase bounds.
+
+The existing `CpModel.clone()` mechanism is sufficient for phase isolation; no
+new optimizer/library is needed. A future bounded quality attempt should run on
+a clone constrained to incumbent coverage, retain its own objective/bound scope,
+and preserve the independently valid fallback. If coverage is not proven, its
+public overall status must remain FEASIBLE even when that clone returns OPTIMAL.
+Any resumed primary coverage search must use the primary constraints, not the
+clone's quality restrictions. Compare candidates lexicographically, rather than
+comparing vacancy objectives against weighted quality objectives. Preserve
+independent validation/separation in both searches and a shared wall-clock
+deadline. Budget allocation and actual same-input performance remain open;
+these counterexamples are contract evidence, not a delivered anytime strategy.
