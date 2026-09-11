@@ -38,10 +38,12 @@ zu `MODEL_INVALID` (`solver.py:88–95`, `domain.py:340–366`).
 
 Ein frischer Import erzeugt solche offenen Punkte absichtlich: Importkonsistenz,
 Regel-/Freigabeneinrichtung, Randkontext, fehlende Buchungen sowie gegebenenfalls
-nicht zugeordnete Vergleichsdienste. Letztere werden **auch im nicht fixierten
-Referenzmodus** in `unresolved` geschrieben. Damit blockieren derzeit sogar
-nur als Vergleich gedachte Altplaneinträge die neue Modellbildung.
-Das ist belegtes Generatorverhalten, nicht automatisch fachlich erforderlich.
+nicht zugeordnete Vergleichsdienste. Im oben genannten untersuchten Stand
+wurden Letztere **auch im nicht fixierten Referenzmodus** in `unresolved`
+geschrieben. Seit `e02a05a` bleiben normale, nicht fixierte Vergleichsdienste
+innerhalb der Planungsperiode ausschließlich Zuordnungsdiagnosen; sie
+blockieren nicht mehr allein die Modellbildung. Ungeklärter fixer Randkontext
+ist davon ausdrücklich ausgenommen (`tests/test_reference_blockers.py`).
 
 Eine fehlende positive Freigabe ist genauer zu unterscheiden: Sie ergibt
 `approval` in `domain.eligibility` und verhindert Kandidaten. Die leere
@@ -126,6 +128,44 @@ belegt insbesondere SPDEM-Vorrang und „kein Bedarf“ als eigene Kategorie.
    persönliche Bestätigung. Die vorhandene explizite Einrichtung weiter
    nutzen, aber unbestätigte Platzhalter nicht durch ein zusätzliches Profil
    vermeintlich „überstimmen“. Keine Werte oder Freigaben erfinden.
+
+### Vertiefung: eine direkte Mitgliedschaft, mehrere mögliche Randteams
+
+Synthetischer Nachweis vom 11.09.2026, ohne Originaldatensätze:
+`tests/test_hierarchy.py:test_single_direct_membership_does_not_prove_context_assignment_team`
+verwendet eine Person ausschließlich in Unterteam 2, dessen Elternteam 1
+mit ausgewählt wird. `sp5_adapter.import_snapshot` bewahrt die direkte
+Mitgliedschaft `[2]` in `metadata.direct_group_memberships`, erweitert jedoch
+die wirksamen `employee.team_ids` auf `[1, 2]` (Vorfahrenexpansion).
+Die spätere Randdienstverarbeitung prüft diese **wirksamen**, nicht nur die
+direkten Mitgliedschaften: Ohne explizites `row.group_id` ist die Zuordnung
+mehrdeutig. Das beweist nicht zwei direkte Mitgliedschaften und auch nicht,
+dass die Person tatsächlich im Elternteam gearbeitet hat.
+
+Der Quellpfad erklärt die Informationslücke: Library
+`Database.get_schedule` gibt bei MASHI Person/Datum/Dienst/Arbeitsplatz aus,
+aber keine Einsatzgruppe; der abschließende `group_id`-Filter verwendet
+`get_group_members`. API `sp5api/routers/schedule.py:get_schedule` reicht
+den Filter weiter und beschränkt die Personensicht. OSP5
+`frontend/src/pages/Schedule.tsx` bildet die Anzeigegruppen über
+`groupMembersMap`/`intersectGroupMembers` im `rows`-Aufbau, nicht über eine
+nachgewiesene Einsatzgruppe pro Dienst. Keine dieser Stufen ergänzt den
+fehlenden Einsatzteambeleg.
+
+Beide Testvarianten erhalten denselben festen Randdienst mit 240 realen
+Minuten. Eine nur synthetisch ergänzte explizite Quellgruppe 2 beseitigt
+die Gruppenmehrdeutigkeit, **nicht** die weiterhin offene Dienstklassifikation,
+Bedarfszuordnung oder Freigabe. Es werden keine Freigaben erzeugt.
+Damit ist der nächste Korrekturschritt eingegrenzt: bekannte personenbezogene
+Randzeiten für Ruhe-/Stundenprüfungen von einer eventuell unbekannten
+Besetzungszuordnung trennen. Vor einer Änderung müssen Teamregeln, fixe
+Bedarfe und Kandidatenprüfung erhalten bleiben; einfach alle Kontextfragen
+zu ignorieren oder die direkte Gruppe zu wählen wäre keine belegte Lösung.
+
+Gezielte Prüfung: 60 Tests aus `test_hierarchy.py`, `test_partial_limits.py`,
+`test_calendar_limits.py` und `test_reference_blockers.py` bestanden. Kein
+Laufzeitverhalten geändert; kein neuer Nachweis des fehlenden privaten
+600-Sekunden-Jobs und keine erfolgreiche Echtdatenplanung behauptet.
 
 ### Tatsächlich vorhandene positive Freigabequelle: Generator-Entwürfe
 

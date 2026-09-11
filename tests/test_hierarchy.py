@@ -96,3 +96,53 @@ def test_parent_import_includes_children_preserves_demand_teams_and_deduplicates
     assert len(snapshot.restrictions) == 2
     history = historical_matrix(db, snapshot, date(2026, 1, 1), date(2026, 1, 5))
     assert history[0]["observed_assignment_count"] == 1
+
+
+@pytest.mark.parametrize("explicit_group", [None, 2])
+def test_single_direct_membership_does_not_prove_context_assignment_team(explicit_group):
+    """Ancestor expansion alone can make one direct membership ambiguous.
+
+    Preserve the known person/time as fixed context; do not silently confirm
+    its placement or infer personal approval from the source schedule.
+    """
+    pytest.importorskip("sp5lib")
+    from test_sp5_adapter import SyntheticDatabase
+    from sp5generator.sp5_adapter import import_snapshot
+
+    class Source(SyntheticDatabase):
+        def get_groups(self):
+            return [{"ID": 1}, {"ID": 2, "SUPERID": 1}]
+
+        def get_employee_groups(self, eid):
+            return [2]
+
+        def get_group_members(self, gid):
+            return [101] if gid == 2 else []
+
+        def get_schedule(self, year, month, group_id=None, **kwargs):
+            if (year, month, group_id) != (2026, 1, 2):
+                return []
+            row = {"employee_id": 101, "date": "2026-01-05", "kind": "shift",
+                   "shift_id": 201, "workplace_id": 301}
+            if explicit_group is not None:
+                row["group_id"] = explicit_group
+            return [row]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    employee = snapshot.employees[0]
+    assert snapshot.metadata["direct_group_memberships"][employee.id] == [2]
+    assert employee.team_ids == ["sp5:group:1", "sp5:group:2"]
+    assert not employee.approvals
+    context = [s for s in snapshot.shifts if s.source == "sp5:existing"]
+    assert len(context) == 1
+    duty = context[0]
+    assert sum((s.end - s.start).total_seconds() / 60 for s in duty.segments) == 240
+    assert len(snapshot.assignments) == 1
+    assert snapshot.assignments[0].fixed
+    provenance = snapshot.metadata["provenance"][duty.id]
+    assert provenance["team_confirmed"] is (explicit_group is not None)
+    ambiguous = [s for s in snapshot.unresolved if "konkrete Gruppe" in s]
+    assert bool(ambiguous) is (explicit_group is None)
+    # Even an explicit source team does not confirm duty/approval semantics.
+    assert duty.kind == "unconfirmed"
+    assert any("Zuordnung zum Besetzungsbedarf und Freigaben" in s for s in snapshot.unresolved)
