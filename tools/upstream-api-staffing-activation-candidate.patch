@@ -1,0 +1,11 @@
+--- a/sp5api/dependencies.py
++++ b/sp5api/dependencies.py
+@@ -544,7 +544,7 @@
+     else:
+         import sp5api.main as _main
+ 
+-        return SP5Database(_main.DB_PATH)
++        return SP5Database(_main.DB_PATH, strict_staffing=True)
+ 
+ 
+ def resolve_employee_for_user(user: dict, *, required: bool = True) -> dict | None:

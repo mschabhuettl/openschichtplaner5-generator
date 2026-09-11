@@ -4157,3 +4157,34 @@ no credential login is tested (session injected), and numeric-reader activation
 is explicitly injected on SHDEM/SPDEM, **not yet shipped upstream**. This closes
 the middleware/auth/versioning test gap, not the original 0.9.29 reproduction
 gap or an end-to-end production deployment gate. Runtime remains unchanged.
+
+### Reviewable staffing activation candidate (2026-09-11)
+
+The full-app contract now compares test injection with actual constructor/factory
+activation. `tools/upstream-library-staffing-activation-candidate.patch` adds
+`SP5Database(..., strict_staffing=False)`; when explicitly enabled, `_read` uses
+the existing strict DBF reader for SHDEM/SPDEM MIN/MAX only. It bypasses the
+shared permissive cache rather than trusting previously unvalidated parses.
+`tools/upstream-api-staffing-activation-candidate.patch` enables that option in
+`dependencies.get_db` for the DBF backend. The PostgreSQL branch is unchanged
+and **not validated by this candidate**. Both patches require the previously
+reviewed strict-reader and staffing-error-router candidates; neither is deployed.
+
+`test_upstream_staffing_full_app.py` loads the candidate database source and
+copies the candidate dependencies into the isolated API package. In this mode
+there is no replacement of `SP5Database._read`. Both API prefixes still enforce
+auth and retain source-error categories. A legacy instance first warms the
+permissive global cache with each synthetic source; strict instances still reject
+missing columns and blank numeric values. Valid zero, MAX=-1, empty tables and
+retry after source repair retain their prior behavior. Constructor opt-in defaults
+to false, preserving existing Library callers. Strict reads deliberately reread
+these two tables; performance/cache optimization is not claimed.
+
+Additional harness inputs: `SP5_STAFFING_DATABASE` and
+`SP5_STAFFING_DEPENDENCIES` point to isolated files produced by the new patches.
+Combined full-app/source-contract/partial-limit run: **293 passed**, two known
+dependency warnings. Both new patches pass `git apply --check` against the
+existing upstream checkouts. No production source or Generator runtime changed;
+no identical private API recheck or release was performed. Next source-contract
+work remains identity/scope fields; the original 0.9.29 job/project/result and
+its 600-second causal reproduction remain unavailable.

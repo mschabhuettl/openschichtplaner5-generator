@@ -1,0 +1,25 @@
+--- a/sp5lib/database.py
++++ b/sp5lib/database.py
+@@ -128,8 +128,9 @@
+ 
+ 
+ class SP5Database:
+-    def __init__(self, db_path: str):
++    def __init__(self, db_path: str, *, strict_staffing: bool = False):
+         self.db_path = db_path
++        self.strict_staffing = strict_staffing
+ 
+     def _table(self, name: str) -> str:
+         return os.path.join(self.db_path, f"5{name}.DBF")
+@@ -151,6 +152,11 @@
+         Schreibzugriffe gehen über dbf_writer direkt auf die DBF (write-through);
+         der Cache ist reine Lese-Beschleunigung, die DBF bleibt Quelle der Wahrheit.
+         """
++        # Opt-in source contract: never reuse a permissively parsed cache entry.
++        # Scope is intentionally limited to the two staffing count tables.
++        # Reuse the existing strict reader; failures remain source-free and uncached.
++        if self.strict_staffing and name in ("SHDEM", "SPDEM"):
++            return read_dbf(self._table(name), strict=True, numeric_fields=("MIN", "MAX"))
+         path = self._table(name)
+         key = (self.db_path, name)
+         try:

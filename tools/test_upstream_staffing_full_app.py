@@ -1,6 +1,8 @@
 """Synthetic full API middleware contract; no lifespan/background services/login.
 
 Run explicitly with SP5_API_SOURCE, SP5_STAFFING_ROUTER and SP5_STRICT_READER.
+Candidate activation additionally needs SP5_STAFFING_DATABASE and
+SP5_STAFFING_DEPENDENCIES; injected mode remains the comparison baseline.
 Only Python source is copied, never upstream fixtures, .env or state. The child
 uses a fresh environment and private backend. Session injection exercises auth
 validation, not credential login. The strict reader remains an opt-in candidate.
@@ -14,8 +16,9 @@ import sys
 import pytest
 
 
+@pytest.mark.parametrize('activation', ['injected', 'candidate'])
 @pytest.mark.parametrize('prefix', ['/api', '/api/v1'])
-def test_full_app_staffing_contract(tmp_path, prefix):
+def test_full_app_staffing_contract(tmp_path, prefix, activation):
     package = Path(os.environ['SP5_API_SOURCE']) / 'sp5api'
     for source in package.rglob('*.py'):
         target = tmp_path / 'code' / 'sp5api' / source.relative_to(package)
@@ -23,6 +26,9 @@ def test_full_app_staffing_contract(tmp_path, prefix):
         shutil.copyfile(source, target)
     shutil.copyfile(os.environ['SP5_STAFFING_ROUTER'],
                     tmp_path / 'code/sp5api/routers/master_data.py')
+    if activation == 'candidate':
+        shutil.copyfile(os.environ['SP5_STAFFING_DEPENDENCIES'],
+                        tmp_path / 'code/sp5api/dependencies.py')
     backend = tmp_path / 'backend'
     backend.mkdir(mode=0o700)
     env = {
@@ -36,6 +42,8 @@ def test_full_app_staffing_contract(tmp_path, prefix):
         'SP5_AUDIT_LOG': str(backend / 'audit.json'),
         'SP5_STRICT_READER': os.environ['SP5_STRICT_READER'],
     }
+    if activation == 'candidate':
+        env['SP5_STAFFING_DATABASE'] = os.environ['SP5_STAFFING_DATABASE']
     completed = subprocess.run([sys.executable, str(Path(__file__).resolve()), prefix],
                                cwd=backend, env=env, capture_output=True, text=True, timeout=90)
     assert completed.returncode == 0, completed.stdout + completed.stderr
@@ -49,6 +57,12 @@ def run_contract(prefix):
     reader = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = reader
     spec.loader.exec_module(reader)
+    if 'SP5_STAFFING_DATABASE' in os.environ:
+        spec = importlib.util.spec_from_file_location('sp5lib.database',
+                                                      os.environ['SP5_STAFFING_DATABASE'])
+        database = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = database
+        spec.loader.exec_module(database)
     from sp5lib.database import SP5Database
     from test_upstream_staffing_source_contract import staffing_columns, assert_source_error
     from fastapi.testclient import TestClient
@@ -66,7 +80,13 @@ def run_contract(prefix):
                                    numeric_fields=('MIN', 'MAX'))
         return original_read(self, table)
 
-    SP5Database._read = strict_read
+    if 'SP5_STAFFING_DATABASE' not in os.environ:
+        SP5Database._read = strict_read
+    else:
+        # The full app's real get_db factory activates the constructor opt-in.
+        from sp5api.dependencies import get_db
+        assert get_db().strict_staffing is True
+        assert SP5Database(os.environ['SP5_DB_PATH']).strict_staffing is False
     root = Path(os.environ['SP5_DB_PATH'])
     for table in ('SHDEM', 'SPDEM', 'DADEM', 'SHIFT', 'WOPL'):
         (root / f'5{table}.DBF').write_bytes(staffing_columns(('MIN', 'MAX')))
@@ -106,6 +126,10 @@ def run_contract(prefix):
                     path.unlink()
                 else:
                     path.write_bytes(payload)
+                if 'SP5_STAFFING_DATABASE' in os.environ and payload is not None:
+                    # Warm the shared permissive cache with the exact same bytes.
+                    # Strict activation must not trust that unvalidated parse.
+                    SP5Database(str(root))._read(table)
                 response = http.get(url, headers=headers)
                 if category:
                     assert response.status_code == 500, response.text
