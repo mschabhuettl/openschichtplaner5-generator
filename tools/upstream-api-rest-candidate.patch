@@ -2,7 +2,7 @@
 +++ b/sp5api/routers/work_time_rules.py
 @@ -281,10 +281,22 @@
              })
- 
+
      # ── Min rest between shifts ───────────────────────────────────
 -    for prev, curr in zip(shift_blocks, shift_blocks[1:], strict=False):
 +    # Keep the furthest previous end: nested duties must not hide conflicts.
@@ -32,6 +32,6 @@
 +
 +        if curr["end"] > prev["end"]:
 +            prev = curr
- 
+
      # ── Max consecutive working days ──────────────────────────────
      worked_dates = sorted(day_hours.keys())
