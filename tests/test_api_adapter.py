@@ -1,6 +1,7 @@
 """HTTP transport tests using freshly generated synthetic responses only."""
 
 import json
+import math
 from datetime import date, timedelta
 from io import BytesIO
 from urllib.error import HTTPError
@@ -72,35 +73,58 @@ def transport(monkeypatch, tmp_path):
     return responses, calls
 
 
+@pytest.mark.parametrize("special", [False, True])
 @pytest.mark.parametrize("field", ["min", "max"])
-@pytest.mark.parametrize("value", ["0", "", "not-a-count"])
-def test_staffing_text_counts_currently_fail_before_local_diagnosis(transport, field, value):
-    """Characterize the missing count contract, not desired acceptance policy."""
+@pytest.mark.parametrize("value", [True, False, "0", "", "PRIVATE_INVALID", 1.5,
+                                  float("inf"), float("-inf"), float("nan")])
+def test_invalid_staffing_counts_block_with_field_diagnosis(transport, special, field, value):
+    from sp5generator.solver import solve
+
     responses, _ = transport
-    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = value
-    with pytest.raises(APIImportError, match="Importvertrag"):
-        import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    row = responses["/api/staffing-requirements"]["shift_requirements"][0]
+    if special:
+        row = {**row, "id": 999, "date": "2026-01-06"}
+        responses["/api/staffing-requirements/special"] = [row]
+    row[field] = value
+    if type(value) is float and not math.isfinite(value):
+        with pytest.raises(APIImportError, match="ungültige Zahlenwerte"):
+            import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+        return
+    snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.demands
+    assert not snapshot.shifts
+    source = "SPDEM" if special else "SHDEM"
+    messages = [m for m in snapshot.unresolved if "Besetzungszahl" in m]
+    assert len(messages) == 1
+    assert messages[0].startswith(source + " ") and field.upper() in messages[0]
+    assert "PRIVATE_INVALID" not in messages[0]
+    assert not any(m.startswith("SHIFT ") for m in snapshot.unresolved)
+    assert snapshot.metadata["unresolved_native"]["regular_requirements"]
+    # Isolate this issue from the normal fresh-import setup blockers.
+    snapshot.unresolved = messages
+    for profile in snapshot.profiles:
+        profile.confirmed = True
+    for partial in (False, True):
+        result = solve(snapshot, 1, partial=partial)
+        assert result.solver_status == "MODEL_INVALID"
+        assert not result.assignments
 
 
-@pytest.mark.parametrize("field", ["min", "max"])
-@pytest.mark.parametrize("value", [True, 1.0])
-def test_staffing_boolean_and_integral_float_counts_currently_coerced(transport, field, value):
-    """Expose coercion separately from malformed text; no actual source data."""
+@pytest.mark.parametrize("special", [False, True])
+@pytest.mark.parametrize("minimum,maximum", [(0.0, 0.0), (1.0, 1.0), (0.0, -1.0)])
+def test_integral_numeric_staffing_preserves_bounds(transport, special, minimum, maximum):
     responses, _ = transport
-    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = value
+    row = responses["/api/staffing-requirements"]["shift_requirements"][0]
+    if special:
+        row = {**row, "id": 999, "date": "2026-01-06"}
+        responses["/api/staffing-requirements/special"] = [row]
+    row.update(min=minimum, max=maximum)
     snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
     assert len(snapshot.demands) == 1
-    assert getattr(snapshot.demands[0], {"min": "minimum", "max": "maximum"}[field]) == 1
-
-
-@pytest.mark.parametrize("field", ["min", "max"])
-def test_fractional_staffing_count_currently_reported_as_shift_error(transport, field):
-    responses, _ = transport
-    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = 1.5
-    snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
-    assert snapshot.demands == []
-    assert any(message.startswith("SHIFT 201 2026-01-06:")
-               and "int_from_float" in message for message in snapshot.unresolved)
+    demand = snapshot.demands[0]
+    assert demand.minimum == int(minimum)
+    assert demand.maximum == (None if maximum == -1 else int(maximum))
+    assert not any("Besetzungszahl" in m for m in snapshot.unresolved)
 
 
 def test_existing_api_import_read_only_history_and_no_credentials(transport):
@@ -251,35 +275,6 @@ def test_dated_special_requirement_keeps_precedence_without_weekday(transport, r
     assert snapshot.demands[0].maximum == 1
     # An invalid regular row cannot be proven out of scope by weekday.
     assert any("Ungültiger Wochentag" in x for x in snapshot.unresolved) == (regular_weekday == 8)
-
-
-@pytest.mark.parametrize("field,value", [
-    ("min", True), ("max", True),
-    ("min", 1.0), ("max", 1.0),
-])
-def test_http_requirement_counts_currently_coerce_non_integer_source_values(
-    transport, field, value
-):
-    """Characterize source type loss before tightening the import contract."""
-    responses, _ = transport
-    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = value
-    day = date(2026, 1, 6)
-    snapshot = import_api(day, day, "1", history_start=day - timedelta(days=1),
-                          history_end=day - timedelta(days=1))
-    assert len(snapshot.demands) == 1
-    demand = snapshot.demands[0]
-    assert getattr(demand, "minimum" if field == "min" else "maximum") == 1
-    assert not any(x.startswith("SHDEM ") for x in snapshot.unresolved)
-
-
-@pytest.mark.parametrize("field", ["min", "max"])
-def test_http_requirement_string_count_currently_aborts_import(transport, field):
-    responses, _ = transport
-    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = "2"
-    day = date(2026, 1, 6)
-    with pytest.raises(APIImportError):
-        import_api(day, day, "1", history_start=day - timedelta(days=1),
-                   history_end=day - timedelta(days=1))
 
 
 def test_incomplete_absence_visibility_blocks(transport):

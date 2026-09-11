@@ -742,3 +742,32 @@ def test_absence_type_provenance_survives_deduplication_and_json(plan):
     assert snapshot.employees[0].model_dump(exclude={"unavailable"}) == baseline.employees[0].model_dump(exclude={"unavailable"})
     assert set((i.start, i.end) for i in snapshot.employees[0].unavailable) == set((i.start, i.end) for i in baseline.employees[0].unavailable)
     assert not snapshot.employees[0].approvals
+
+
+@pytest.mark.parametrize("special", [False, True])
+@pytest.mark.parametrize("field,value", [
+    ("min", -1), ("min", -1.0),
+    ("min", float("nan")), ("max", float("nan")),
+    ("min", float("inf")), ("max", float("inf")),
+    ("min", float("-inf")), ("max", float("-inf")),
+])
+def test_direct_library_invalid_counts_do_not_reach_shift_builder(special, field, value):
+    class InvalidCounts(SyntheticDatabase):
+        def get_staffing_requirements(self):
+            result = super().get_staffing_requirements()
+            if not special:
+                result["shift_requirements"][0][field] = value
+            return result
+
+        def get_special_staffing(self, **kw):
+            if not special:
+                return []
+            row = super().get_staffing_requirements()["shift_requirements"][0]
+            return [{**row, "date": "2026-01-06", field: value}]
+
+    snapshot = import_snapshot(InvalidCounts(), date(2026, 1, 6), date(2026, 1, 6), team_id="1")
+    assert not snapshot.demands and not snapshot.shifts
+    source = "SPDEM" if special else "SHDEM"
+    assert any(m.startswith(source + " ") and "Besetzungszahl" in m
+               and field.upper() in m for m in snapshot.unresolved)
+    assert not any(m.startswith("SHIFT ") for m in snapshot.unresolved)

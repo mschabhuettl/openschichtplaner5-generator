@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal, DecimalException, ROUND_HALF_UP
 from hashlib import sha256
 import json
+import math
 import re
 from zoneinfo import ZoneInfo
 
@@ -399,6 +400,26 @@ def import_snapshot(
                 row
             )
             continue
+        invalid_counts = [
+            field.upper() for field in ("min", "max")
+            if not (
+                type(row[field]) is int
+                or (type(row[field]) is float and math.isfinite(row[field])
+                    and row[field].is_integer())
+            ) or (field == "min" and isinstance(row[field], (int, float))
+                  and row[field] < 0)
+        ]
+        if invalid_counts:
+            unresolved.append(
+                f"{row.get('_source', 'SHDEM')} {row.get('id')}: "
+                f"Ungültige Besetzungszahl ({', '.join(invalid_counts)}); "
+                "ganze Zahlen erforderlich, MIN muss mindestens 0 sein."
+            )
+            metadata["unresolved_native"].setdefault("regular_requirements", []).append(row)
+            continue
+        # DBF numeric fields and JSON numbers may represent integers as floats.
+        # Normalize only proven integral numbers, never booleans or numeric text.
+        row = {**row, "min": int(row["min"]), "max": int(row["max"])}
         sid, wid = row.get("shift_id"), row["workplace_id"]
         if sid not in native_shifts or (wid != 0 and wid not in native_workplaces):
             unresolved.append(f"SHDEM {row.get('id')}: Stammdatenreferenz fehlt.")

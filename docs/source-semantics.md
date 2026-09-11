@@ -4080,3 +4080,43 @@ both regular and dated staffing before private API revalidation. This is a
 mapping/diagnostic finding, not a proven cause of the user's 0.9.29 partial plan;
 the exact original job/project/result is still unavailable. No runtime change
 or release was made for this characterization.
+
+## Generator staffing count correction (2026-09-11)
+
+The characterization above is now superseded by a runtime correction in
+`sp5_adapter.import_snapshot`, immediately before staffing comparisons and
+`Demand` construction. Both SHDEM and dated SPDEM accept integer values and
+finite integral floats (the numeric DBF/JSON representation), but reject
+booleans, strings, fractions and nonfinite values. Negative MIN is rejected;
+MAX=-1 remains unbounded, MAX=0 remains zero capacity, and MAX below MIN remains
+unresolved. No upper bound or personal approval is invented.
+
+Invalid rows produce a local staffing-field diagnostic (SHDEM/SPDEM and MIN/MAX),
+not a SHIFT time-window error. Source values are not echoed in that diagnostic.
+Original rows remain in local unresolved metadata. An invalid dated override
+still occupies its source cell: it cannot silently fall back to the regular
+requirement. Full and partial solve both remain MODEL_INVALID for unresolved
+staffing, even when the unrelated profile confirmation blocker is removed in
+the synthetic fixture. The HTTP JSON parser already rejects NaN/Infinity before
+mapping; direct Library imports are covered separately at the mapping boundary.
+
+Data flow remains `database.get_staffing_requirements/get_special_staffing`
+(SHDEM/SPDEM MIN/MAX) -> API `master_data` read routes -> generator API facade ->
+shared `import_snapshot`. Validation on an API **write** model is not validation
+of its read response. Existing source-contract tools and regression fixtures
+were reused; no replacement reader/library or UI component was introduced.
+
+Evidence: `test_invalid_staffing_counts_block_with_field_diagnosis`,
+`test_integral_numeric_staffing_preserves_bounds` (HTTP regular/dated paths),
+`test_direct_library_invalid_counts_do_not_reach_shift_builder` (direct source),
+and the existing partial-limit suite. Focused run: **462 passed**. This fixes a
+proven boundary defect, not a proven cause of the reported 600-second 0.9.29 run.
+Original job/project/result are still missing. No new release is claimed.
+
+OSP5 consumer evidence: `frontend/src/api/client.ts` declares numeric
+`ShiftRequirement.min/max` and fetches `/api/v1/staffing-requirements`;
+`Personalbedarf.tsx` builds its weekday matrix from `shift_requirements`.
+Those TypeScript declarations do not validate JSON at runtime. The corrected
+Generator boundary is therefore necessary even with a typed OSP5 consumer;
+it does not repair missing/incorrect source fields already defaulted upstream.
+The separate strict DBF-reader/API candidates remain outstanding.
