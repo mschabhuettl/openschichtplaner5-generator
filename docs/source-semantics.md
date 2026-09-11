@@ -3330,3 +3330,31 @@ kein Release. Die unveränderte private Kandidatenabnahme 896b3cc wurde deshalb
 nicht nochmals wiederholt. Fehlende Originalartefakte, Freigaben und bestätigte
 Profile bleiben unverändert offene Voraussetzungen; keine fachlichen Angaben
 aus Library-/API-Statistiken ergänzt.
+
+### Minutenreferenz für rollierende Ruhe bei Profilwechsel und Wiener DST
+
+2026-09-11: `tests/test_rolling_window_oracle.py` ergänzt den bisherigen einfachen
+UTC-Vergleich aus `test_core_rules`. 24 Kombinationen prüfen `rolling_elapsed`
+mit 1-/7-Tage-Fenstern, additiver täglicher Ruhe an/aus, zugeordnetem/nicht
+zugeordnetem datiertem Zusatzprofil und Winter-/Frühlings-/Herbsttermin in Wien.
+Die tatsächlichen lokalen Tageslängen 1440/1380/1500 Minuten werden explizit
+geprüft. Das Zusatzprofil endet am Vortag: bei aktivierter Addition und Zuordnung
+muss die erforderliche Ruhe je nach Fenster zwischen beiden Werten wechseln.
+Die Hauptregel gilt ausschließlich am Planungstag, entsprechend wird wie in
+`validate` nach Fensterüberlappung mit ihrer Gültigkeit gefiltert.
+
+Je Kombination werden zehn synthetische Belegungsmuster untersucht (leer,
+vollständig belegt und acht deterministisch erzeugte Intervallmuster). Eine
+unabhängige Zerlegung an Belegungsendpunkten bestimmt zusammenhängende Freizeit,
+ohne `timeutils.longest_free` zu verwenden. Die Entscheidung über einen Verstoß
+an den kritischen Fenstern aus `validator.weekly_windows` wird mit einer
+minutenweisen Suche über sämtliche relevanten Fensteranfänge verglichen.
+Gültige und ungültige Muster sind in jeder Kombination nachgewiesen.
+
+Ergebnis: kein Unterschied in diesen 240 Muster-/Konfigurationsfällen. Dies ist
+kein allgemeiner Vollständigkeitsbeweis, kein `rolling_local`-Nachweis und kein
+Reproduktionsnachweis für den fehlenden 600-Sekunden-Originaljob. Keine neue
+Runtimeänderung, keine automatische Übernahme dieser synthetischen Profile in
+reale Projekte. Bestehende Library/API/OSP5-Vertragslücken und der private
+Einrichtungsblocker bleiben unverändert. Deshalb keine identische API-Abnahme
+wiederholt und kein Release erstellt.
