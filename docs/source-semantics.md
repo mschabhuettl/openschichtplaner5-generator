@@ -2210,3 +2210,43 @@ gegen Kandidat einschließlich Kalender-/Teilplanregressionen **128 bestanden**.
 Ruff und Patchanwendbarkeit gegen beide Originalrepos bestanden. Keine Änderung
 an Originalcheckouts, Generatorruntime oder Installation; kein neues Release und
 kein redundanter Realdatentest der unveränderten 0.9.31.
+
+### API-Zeitzonenprüfung: synthetisch belegte Fehlklassifikationen
+
+`tools/test_upstream_timezone.py` ergänzt vier Charakterisierungen des
+**unveränderten** API-Prüfers. Datenfluss: `MASHI.DATE` und
+`SHIFT.STARTEND[Wochentag]` → Library `parse_startend` (Uhrzeitminuten) → API
+`_collect_day_data._add_block` (`datetime.combine` ohne Zeitzone) →
+`_check_employee` (naive Subtraktion). Damit fehlt hier eine explizite
+Zeitzone; es erfolgt keine UTC-basierte Messung realer Ruhezeit.
+
+Für die ausdrücklich gewählte synthetische Zone Europe/Vienna belegt:
+
+- 28.03.2026 23:00 bis 29.03.2026 10:00: real 10 Stunden, API 11 Stunden;
+  die konfigurierte 11-Stunden-Ruheverletzung fehlt.
+- 24.10.2026 23:00 bis 25.10.2026 09:00: real 11 Stunden, API 10 Stunden;
+  die API meldet eine nicht vorliegende Ruheverletzung.
+- Dienstbeginn 29.03.2026 02:30 (nicht existent) bzw. 25.10.2026 02:30
+  (mehrdeutig): API erzeugt kommentarlos naive Blöcke und keine Diagnose.
+  Generator `timeutils.localize` weist beide ohne eindeutige Auflösung zurück;
+  `minute` misst die aufgelösten Endpunkte in UTC.
+
+Die OSP5-Anzeige kann diese vom API-Prüfer fehlenden/falschen Verstöße nicht
+als unabhängige Bestätigung einer Planung verwenden. Das ist weder ein
+Nachweis für den konkreten 600-Sekunden-Job noch ein angewendeter API-Fix.
+Ein zusammenhängender Korrekturvertrag muss die explizite Plansicht,
+effektive Zeitsegmente, lokale Kalendertage/ISO-Wochen, UTC-Dauern und einen
+Unvollständigkeitsstatus verbinden. Fehlende Zone bzw. Herbst-Fold dürfen
+nicht stillschweigend geraten werden. Produktionsregeln bleiben unverändert.
+
+Reproduktion (nur synthetische Daten, aus Generator-Checkout):
+
+```sh
+SP5_WORK_TIME_ROUTER=../openschichtplaner5-api/sp5api/routers/work_time_rules.py \
+PYTHONPATH=.:tests:../libopenschichtplaner5 .venv/bin/pytest -q \
+  tools/test_upstream_timezone.py tests/test_partial_limits.py \
+  tests/test_calendar_limits.py tests/test_spill_rest.py
+```
+
+Ergebnis: **136 passed**, davon vier neue API-Zeitzonenfälle. Keine
+Server-/HTTP-Abnahme und keine Runtimeänderung.
