@@ -2787,3 +2787,29 @@ nutzt `SP5Database._read` ihn noch nicht: die API-Diagnoseanbindung bleibt der
 nächste Integrationsschritt. Keine Änderung an Originalrepos, produktiver API,
 Generatorlaufzeit oder Installation; kein Release. Kein neuer Ursachenbeweis für
 den fehlenden Originaljob 0.9.29 und keine erneute unveränderte private Abnahme.
+
+### Strikter Library-Lesepfad bis zur isolierten Plananalyse
+
+`tools/selected_work_segments_candidate.StrictSourceTables` verbindet jetzt
+`SP5Database._table` (native Dateinamensauflösung) mit dem gepatchten
+`read_dbf(..., strict=True)`. Der vorhandene API-Selektor `_employee_plan`
+und `measure_selected` verwenden damit denselben Libraryparser, umgehen jedoch
+den permissiven Tabellen-Cache. Die bereits vorhandene aufruflokale Kopie
+verhindert wiederholte Lesungen innerhalb einer Messung. Lesefehler brechen die
+Messung ab; es wird kein partielles Stundenresultat zurückgegeben.
+
+31 zusätzliche synthetische Integrationstests prüfen fehlende, leere und
+abgeschnittene relevante Tabellen trotz zuvor gefülltem Legacycache, gültig
+leere Tabellen sowie fünf nur für Ist benötigte Quellen: ein fehlendes
+SPSHI/CYCLE/CYASS/CYENT/CYEXC blockiert Ist, aber nicht die unabhängige Sollsicht.
+Zusammen mit den vorhandenen Selektions- und Readerprüfungen: **103 passed**;
+Ruff und Diffcheck grün. Testaufruf wie oben, zusätzlich
+`SP5_WORK_TIME_ROUTER` auf die isoliert gepatchte API-Datei setzen und
+`tools/test_selected_work_segments_candidate.py` einbeziehen.
+
+Dies ist eine explizit zu verdrahtende Diagnosebrücke, keine Änderung des
+produktiven API-Endpunkts oder des Generatorimports. Noch offen sind ein
+konsistenter tabellenübergreifender Snapshot, semantische Quellenintegrität,
+stabile Quellidentitäten und Ruhezeit-Randkontext. Fehlende Daten werden nicht
+durch Freigaben oder Regeln ersetzt. Kein neues Release, keine erfolgreiche
+Echtdatenplanung und kein Ursachenbeweis für den fehlenden 0.9.29-Originaljob.

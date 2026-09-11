@@ -40,6 +40,22 @@ class _RequestTables:
         return deepcopy(self.tables[name])
 
 
+class StrictSourceTables:
+    """Opt-in bridge to the patched Library reader, bypassing legacy cache.
+
+    Use SP5Database._table for native path resolution and inject the candidate
+    read_dbf. Errors propagate without a partial diagnostic. Request-local
+    copying is still performed by measure_selected; this is not a snapshot.
+    """
+
+    def __init__(self, source, read_dbf):
+        self.source = source
+        self.read_dbf = read_dbf
+
+    def _read(self, name):
+        return self.read_dbf(self.source._table(name), strict=True)
+
+
 def measure_selected(db, selector, employee_id, start, end, plan, zone):
     """Account for every selected row, including replacement and measurement gaps.
 

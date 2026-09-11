@@ -5,10 +5,15 @@ SP5_STRICT_READER points at the patched Library dbf_reader.py.
 import importlib.util
 import os
 import struct
+from datetime import date
+from pathlib import Path
 
 import pytest
 
 from test_upstream_source_read_integrity import synthetic_dbf
+from sp5lib.database import SP5Database
+from tools.audit_upstream_work_time_plan import load_helpers
+from tools.selected_work_segments_candidate import StrictSourceTables, measure_selected
 
 
 @pytest.fixture
@@ -17,6 +22,55 @@ def reader():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.mark.parametrize('plan', ['ist', 'soll'])
+@pytest.mark.parametrize('broken', ['MASHI', 'SHIFT', 'ABSEN', 'HOLID'])
+@pytest.mark.parametrize('payload,code', [(None, 'file_missing'),
+                                       (b'', 'short_header'),
+                                       (synthetic_dbf([], declared=1), 'truncated_records')])
+def test_strict_failure_reaches_plan_analysis(reader, tmp_path, plan, broken, payload, code):
+    for name in ('MASHI', 'SHIFT', 'ABSEN', 'HOLID', 'SPSHI', 'CYCLE',
+                 'CYASS', 'CYENT', 'CYEXC'):
+        if name != broken:
+            (tmp_path / f'5{name}.DBF').write_bytes(synthetic_dbf([]))
+    if payload is not None:
+        (tmp_path / f'5{broken}.DBF').write_bytes(payload)
+    db = SP5Database(str(tmp_path))
+    # Prime the actual legacy cache with the misleading empty result.
+    assert db._read(broken) == []
+    strict = StrictSourceTables(db, reader.read_dbf)
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    day = date(2026, 1, 5)
+    with pytest.raises((reader.DBFReadError, reader.DBFStructureError)) as error:
+        measure_selected(strict, selector, 10, day, day, plan, 'Europe/Vienna')
+    assert error.value.code == code
+    assert str(error.value) == code
+
+
+@pytest.mark.parametrize('plan', ['ist', 'soll'])
+def test_valid_empty_strict_sources_are_not_read_failures(reader, tmp_path, plan):
+    for name in ('MASHI', 'SHIFT', 'ABSEN', 'HOLID', 'SPSHI', 'CYCLE',
+                 'CYASS', 'CYENT', 'CYEXC'):
+        (tmp_path / f'5{name}.DBF').write_bytes(synthetic_dbf([]))
+    strict = StrictSourceTables(SP5Database(str(tmp_path)), reader.read_dbf)
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    day = date(2026, 1, 5)
+    assert measure_selected(strict, selector, 10, day, day, plan, 'Europe/Vienna') == ()
+
+
+@pytest.mark.parametrize('broken', ['SPSHI', 'CYCLE', 'CYASS', 'CYENT', 'CYEXC'])
+def test_ist_only_missing_source_does_not_block_soll(reader, tmp_path, broken):
+    for name in ('MASHI', 'SHIFT', 'ABSEN', 'HOLID', 'SPSHI', 'CYCLE',
+                 'CYASS', 'CYENT', 'CYEXC'):
+        if name != broken:
+            (tmp_path / f'5{name}.DBF').write_bytes(synthetic_dbf([]))
+    strict = StrictSourceTables(SP5Database(str(tmp_path)), reader.read_dbf)
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    day = date(2026, 1, 5)
+    assert measure_selected(strict, selector, 10, day, day, 'soll', 'Europe/Vienna') == ()
+    with pytest.raises(reader.DBFReadError, match='^file_missing$'):
+        measure_selected(strict, selector, 10, day, day, 'ist', 'Europe/Vienna')
 
 
 @pytest.mark.parametrize('records,expected', [([], []), ([b' 0010'], [{'ID': 10}]),
