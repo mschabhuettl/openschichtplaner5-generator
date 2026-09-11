@@ -4754,3 +4754,37 @@ and conflict responses/headers, valid response preservation, and Generator
 API deployment/login/startup background tasks remain outside this source-only
 synthetic gate. Generator currently displays the generic sanitized HTTP 500
 message for this contract; category-specific presentation is not claimed.
+
+### Malformed person identities before the join (2026-09-11)
+
+Eight additional synthetic characterizations in
+`tools/test_upstream_person_flow.py` locate remaining failures before the new
+orphan/conflict checks; these tests describe defects, not desired behavior:
+
+| Source value | Library/API path | Direct Generator path |
+| --- | --- | --- |
+| GRASG.GROUPID `True`, requested group `1` | `SP5Database.get_group_members` accepts Python equality and returns the person; API preserves the false membership | Cannot reconstruct the original group field from returned member IDs |
+| GRASG.EMPLOYEEID `True`, EMPL.ID `1` | API `employees.get_group_members` dictionary lookup aliases the IDs | `import_snapshot` set/index lookup also accepts the false match |
+| EMPLOYEEID list/dict | Library returns it; API join raises raw `TypeError` | Membership set creation raises raw `TypeError` before source diagnostics |
+| EMPLOYEEID fraction, string, null | Unpatched API silently drops the membership | Existing guard rejects it as `orphan_membership`, not a malformed identity |
+| Missing EMPLOYEEID | Library raises `KeyError` while reading selected membership | No membership list reaches the Generator |
+
+OSP5 `frontend/src/api/client.ts:getGroupMembers` consumes the same resource;
+`pages/Jahresuebersicht.tsx` constructs a JavaScript ID set from the returned
+records. Neither can recover the original malformed membership field after
+the API join. This is a person-source integrity defect, not evidence that the
+solver ignored a valid person or relaxed a hard work-time rule.
+
+The staged API orphan/conflict patch also uses raw dictionary keys, so its
+existing guard does not resolve boolean aliasing or unhashable keys. Next
+correction must validate native identity shape **before** Library group
+equality, API dictionary joining, and Generator membership set construction.
+Reuse the existing strict native-identity reader mechanisms where applicable;
+do not coerce booleans/strings/fractions into IDs or invent absent people.
+Compatibility for integral DBF numeric IDs needs explicit regression coverage.
+
+Focused characterization/candidate/hierarchy/API gate: **311 passed**, two
+known dependency warnings; Ruff and diff checks pass. No runtime code, deployed
+API, or published Docker image changed. The unchanged private baseline is not
+retested or claimed as a successful plan. These synthetic defects are not yet
+linked to the unavailable original 0.9.29 project/job/result.

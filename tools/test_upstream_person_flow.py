@@ -79,3 +79,53 @@ def test_direct_library_import_rejects_orphan_with_specific_diagnostic():
     source.get_group_members = lambda group: [101, 102]
     with pytest.raises(ValueError, match='orphan_membership'):
         import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
+
+
+def test_boolean_group_identity_matches_numeric_group_before_api_join(pipeline):
+    db, adapter, _, assignments = pipeline
+    assignments[0]['GROUPID'] = True
+    # Characterization, not an accepted identity contract: True == 1 in Python.
+    assert db.get_group_members(1) == [101]
+    assert adapter.get_group_members(1) == [101]
+
+
+def test_boolean_person_identity_aliases_numeric_person_in_both_joins(pipeline):
+    _, adapter, employees, assignments = pipeline
+    employees[0]['ID'] = 1
+    assignments[0]['EMPLOYEEID'] = True
+    assert adapter.get_group_members(1) == [1]
+    source = SyntheticDatabase()
+    source.get_employees = lambda **kw: employees
+    source.get_group_members = lambda group: [True]
+    snapshot = import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
+    assert len(snapshot.employees) == 1
+
+
+@pytest.mark.parametrize('bad_id', [[], {}])
+def test_container_membership_identity_leaks_raw_join_typeerror(pipeline, bad_id):
+    _, adapter, _, assignments = pipeline
+    assignments[0]['EMPLOYEEID'] = bad_id
+    with pytest.raises(TypeError, match='unhashable type'):
+        adapter.get_group_members(1)
+    source = SyntheticDatabase()
+    source.get_group_members = lambda group: [bad_id]
+    with pytest.raises(TypeError, match='unhashable type'):
+        import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
+
+
+@pytest.mark.parametrize('bad_id', [101.5, '101', None])
+def test_malformed_membership_is_lost_upstream_but_direct_join_rejects(pipeline, bad_id):
+    _, adapter, _, assignments = pipeline
+    assignments[0]['EMPLOYEEID'] = bad_id
+    assert adapter.get_group_members(1) == []
+    source = SyntheticDatabase()
+    source.get_group_members = lambda group: [bad_id]
+    with pytest.raises(ValueError, match='orphan_membership'):
+        import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
+
+
+def test_missing_membership_employee_field_fails_in_library(pipeline):
+    db, _, _, assignments = pipeline
+    del assignments[0]['EMPLOYEEID']
+    with pytest.raises(KeyError, match='EMPLOYEEID'):
+        db.get_group_members(1)
