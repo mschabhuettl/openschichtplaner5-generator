@@ -3952,3 +3952,36 @@ API-App-/Auth-Pfad statt nur injizierter Routerprüfung. Feldtypen und weitere
 Bedarfs-Identitätsspalten sind damit noch nicht vollständig vertraglich geprüft.
 Originalprojekt, Jobeingabe und Ergebnis 0.9.29 fehlen weiterhin; dieser Befund
 belegt nicht die Ursache der gemeldeten 600-Sekunden-Planung.
+
+### Pflichtspalten sind noch kein Zahlenvertrag
+
+`test_required_count_column_wrong_type_is_not_yet_rejected` ergänzt zwölf
+synthetische DBF→Library→API-Charakterisierungen: SHDEM/SPDEM, jeweils MIN oder
+MAX als DBF-Typ C, mit `0000`, Leerzeichen oder `nope`. Auch bei `strict=True`
+und `required_fields=("MIN", "MAX")` liefert der Reader Strings. Die Library
+reicht sie in `get_staffing_requirements` bzw. `get_special_staffing` unverändert
+weiter; beide isolierten API-Routen antworten HTTP 200. Die numerische Prüfung
+des Readers gilt nur für numerisch deklarierte Spalten; die Pflichtprüfung
+kontrolliert bisher Namen und Eindeutigkeit, nicht Typen.
+
+Generator `sp5_adapter.import_snapshot` prüft MIN/MAX bisher auf None und
+vergleicht danach MAX mit -1 bzw. MIN. Dieser Codepfad benötigt einen expliziten
+Zahlenvertrag vor Vergleichen, statt Quellstrings stillschweigend umzuwandeln.
+Dies ist eine getrennte Restlücke neben fehlenden Spalten. Der jetzige Test
+belegt die HTTP-Grenze, nicht einen vollständigen Generatorimport oder den
+vollständigen API-App-/Auth-/v1-Pfad. Keine Behauptung, dass echte Quelldaten
+diese Typverletzung enthalten oder sie die gemeldeten Wochenstunden erklären.
+
+Priorität: vor Aktivierung des Kandidaten Bedarfszahlen mit einem gezielten
+Typvertrag prüfen und Generator-Fehlerdiagnose absichern; anschließend den
+vollen API-Pfad prüfen. Gültige Null, leere Tabellen und ausdrücklich
+unbegrenztes MAX=-1 müssen erhalten bleiben. Keine globale Typvorgabe für alle
+DBF-Felder und keine neue Arbeitszeitregel daraus ableiten.
+
+212 Tests bestanden (Bedarfsvertrag, Teilplangrenzen, Kalendergrenzen). Der erste
+Aufruf hatte sechs reine Harnessfehler wegen fehlendem `SP5_OSP5_FRONTEND`;
+der korrigierte Aufruf ist grün. Für diese Tests immer zusätzlich zu
+`SP5_STRICT_READER`, `SP5_STAFFING_ROUTER`, `SP5_WORK_TIME_ROUTER` auch
+`SP5_OSP5_FRONTEND=/home/hilbert/projects/openschichtplaner5/frontend` setzen.
+Keine Runtimeänderung, kein Release und keine Wiederholung der unveränderten
+privaten API-Abnahme.

@@ -108,6 +108,37 @@ def test_read_and_structure_failure_no_empty_success(source, client, table, url,
 
 
 @pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('field_index', [0, 1])
+@pytest.mark.parametrize('raw', [b'0000', b'    ', b'nope'])
+def test_required_count_column_wrong_type_is_not_yet_rejected(
+        source, client, monkeypatch, table, url, method, field_index, raw):
+    """Characterize the remaining schema gap; presence is not a numeric contract."""
+    db, reader, path = source
+    values = [b'0000', b'0000']
+    values[field_index] = raw
+    payload = bytearray(staffing_columns(('MIN', 'MAX'), [b' ' + b''.join(values)]))
+    payload[32 + 32 * field_index + 11] = ord('C')
+    (path / f'5{table}.DBF').write_bytes(payload)
+    original_read = db._read
+
+    def read(name):
+        if name == table:
+            return reader.read_dbf(db._table(name), strict=True,
+                                   required_fields=('MIN', 'MAX'))
+        return original_read(name)
+
+    monkeypatch.setattr(db, '_read', read)
+    http, sanitized = client
+    response = http.get(url)
+    assert response.status_code == 200
+    rows = response.json()['shift_requirements'] if table == 'SHDEM' else response.json()
+    value = rows[0][('min', 'max')[field_index]]
+    assert isinstance(value, str)
+    assert value == raw.decode().strip()
+    assert sanitized == []
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
 @pytest.mark.parametrize('kind', ['DBFReadError', 'DBFStructureError', 'DBFValueError', 'unknown'])
 def test_exception_contents_never_in_response(source, client, monkeypatch, table, url, method, kind):
     db, reader, _ = source
