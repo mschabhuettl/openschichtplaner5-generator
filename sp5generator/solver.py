@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 from math import isfinite
 from time import monotonic
+from types import SimpleNamespace
 from ortools.sat.python import cp_model
 from .models import Assignment, Diagnostic, Result, Validation
 from .domain import (
@@ -284,6 +285,17 @@ def solve(snapshot, time_limit=30, partial=False):
             weighted_components[name].append(expr * weight)
             costs.append(expr * weight)
 
+    # Personal context is fixed work, never an xs staffing decision. Tuple keys
+    # keep its IDs disjoint from real shifts without reserved user ID prefixes.
+    boundary_keys = set()
+    for work in snapshot.boundary_work:
+        key = ("boundary", work.id)
+        boundary_keys.add(key)
+        shifts[key] = work
+        dates_by_shift[key] = day_minutes(work, snapshot.timezone)
+        shift_day[key] = local_day(bounds(work)[0], snapshot.timezone)
+        by_employee[work.employee_id].append((SimpleNamespace(shift_id=key), 1))
+
     # One conflict edge per pair of duties and rule-profile set. Position
     # choices on a duty form a clique: at most one of them can be worked.
     # Expressing that clique directly avoids an employee x demand^2 scan and
@@ -301,6 +313,16 @@ def solve(snapshot, time_limit=30, partial=False):
         by_shift = defaultdict(list)
         for d, x in entries:
             by_shift[d.shift_id].append(x)
+        # Context constrains new work and other immutable context. Normal-shift
+        # edges remain shared by profile set below.
+        context_entries = [(d, x) for d, x in entries if d.shift_id in boundary_keys]
+        normal_entries = [(d, x) for d, x in entries if d.shift_id not in boundary_keys]
+        for i, (left_d, left_x) in enumerate(context_entries):
+            if monotonic() >= deadline:
+                return timed_out()
+            for right_d, right_x in normal_entries + context_entries[:i]:
+                if pair_conflict(snapshot, e, shifts[left_d.shift_id], shifts[right_d.shift_id]):
+                    model.add(left_x + right_x <= 1)
         for choices in by_shift.values():
             if len(choices) > 1:
                 model.add_at_most_one(choices)
@@ -361,17 +383,17 @@ def solve(snapshot, time_limit=30, partial=False):
         planning_tails = []
         for d, x in entries:
             s = shifts[d.shift_id]
-            for day, n in dates_by_shift[s.id].items():
+            for day, n in dates_by_shift[d.shift_id].items():
                 daily[day].append(n * x)
                 work[day].append(x)
             if s.kind == "night":
-                night[shift_day[s.id]].append(x)
-            if snapshot.period_start <= shift_day[s.id] <= snapshot.period_end:
+                night[shift_day[d.shift_id]].append(x)
+            if snapshot.period_start <= shift_day[d.shift_id] <= snapshot.period_end:
                 paid.append(s.paid_minutes * x)
-                tail = {day for day in dates_by_shift[s.id] if day > snapshot.period_end}
+                tail = {day for day in dates_by_shift[d.shift_id] if day > snapshot.period_end}
                 if tail:
                     planning_tails.append((x, tail))
-                for day in dates_by_shift[s.id]:
+                for day in dates_by_shift[d.shift_id]:
                     if day.weekday() >= 5:
                         period_weekend[day - timedelta(days=day.weekday())].append(x)
                 if e.preferred_kind and e.preferred_kind != s.kind:
@@ -547,7 +569,7 @@ def solve(snapshot, time_limit=30, partial=False):
                             <= limit
                         )
         upper = (
-            sum(shifts[d.shift_id].paid_minutes for d, x in entries)
+            sum(shifts[d.shift_id].paid_minutes for d, x in entries if d.shift_id not in boundary_keys)
             + abs(e.balance_minutes)
             + e.credit_minutes
             + e.target_minutes
@@ -719,6 +741,10 @@ def solve(snapshot, time_limit=30, partial=False):
                         "assignments": [
                             a for a in snapshot.assignments
                             if a.employee_id == employee.id
+                        ],
+                        "boundary_work": [
+                            w for w in snapshot.boundary_work
+                            if w.employee_id == employee.id
                         ],
                         "restrictions": [
                             r for r in snapshot.restrictions

@@ -220,6 +220,10 @@ def _validate(snapshot, assignments, input_errors=None):
             add("vacancy", f"{d.minimum - count} unbesetzte Stelle(n).", demand=d.id)
         if d.maximum is not None and count > d.maximum:
             add("maximum", "Höchstbesetzung überschritten.", demand=d.id)
+    # Immutable context comes from input, never the returned assignments. It
+    # cannot satisfy demand, mentoring, or paid period targets.
+    for work in snapshot.boundary_work:
+        by_employee[work.employee_id].append((None, work))
     limit_context_end = snapshot.period_end
     for e in snapshot.employees:
         entries = by_employee[e.id]
@@ -230,7 +234,7 @@ def _validate(snapshot, assignments, input_errors=None):
                     problem,
                     "Unvereinbare Dienste " + left.id + " / " + right.id,
                     e.id,
-                    a.demand_id,
+                    a.demand_id if a else None,
                 )
         ordered = sorted(entries, key=lambda item: bounds(item[1])[0])
         for (a, left), (b, right) in zip(ordered, ordered[1:]):
@@ -239,7 +243,7 @@ def _validate(snapshot, assignments, input_errors=None):
                     "night_block",
                     "Zusätzliche Ruhe nach Nachtblock fehlt.",
                     e.id,
-                    b.demand_id,
+                    b.demand_id if b else None,
                 )
         worked, nights, paid = set(), set(), 0
         planning_duty_days = set()

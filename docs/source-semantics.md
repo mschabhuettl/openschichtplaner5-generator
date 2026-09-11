@@ -819,3 +819,41 @@ Validator Kalenderarithmetik ausführen. Fünf Regressionen in
 `tests/test_input_boundaries.py` prüfen Wochenhöchstzeit und Kalenderwochenruhe
 in Voll-/Teilplanung sowie einen weiterhin zulässigen Fall ohne Wochenregel.
 Diese technische Grenze ist keine fachliche Dienstlängen- oder Wochenregel.
+
+### Umgesetzt: unabhängiger Randarbeitsvertrag im Planungskern
+
+`models.BoundaryWork` und `Snapshot.boundary_work` bilden unveränderliche,
+personenbezogene Dienste ab: ID, Person, Segmente, Tag-/Nachtart und Herkunft.
+Es gibt keine Pflichtreferenz auf Bedarf, Arbeitsplatz oder Team und keine
+bezahlten Minuten. Der Dienstbeginn muss außerhalb der Planungsperiode liegen;
+Überhänge in die Periode bleiben echte Arbeit. `domain.input_diagnostics`
+prüft Referenzen, eindeutige IDs, Minuten/Zeitzonen/Segmente und Kontextgrenzen.
+`kind=unknown` blockiert ausdrücklich. Eine identische bereits fixierte
+Einteilung darf nicht zusätzlich als Randarbeit gezählt werden. Alte explizite
+Fixierungen behalten ihre bisherigen Freigabe- und Zuordnungsprüfungen.
+
+`solver.solve` führt Randarbeit als konstante Eins in den personenbezogenen
+Arbeitszeitbedingungen, nicht in den Besetzungsvariablen `xs`. Sie zählt in
+Konflikt-, Stunden-, Arbeits-/Nachtserien- und Wochenruheprüfungen einschließlich
+der Nachtblock-Zwischendienste. Sie liefert keine Bedarfsdeckung, Betreuung,
+Kandidatenchance oder Ergebnis-Einteilung. Der lokale Warmstart-Validator
+filtert auch die neue Kollektion nach Person. `validator._validate` liest
+Randarbeit unabhängig direkt aus dem Snapshot; ein Ergebnis kann sie nicht
+weglassen. Periodensoll und Ergebniskennzahlen bleiben auf neue Einteilungen
+bezogen. Vorherige Snapshot-Hashes bleiben bei leerer Kollektion identisch;
+nichtleere Randarbeit ist vollständig hashgebunden und persistent.
+
+`tests/test_boundary_work.py` enthält 40 synthetische Regressionen: die zehn
+harten Konfliktarten aus dem Sicherheitsvertrag in Voll-/Teilplanung,
+Soll-versus-Echtzeit, neue Freigaben ohne erfundene historische Freigaben,
+ungültige Eingaben/Doppelerfassung, Personenisolation, Hash-/JSON-Roundtrip,
+HTTP/Persistenz/separater Worker, beide rollierenden Ruhebezüge und Nachtblock
+mit bzw. ohne echten verbindenden Randdienst. Keine realen Eingaben verwendet.
+
+**Noch nicht umgestellt:** `sp5_adapter` erzeugt weiterhin die bisherigen
+Randfixierungen. Die neue Kollektion ist eine verwendbare JSON-/API-
+Kernfunktion, noch keine automatische Bereinigung echter Importe. Nächster
+Schritt ist die gezielte Übernahme eindeutig bekannter normaler Quellzeiten
+mit ehrlicher Diagnose ungeklärter Nachtart. Sonderzeitabweichungen,
+Quellvollständigkeit und tatsächliche neue persönliche Freigaben bleiben
+unverändert zu klären. Der Original-600s-Job ist weiterhin nicht reproduziert.

@@ -30,14 +30,16 @@ MAX_CALENDAR_CHECKS = 5_000_000  # Profile scans and availability-day expansion.
 COLLECTION_LIMITS = {
     "employees": 1000, "positions": 1000, "shifts": 10000,
     "demands": 20000, "profiles": 1000, "assignments": MAX_ASSIGNMENTS,
-    "restrictions": 20000, "wishes": 20000,
+    "restrictions": 20000, "wishes": 20000, "boundary_work": 5000,
 }
 
 
 def snapshot_hash(snapshot):
     return hashlib.sha256(
         json.dumps(
-            snapshot.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            # Preserve hashes of pre-extension snapshots with no boundary work.
+            snapshot.model_dump(mode="json", exclude=set() if snapshot.boundary_work else {"boundary_work"}),
+            sort_keys=True, separators=(",", ":")
         ).encode()
     ).hexdigest()
 
@@ -207,7 +209,7 @@ def input_diagnostics(snapshot):
     oversized = False
     labels = {"employees": "Personen", "positions": "Positionen", "shifts": "Dienste",
               "demands": "Bedarfe", "profiles": "Regelprofile", "assignments": "Einteilungen",
-              "restrictions": "Dienstsperren", "wishes": "Wünsche"}
+              "restrictions": "Dienstsperren", "wishes": "Wünsche", "boundary_work": "Randdienste"}
     for key, limit in COLLECTION_LIMITS.items():
         if len(getattr(snapshot, key)) > limit:
             issue("size_limit", f"Zu viele {labels[key]}; unterstützt sind höchstens {limit}. "
@@ -291,7 +293,7 @@ def input_diagnostics(snapshot):
             or snapshot.created_at.utcoffset() is None
         ):
             issue("created_at", "Datenstand benötigt expliziten UTC-Offset.")
-        for collection in ("employees", "positions", "shifts", "demands", "profiles"):
+        for collection in ("employees", "positions", "shifts", "demands", "profiles", "boundary_work"):
             ids = [x.id for x in getattr(snapshot, collection)]
             if any(not id.strip() for id in ids):
                 issue("empty_id", "Leere ID in " + collection)
@@ -303,7 +305,30 @@ def input_diagnostics(snapshot):
         demand_ids = {d.id for d in snapshot.demands}
         profile_ids = {p.id for p in snapshot.profiles}
         assigned_profile_ids = {pid for e in snapshot.employees for pid in e.profile_ids}
-        for s in snapshot.shifts:
+        shifts_by_id = {s.id: s for s in snapshot.shifts}
+        demands_by_id = {d.id: d for d in snapshot.demands}
+        fixed_spans = set()
+        for assignment in snapshot.assignments:
+            demand = demands_by_id.get(assignment.demand_id)
+            shift = shifts_by_id.get(demand.shift_id) if demand else None
+            if assignment.fixed and shift:
+                fixed_spans.add((assignment.employee_id, tuple(segments(shift))))
+        for work in snapshot.boundary_work:
+            if work.employee_id not in employee_ids:
+                issue("boundary_reference", "Unbekannte Person für Randarbeit: " + work.id)
+            if work.kind == "unknown":
+                issue("boundary_kind", "Tag-/Nachtart der Randarbeit bestätigen: " + work.id,
+                      employee_id=work.employee_id)
+            if work.segments:
+                first = local_day(bounds(work)[0], snapshot.timezone)
+                if snapshot.period_start <= first <= snapshot.period_end:
+                    issue("boundary_period", "Randarbeit darf nicht im Planungszeitraum beginnen: " + work.id,
+                          employee_id=work.employee_id)
+                # Explicit fixations stay strict; dual representation is not a migration.
+                if (work.employee_id, tuple(segments(work))) in fixed_spans:
+                    issue("boundary_duplicate", "Randarbeit ist bereits als Fixierung vorhanden: " + work.id,
+                          employee_id=work.employee_id)
+        for s in [*snapshot.shifts, *snapshot.boundary_work]:
             spans = segments(s)
             if (
                 not spans

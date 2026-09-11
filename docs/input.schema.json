@@ -136,6 +136,49 @@
       "title": "Availability",
       "type": "object"
     },
+    "BoundaryWork": {
+      "additionalProperties": false,
+      "description": "Immutable personal work context, not a staffing demand or an approval.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "employee_id": {
+          "title": "Employee Id",
+          "type": "string"
+        },
+        "segments": {
+          "items": {
+            "$ref": "#/$defs/Interval"
+          },
+          "title": "Segments",
+          "type": "array"
+        },
+        "kind": {
+          "default": "unknown",
+          "enum": [
+            "day",
+            "night",
+            "unknown"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "default": "additional",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "employee_id",
+        "segments"
+      ],
+      "title": "BoundaryWork",
+      "type": "object"
+    },
     "Demand": {
       "additionalProperties": false,
       "properties": {
@@ -918,6 +961,13 @@
         "$ref": "#/$defs/Assignment"
       },
       "title": "Assignments",
+      "type": "array"
+    },
+    "boundary_work": {
+      "items": {
+        "$ref": "#/$defs/BoundaryWork"
+      },
+      "title": "Boundary Work",
       "type": "array"
     },
     "restrictions": {

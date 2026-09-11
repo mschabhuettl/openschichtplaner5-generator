@@ -102,6 +102,14 @@ class Shift(Model):
     holiday: bool = False
     source: str = 'additional'
 
+class BoundaryWork(Model):
+    """Immutable personal work context, not a staffing demand or an approval."""
+    id: str
+    employee_id: str
+    segments: list[Interval]
+    kind: Literal['day', 'night', 'unknown'] = 'unknown'
+    source: str = 'additional'
+
 class Demand(Model):
     id: str
     shift_id: str
@@ -158,6 +166,7 @@ class Snapshot(Model):
     demands: list[Demand]
     profiles: list[RuleProfile]
     assignments: list[Assignment] = Field(default_factory=list)
+    boundary_work: list[BoundaryWork] = Field(default_factory=list)
     restrictions: list[Restriction] = Field(default_factory=list)
     wishes: list[Wish] = Field(default_factory=list)
     objectives: Objectives = Field(default_factory=Objectives)
