@@ -1,6 +1,6 @@
 """Local CP-SAT optimization with independently checked incumbent separation."""
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import timedelta
 from time import monotonic
 from ortools.sat.python import cp_model
@@ -117,6 +117,20 @@ def solve(snapshot, time_limit=30, partial=False):
         s.id: local_day(bounds(s)[0], snapshot.timezone) for s in snapshot.shifts
     }
     diagnostics = []
+    exclusions = defaultdict(Counter)
+    exclusion_labels = {
+        "employment": "Beschäftigungszeitraum",
+        "team": "Teamzugehörigkeit",
+        "kind": "Diensttypfreigabe",
+        "weekend": "Wochenendfreigabe",
+        "holiday": "Feiertagsfreigabe",
+        "approval": "persönliche Dienstfreigabe fehlt oder ist nicht gültig",
+        "qualification": "zusätzlicher Qualifikationsnachweis",
+        "restriction": "Dienstsperre",
+        "absence": "Abwesenheit",
+        "availability": "Verfügbarkeitsfenster",
+        "context": "außerhalb des Planungszeitraums ohne Fixierung",
+    }
     for e in snapshot.employees:
         for demand_number, d in enumerate(snapshot.demands):
             if demand_number % 64 == 0 and monotonic() >= deadline:
@@ -125,9 +139,11 @@ def solve(snapshot, time_limit=30, partial=False):
                 snapshot.period_start <= shift_day[d.shift_id] <= snapshot.period_end
             )
             if not in_period and (e.id, d.id) not in fixed:
+                exclusions[d.id]["context"] += 1
                 continue
             reasons = eligibility(snapshot, e, d)
             if reasons:
+                exclusions[d.id].update(reasons)
                 if (e.id, d.id) in fixed:
                     return result(
                         "INFEASIBLE",
@@ -163,10 +179,16 @@ def solve(snapshot, time_limit=30, partial=False):
         if d.maximum is not None:
             model.add(sum(choices) <= d.maximum)
         if len(choices) < d.minimum:
+            explanation = "; ".join(
+                f"{exclusion_labels[reason]}: {count}"
+                for reason, count in sorted(exclusions[d.id].items())
+            )
             diagnostics.append(
                 Diagnostic(
                     code="candidate_shortage",
-                    message=f"{d.minimum} benötigte Stellen; nur {len(choices)} individuell geeignete Personen.",
+                    message=f"{d.minimum} benötigte Stellen; nur {len(choices)} individuell geeignete Personen."
+                    + (f" Ausschlussgründe (Personen, Mehrfachzählung möglich): {explanation}."
+                       if explanation else ""),
                     demand_id=d.id,
                     date=str(shift_day[d.shift_id]),
                 )
@@ -872,6 +894,10 @@ def solve(snapshot, time_limit=30, partial=False):
                 )
             separation_rounds += 1
             continue
+        # Capacity hints explain vacancies, but are not rule violations.
+        # Attach only after independent validation and separation so a valid
+        # partial plan stays valid and does not trigger a no-good cut.
+        checked.diagnostics.extend(diagnostics)
         parameters.setdefault("first_feasible_seconds", monotonic() - started)
         metrics = {
             "employees": {},

@@ -23,6 +23,44 @@ from sp5generator.timeutils import availability_window, localize, minute, longes
 from sp5generator.domain import input_diagnostics, maximum_matching
 
 
+@pytest.mark.parametrize("partial", [False, True])
+def test_candidate_shortage_explains_exclusions_without_relaxing_approvals(partial):
+    snapshot = case()
+    snapshot.employees[0].approvals = []
+    snapshot.employees[1].approvals = []
+    snapshot.employees[1].team_ids = []
+    result = solve(snapshot, time_limit=5, partial=partial)
+    assert result.assignments == []
+    assert result.vacancies == {"s": 1}
+    hints = [d for d in result.validation.diagnostics if d.code == "candidate_shortage"]
+    assert len(hints) == 1
+    assert hints[0].demand_id == "s"
+    assert "persönliche Dienstfreigabe fehlt oder ist nicht gültig: 2" in hints[0].message
+    assert "Teamzugehörigkeit: 1" in hints[0].message
+    assert "Mehrfachzählung möglich" in hints[0].message
+    assert result.validation.valid is partial
+    assert not result.validation.complete
+    if partial:
+        assert result.solver_status == "OPTIMAL"
+        assert validate(snapshot, result.assignments).valid
+        assert any(d.code == "vacancy" for d in result.validation.diagnostics)
+    else:
+        assert result.solver_status == "INFEASIBLE"
+
+
+def test_partial_plan_keeps_shared_candidate_shortage():
+    snapshot = case(n=1)
+    snapshot.positions.append(snapshot.positions[0].model_copy(update={"id": "p2"}))
+    snapshot.demands.append(Demand(id="second", shift_id="s", position_id="p2", minimum=1, maximum=1))
+    result = solve(snapshot, time_limit=5, partial=True)
+    assert result.validation.valid
+    assert not result.validation.complete
+    assert len(result.assignments) == 1
+    assert sum(result.vacancies.values()) == 1
+    assert sum(d.code == "shared_candidate_shortage" for d in result.validation.diagnostics) == 1
+    assert not any(d.code == "candidate_shortage" for d in result.validation.diagnostics)
+
+
 def case(n=2, shifts=None):
     day = date(2026, 1, 5)
     profile = RuleProfile(
