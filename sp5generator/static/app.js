@@ -117,7 +117,7 @@ function canReplace(){return !(dirty||jsonDirty)||window.confirm('Ungespeicherte
 window.addEventListener('beforeunload',event=>{if(dirty||jsonDirty){event.preventDefault();event.returnValue='';}});
 function action(id,fn){$(id).onclick=()=>runAction($(id),fn);}
 function field(parent,label,value,change,type='text'){const l=el('label',label,parent),i=el('input',undefined,l);i.type=type;if(type==='number')i.step='any';if(type==='checkbox')i.checked=!!value;else i.value=value??'';i.onchange=()=>{change(type==='checkbox'?i.checked:type==='number'?(i.value===''?null:Number(i.value)):i.value);invalidateResult();};return i;}
-function select(parent,label,value,options,change){const l=el('label',label,parent),s=el('select',undefined,l);for(const [v,t] of options){const o=el('option',t,s);o.value=v;}s.value=value;s.onchange=()=>{change(s.value);invalidateResult();};return s;}
+function select(parent,label,value,options,change,{updatesProject=true}={}){const l=el('label',label,parent),s=el('select',undefined,l);for(const [v,t] of options){const o=el('option',t,s);o.value=v;}s.value=value;s.onchange=()=>{change(s.value);if(updatesProject)invalidateResult();};return s;}
 function button(parent,text,fn){const b=el('button',text,parent);b.type='button';b.onclick=()=>runAction(b,fn);return b;}
 function table(parent,head){parent.replaceChildren();const t=el('table',undefined,parent),tr=el('tr',undefined,el('thead',undefined,t));head.forEach(x=>{const th=el('th',x,tr);th.scope='col';});return el('tbody',undefined,t);}
 async function saved(){
@@ -301,7 +301,7 @@ function renderServiceGroups(){
  const list=el('div',undefined,box);list.className='scroll';
  const view=collection(list,'serviceGroups',rows,{label:'Dienstmuster',size:20,search:g=>g.name,redraw:renderServiceGroups});
  const body=table(view.content,['Dienst','Zeitmuster','Offene Vorkommen','Dienstart','Übernehmen']);
- view.items.forEach(g=>{const tr=el('tr',undefined,body);el('td',g.name,tr);el('td',g.times.map(t=>`${t[1]}–${t[3]}${t[2]!==t[0]?' (Folgetag)':''}`).join(' / '),tr);el('td',String(g.pending),tr);let kind='';select(el('td',undefined,tr),'Dienstart für dieses Zeitmuster','',[['','Bitte wählen'],['day','Tag'],['night','Nacht']],v=>kind=v);button(el('td',undefined,tr),'Offene Vorkommen übernehmen',()=>{if(!kind){notice('Zuerst Tag oder Nacht auswählen.',true);return;}const count=ServiceGroups.apply(snapshot,g.key,kind);invalidateResult();renderRules();notice(`${count} offene Dienstvorkommen eingestellt.`);});});
+ view.items.forEach(g=>{const tr=el('tr',undefined,body);el('td',g.name,tr);el('td',g.times.map(t=>`${t[1]}–${t[3]}${t[2]!==t[0]?' (Folgetag)':''}`).join(' / '),tr);el('td',String(g.pending),tr);let kind='';select(el('td',undefined,tr),'Dienstart für dieses Zeitmuster','',[['','Bitte wählen'],['day','Tag'],['night','Nacht']],v=>kind=v,{updatesProject:false});button(el('td',undefined,tr),'Offene Vorkommen übernehmen',()=>{if(!kind){notice('Zuerst Tag oder Nacht auswählen.',true);return;}const count=ServiceGroups.apply(snapshot,g.key,kind);invalidateResult();renderRules();notice(`${count} offene Dienstvorkommen eingestellt.`);});});
 }
 function renderSetupReview(){
  let box=$('setupReview');if(!box){box=el('section');box.id='setupReview';box.className='surface padded';$('profiles').before(box);}box.replaceChildren();
@@ -404,8 +404,8 @@ function renderProfiles(){
  const bulk=el('fieldset',undefined,box);el('legend','Regelprofil gesammelt zuordnen',bulk);
  el('p','Ein bestätigtes Profil allen Personen ohne individuelles Profil zuordnen. Unbestätigte Importplatzhalter werden ersetzt; individuelle Zuordnungen bleiben erhalten.',bulk);
  let chosen='',team='';
- select(bulk,'Bestätigtes Profil','',[['','Bitte wählen'],...snapshot.profiles.filter(p=>p.confirmed).map(p=>[p.id,p.id])],v=>chosen=v);
- select(bulk,'Team','',[['','Alle geladenen Personen'],...[...new Set(snapshot.employees.flatMap(e=>e.team_ids))].map(id=>[id,dataIndex().groups.get(id)?.name??id])],v=>team=v);
+ select(bulk,'Bestätigtes Profil','',[['','Bitte wählen'],...snapshot.profiles.filter(p=>p.confirmed).map(p=>[p.id,p.id])],v=>chosen=v,{updatesProject:false});
+ select(bulk,'Team','',[['','Alle geladenen Personen'],...[...new Set(snapshot.employees.flatMap(e=>e.team_ids))].map(id=>[id,dataIndex().groups.get(id)?.name??id])],v=>team=v,{updatesProject:false});
  button(bulk,'Offene Profilzuordnungen übernehmen',()=>{const n=ProfileGroups.apply(snapshot,chosen,team);invalidateResult();renderRules();notice(`${n} Profilzuordnungen übernommen. Individuelle Profile bleiben erhalten. Projekt speichern.`);});
 
  el('p','Alle Grenzen hier sind harte Regeln, keine Optimierungswünsche. Werte fachlich festlegen; es werden keine gesetzlichen Werte vorgeschlagen. Leere optionale Grenzen bedeuten: keine Grenze aus diesem Profil.',box);
@@ -460,9 +460,9 @@ function renderAssignments(){
  if(!assignments.length)el('p','Noch keine Einteilungen.',view.content);
  const add=el('details',undefined,$('plan'));el('summary','Einteilung hinzufügen',add);const box=el('div',undefined,add);box.className='assignment-composer';
  add.ontoggle=()=>{if(!add.open||box.childNodes.length)return;let employee=snapshot.employees[0]?.id,demand=snapshot.demands[0]?.id;
- select(box,'Person hinzufügen',employee,snapshot.employees.map(e=>[e.id,e.name]),v=>employee=v);
+ select(box,'Person hinzufügen',employee,snapshot.employees.map(e=>[e.id,e.name]),v=>employee=v,{updatesProject:false});
  // Only this explicit editor creates the potentially large demand picker.
- select(box,'Bedarfsposition',demand,snapshot.demands.map(d=>[d.id,demandLabel(d)]),v=>demand=v);
+ select(box,'Bedarfsposition',demand,snapshot.demands.map(d=>[d.id,demandLabel(d)]),v=>demand=v,{updatesProject:false});
  button(box,'Einteilung hinzufügen',()=>{if(!employee||!demand)return;assignments.push({employee_id:employee,demand_id:demand,fixed:false,segments:[]});invalidateResult();const state=pageState('assignments',40);state.query='';state.page=Math.floor((assignments.length-1)/state.size);renderPlan();notice('Einteilung ergänzt. Vor Export oder Neuberechnung erneut prüfen.');});};
 }
 function focusAssignment(index){

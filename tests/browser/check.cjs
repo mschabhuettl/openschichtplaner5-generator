@@ -275,8 +275,32 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     }
     await uploadProject(originalPath);await navigate('rules');await page.setViewportSize({width:1440,height:1000});
+    // Selecting a not-yet-applied action never dirties a saved project or invalidates its reports.
+    const choiceFixture=structuredClone(snapshot);
+    choiceFixture.profiles.push({...structuredClone(choiceFixture.profiles[0]),id:'synthetic-confirmed-choice',confirmed:true});
+    const choicePath=path.join(state,'pending-action-choices.json');fs.writeFileSync(choicePath,JSON.stringify(choiceFixture));
+    await uploadProject(choicePath);await saveProject();await page.waitForFunction(()=>!dirty);
+    await navigate('rules');
+    const choiceState=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot()),result:document.querySelector('#result').textContent,validation:document.querySelector('#validation').textContent}));
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      await page.locator('#profiles').getByRole('combobox',{name:'Bestätigtes Profil',exact:true}).selectOption('synthetic-confirmed-choice');
+      await page.locator('#profiles').getByRole('combobox',{name:'Team',exact:true}).selectOption(choiceFixture.employees[0].team_ids[0]);
+      await page.locator('#serviceGroups tbody tr').first().locator('select').selectOption('night');
+      await reveal('#plan');await page.locator('#plan > details > summary').click();
+      await page.locator('#plan').getByRole('combobox',{name:'Person hinzufügen',exact:true}).selectOption(choiceFixture.employees[1].id);
+      await page.locator('#plan').getByRole('combobox',{name:'Bedarfsposition',exact:true}).selectOption(choiceFixture.demands[1].id);
+      assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot()),result:document.querySelector('#result').textContent,validation:document.querySelector('#validation').textContent})),choiceState);
+      if(width===1440){await page.locator('#plan > details > summary').click();await navigate('rules');}
+    }
+    const beforeAddChoice=await page.evaluate(()=>currentSnapshot().assignments.length);
+    await page.locator('#plan').getByRole('button',{name:'Einteilung hinzufügen',exact:true}).click();
+    assert.equal(await page.evaluate(()=>currentSnapshot().assignments.length),beforeAddChoice+1);
+    assert.equal(await page.evaluate(()=>dirty),true,'Actual adoption still marks the project changed');
+    assert.equal(await page.evaluate(()=>changeVersion),choiceState.version+1);
+    await uploadProject(originalPath);await navigate('rules');await page.setViewportSize({width:1440,height:1000});
     // Preview the existing recurring time rule before explicitly adopting classifications.
-    const timeRuleFixture=structuredClone(snapshot);
+    const timeRuleFixture=structuredClone(snapshot);timeRuleFixture.timezone='Europe/Vienna';
     timeRuleFixture.metadata.night_classification={start:'22:00',end:'06:00',minimum:180};
     for(const shift of timeRuleFixture.shifts)shift.kind='day';
     const timeRuleIds=[...new Set(timeRuleFixture.demands.map(d=>d.shift_id))].slice(0,2);
@@ -509,7 +533,9 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     assert.equal(await page.locator('#metricBlockers').innerText(),String(expectedHints));
     const patternRow=page.locator('#serviceGroups tbody tr').first();
+    const beforePatternChoice=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot()),result:document.querySelector('#result').textContent,validation:document.querySelector('#validation').textContent}));
     await patternRow.locator('select').selectOption('night');
+    assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot()),result:document.querySelector('#result').textContent,validation:document.querySelector('#validation').textContent})),beforePatternChoice,'Choosing a pending bulk action is not a project edit');
     await patternRow.getByRole('button',{name:'Offene Vorkommen übernehmen'}).click();
     await page.waitForFunction(()=>document.querySelector('#metricBlockersLabel').textContent==='noch nicht geprüft');
     assert.equal(await page.locator('#metricBlockers').innerText(),'—');
@@ -609,7 +635,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.match(await page.locator('#calendar thead').innerText(), /Funktion/);
     assert.match(await page.locator('#calendar .shift-badge').first().innerText(), /Testperson/);
     await screenshot('monthly.png');
-    await page.locator('#assignmentDetails summary').click();
+    await reveal('#plan');
     await page.locator('#plan tbody input[type="checkbox"]').first().check();
     // A failing history list must not prevent polling the newly submitted job.
     let failedHistoryCalls=0;
@@ -646,7 +672,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.click('#restoreJob');
     await page.waitForFunction(()=>document.querySelector('#result').textContent.includes('Vollständig'));
     await navigate('plan');
-    await page.locator('#assignmentDetails summary').click();
+    await reveal('#plan');
     await page.locator('#plan tbody tr').first().waitFor({state:'visible'});
     assert.equal(await page.locator('#plan tbody tr').count(),Math.min(40,solvedAssignments));
     assert.match(await page.locator('#saveStatus').innerText(),/Ungespeicherte/);
