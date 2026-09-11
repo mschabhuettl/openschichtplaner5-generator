@@ -4314,3 +4314,41 @@ These are synthetic source-integrity findings, not proof of corruption in real
 SP5 data or a reproduction of the reported 0.9.29 plan. Exact original input,
 job and result are still needed for that causal claim. No repeated private API
 run was warranted for this test/documentation-only change.
+
+### Opt-in temporal reader correction candidate (2026-09-11)
+
+`tools/upstream-library-temporal-reader-candidate.patch` layers on the existing
+strict-reader patch; it is **not activated** in Library/API or Generator runtime.
+`read_dbf` and `read_dbf_buffer` accept explicit `date_fields` / `weekday_fields`:
+
+* Required temporal descriptors must occur once. DATE must have DBF type D;
+  WEEKDAY must have numeric type N/F. Structural failures also fail empty or
+  deleted-only files, rather than waiting for a row to appear.
+* Active dates reuse `_parse_date` calendar validation: blank or impossible
+  dates raise source-free `DBFValueError("invalid_required_date")`.
+* Active weekdays must decode to an actual integer in 0..7, matching Generator
+  `sp5_adapter.import_snapshot` rather than silently converting integral floats.
+  Holiday slot 7 remains valid. Blank numeric values still use the existing
+  numeric validator. Opt-in calendar fields enable validation even when the
+  general `strict` flag is omitted/false; missing files cannot become empty success.
+* Valid empty and deleted-only sources remain empty. Deleted row values are not
+  validated as active staffing. Calls without calendar options retain behavior.
+
+`tools/test_upstream_temporal_reader.py` verifies file/buffer entry points,
+leap dates, impossible/blank dates, weekday bounds/fractions/integral floats,
+structural types and missing/duplicate descriptors with synthetic bytes only.
+The combined reader/source/full-app/partial/calendar suite passes **576 tests**
+(two known dependency warnings); Ruff and patch dry-run pass. An initial broader
+run failed because SP5_WORK_TIME_ROUTER was missing from the test environment;
+the corrected run uses `/tmp/sp5-worktime-contract/sp5api/routers/work_time_rules.py`.
+
+**Integration gate remains open:** API `_staffing_source_error` currently calls
+all DBFValueError instances `numeric_value`. Before activating temporal options,
+introduce a source-free temporal error category and exercise full-app auth,
+filters, factory/cache behavior and Generator diagnostics. The existing full-app
+suite verifies unchanged activation compatibility, not temporal activation.
+Then expand the staffing activation patch and perform the authorized private
+GET audit for the relevant runtime change. No repeated unchanged private baseline
+was run for this isolated candidate. No evidence here establishes malformed real
+DBF dates or explains the original 0.9.29 result; its exact input/job/result is
+still missing. No weekly maximum, employee obligation or duty prohibition added.

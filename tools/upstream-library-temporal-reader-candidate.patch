@@ -1,0 +1,86 @@
+--- a/sp5lib/dbf_reader.py
++++ b/sp5lib/dbf_reader.py
+@@ -212,7 +212,7 @@
+     return _parse_record_specs(raw, _compile_field_specs(fields, names))
+ 
+ 
+-def read_dbf(filepath: str, encoding_hint: str = "utf-16-le", *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
++def read_dbf(filepath: str, encoding_hint: str = "utf-16-le", *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = (), date_fields: tuple[str, ...] = (), weekday_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+     """
+     Liest eine .DBF-Datei und liefert die Datensätze als Liste von dicts.
+     Zeichenfelder werden als UTF-16 LE dekodiert (wie von Schichtplaner5
+@@ -228,15 +228,15 @@
+         with open(filepath, "rb") as f:
+             data = f.read()
+     except FileNotFoundError:
+-        if strict:
++        if strict or date_fields or weekday_fields:
+             raise DBFReadError("file_missing") from None
+         return []
+     except OSError:
+-        if strict:
++        if strict or date_fields or weekday_fields:
+             raise DBFReadError("file_unreadable") from None
+         # Datei fehlt, keine Rechte, oder zwischen Existenz-Check und open gelöscht
+         return []
+-    return read_dbf_buffer(data, strict=strict, required_fields=required_fields, numeric_fields=numeric_fields)
++    return read_dbf_buffer(data, strict=strict, required_fields=required_fields, numeric_fields=numeric_fields, date_fields=date_fields, weekday_fields=weekday_fields)
+ 
+ 
+ class DBFReadError(ValueError):
+@@ -319,16 +319,16 @@
+                 raise DBFValueError("nonfinite_numeric_value")
+ 
+ 
+-def read_dbf_buffer(data: bytes, *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
++def read_dbf_buffer(data: bytes, *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = (), date_fields: tuple[str, ...] = (), weekday_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+     """Parst einen bereits eingelesenen .DBF-Bytepuffer (siehe :func:`read_dbf`).
+ 
+     Getrennt vom Dateizugriff, damit Aufrufer die Bytes nur EINMAL lesen müssen
+     (z. B. der DBF-Cache, der dieselben Bytes auch für die Inhalts-Prüfung hasht)
+     — wichtig bei langsamen Bind-Mounts/Netzpfaden.
+     """
+-    if strict or required_fields or numeric_fields:
++    if strict or required_fields or numeric_fields or date_fields or weekday_fields:
+         layout = _validate_dbf_structure(data)
+-        if required_fields or numeric_fields:
++        if required_fields or numeric_fields or date_fields or weekday_fields:
+             names = []
+             types = []
+             position = 32
+@@ -336,12 +336,15 @@
+                 names.append(data[position:position + 11].split(b"\0", 1)[0])
+                 types.append(data[position + 11])
+                 position += 32
+-            if any(names.count(name.encode("ascii")) != 1 for name in (*required_fields, *numeric_fields)):
++            if any(names.count(name.encode("ascii")) != 1 for name in (*required_fields, *numeric_fields, *date_fields, *weekday_fields)):
+                 raise DBFStructureError("required_column_missing_or_duplicate")
+             if any(types[names.index(name.encode("ascii"))] not in (ord("N"), ord("F"))
+-                   for name in numeric_fields):
++                   for name in (*numeric_fields, *weekday_fields)):
+                 raise DBFStructureError("required_numeric_column_type")
+-        if strict:
++            if any(types[names.index(name.encode("ascii"))] != ord("D")
++                   for name in date_fields):
++                raise DBFStructureError("required_date_column_type")
++        if strict or date_fields or weekday_fields:
+             _validate_dbf_numbers(data, layout)
+     if len(data) < 32:
+         return []
+@@ -387,7 +390,15 @@
+         if raw[0] == 0x2A:
+             continue
+ 
+-        records.append(_parse_record_specs(raw, specs))
++        record = _parse_record_specs(raw, specs)
++        # Explicit table opt-in only; deleted rows have already been skipped.
++        # Reuse date parsing and numeric decoding, never invent calendar values.
++        if any(record[name] is None for name in date_fields):
++            raise DBFValueError("invalid_required_date")
++        if any(type(record[name]) is not int
++               or not 0 <= record[name] <= 7 for name in weekday_fields):
++            raise DBFValueError("invalid_required_weekday")
++        records.append(record)
+ 
+     return records
+ 
