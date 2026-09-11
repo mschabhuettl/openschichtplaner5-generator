@@ -120,3 +120,37 @@ def test_explicit_holiday_and_night_limits():
     snapshot.shifts[0].kind = "night"
     snapshot.profiles[0].max_nights = 0
     assert solve(snapshot, time_limit=2).solver_status == "INFEASIBLE"
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("strict_first", [False, True])
+@pytest.mark.parametrize("day,same_week", [(date(2026, 1, 5), True), (date(2026, 1, 4), False)])
+def test_dated_profile_switch_preserves_whole_iso_week_limit(partial, strict_first, day, same_week):
+    snapshot = sample(day)
+    first = snapshot.profiles[0]
+    second = first.model_copy(deep=True)
+    second.id = "next"
+    first.valid_until = day
+    second.valid_from = day + timedelta(days=1)
+    first.max_weekly_minutes = 240 if strict_first else 480
+    second.max_weekly_minutes = 480 if strict_first else 240
+    snapshot.profiles.append(second)
+    snapshot.employees[0].profile_ids.append(second.id)
+    # Eight actual hours, but only two paid: neither paid minutes nor a
+    # large target may bypass the four-hour cap during a profile transition.
+    snapshot.employees[0].target_minutes = 6000
+    for duty in snapshot.shifts:
+        duty.paid_minutes = 60
+    assignments = [Assignment(employee_id="e", demand_id=str(i)) for i in range(2)]
+    checked = validate(snapshot, assignments)
+    assert checked.valid is (not same_week)
+    weekly = [d for d in checked.diagnostics if d.code == "weekly_limit"]
+    assert len(weekly) == int(same_week)
+    result = solve(snapshot, time_limit=2, partial=partial)
+    if same_week and not partial:
+        assert result.solver_status == "INFEASIBLE"
+    else:
+        assert result.solver_status == "OPTIMAL"
+        assert len(result.assignments) == (1 if same_week else 2)
+        assert validate(snapshot, result.assignments).valid
+        assert sum(result.vacancies.values()) == int(same_week)

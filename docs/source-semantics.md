@@ -1369,3 +1369,23 @@ ausgeblendeter Arten. Bestehende Library-Tests in `tests/test_calculations.py`
 belegen dieselbe Anrechnungssemantik. Ungeklärte persönliche Freigaben,
 Profile und die fehlende Originaleingabe des 600-Sekunden-Falls bleiben davon
 unberührt.
+
+### Datierter Profilwechsel innerhalb einer ISO-Woche
+
+`solver.solve` summiert bei `max_weekly_minutes` für jede vom gültigen Profil
+berührte Planungswoche die vollständigen sieben lokalen Kalendertage.
+`validator.validate` prüft dieselbe Wochensumme. Bei zwei nacheinander gültigen
+Profilen innerhalb derselben Woche gelten damit beide Wochenobergrenzen für
+die gesamte Woche (effektiv die strengere), nicht zwei getrennte Teilbudgets.
+Dies beschreibt die bestehende Generatorsemantik, keine aus SP5 abgeleitete
+neue fachliche Vorgabe oder automatische anteilige Umrechnung.
+
+`tests/test_calendar_limits.py::test_dated_profile_switch_preserves_whole_iso_week_limit`
+belegt acht Kombinationen: strengeres altes/neues Profil, Voll-/Teilplanung,
+Wechsel innerhalb einer Woche oder Sonntag/Montag. Zwei reale Vierstundendienste
+mit je nur einer bezahlten Stunde überschreiten das Vierstunden-Wochenlimit
+auch bei hohem Soll; der Teilplan darf dann nur einen Dienst besetzen.
+An verschiedenen ISO-Wochen dürfen beide Dienste stattfinden. Der unabhängige
+Validator weist genau die erwartete Wochenverletzung aus. In diesen Fällen
+wurde kein Solver-/Validator-Unterschied gefunden; der fehlende originale
+600-Sekunden-Projekt-/Jobstand bleibt für die konkrete Fehlerursache notwendig.
