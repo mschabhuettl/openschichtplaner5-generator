@@ -216,6 +216,7 @@ def _validate(snapshot, assignments, input_errors=None):
             add("vacancy", f"{d.minimum - count} unbesetzte Stelle(n).", demand=d.id)
         if d.maximum is not None and count > d.maximum:
             add("maximum", "Höchstbesetzung überschritten.", demand=d.id)
+    limit_context_end = snapshot.period_end
     for e in snapshot.employees:
         entries = by_employee[e.id]
         for (a, left), (b, right) in combinations(entries, 2):
@@ -237,6 +238,7 @@ def _validate(snapshot, assignments, input_errors=None):
                     b.demand_id,
                 )
         worked, nights, paid = set(), set(), 0
+        planning_duty_days = set()
         daily = defaultdict(int)
         spans = []
         for a, s in entries:
@@ -249,6 +251,7 @@ def _validate(snapshot, assignments, input_errors=None):
                 nights.add(day)
             if snapshot.period_start <= day <= snapshot.period_end:
                 paid += s.paid_minutes
+                planning_duty_days.update(dm)
             spans.extend(segments(s))
         for p in snapshot.profiles:
             if p.id not in e.profile_ids:
@@ -259,7 +262,15 @@ def _validate(snapshot, assignments, input_errors=None):
                     min(p.valid_until, snapshot.period_end),
                 )
             )
-            for day in active_days:
+            # A selected planning duty can run past the last planning date.
+            # Its tail still consumes configured daily/weekly limits, together
+            # with fixed context on the same day/week. Period totals stay scoped
+            # to active_days; unrelated future context does not widen the check.
+            limit_days = active_days | {
+                day for day in planning_duty_days
+                if p.valid_from <= day <= p.valid_until
+            }
+            for day in sorted(limit_days):
                 if p.max_daily_minutes is not None and daily[day] > p.max_daily_minutes:
                     add(
                         "daily_limit",
@@ -268,6 +279,8 @@ def _validate(snapshot, assignments, input_errors=None):
                         day=day,
                     )
                 week = day - timedelta(days=day.weekday())
+                if p.max_weekly_minutes is not None:
+                    limit_context_end = max(limit_context_end, week + timedelta(days=6))
                 if (
                     p.max_weekly_minutes is not None
                     and sum(daily[week + timedelta(days=i)] for i in range(7))
@@ -413,7 +426,9 @@ def _validate(snapshot, assignments, input_errors=None):
     )
     if snapshot.context_start > snapshot.period_start - timedelta(
         days=horizon
-    ) or snapshot.context_end < snapshot.period_end + timedelta(days=horizon):
+    ) or snapshot.context_end < max(
+        snapshot.period_end + timedelta(days=horizon), limit_context_end
+    ):
         add(
             "context",
             "Randkontext deckt aktive Ruhe-, Serien- oder Wochengrenzen nicht vollständig ab.",

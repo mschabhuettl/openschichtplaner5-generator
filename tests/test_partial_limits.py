@@ -95,6 +95,117 @@ def test_daily_limit_is_not_a_single_duty_length_limit(daily_limit, accepted):
     assert result.validation.valid
 
 
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("limit,code,day,hour,duration,cap", [
+    ("max_daily_minutes", "daily_limit", 5, 20, 20, 720),
+    ("max_weekly_minutes", "weekly_limit", 11, 23, 9, 420),
+])
+def test_hard_limits_cover_spill_after_period_end(partial, limit, code, day, hour, duration, cap):
+    snapshot = case(1, [shift("spill", day, hour, duration)])
+    snapshot.period_start = snapshot.period_end = date(2026, 1, day)
+    setattr(snapshot.profiles[0], limit, cap)
+    snapshot.shifts[0].paid_minutes = 60
+    # Monday 20:00 -> Tuesday 16:00: 16h exceed the 12h daily cap.
+    # Sunday 23:00 -> Monday 08:00: 8h exceed the 7h next-ISO-week cap.
+    checked = validate(snapshot, plan(snapshot))
+    assert not checked.valid
+    assert code in {d.code for d in checked.diagnostics}
+    result = solver.solve(snapshot, 3, partial=partial)
+    assert not result.assignments
+    assert result.solver_status == ("OPTIMAL" if partial else "INFEASIBLE")
+    if partial:
+        assert result.validation.valid
+        assert result.vacancies == {"spill": 1}
+
+
+@pytest.mark.parametrize("limit,code", [
+    ("max_daily_minutes", "daily_limit"), ("max_weekly_minutes", "weekly_limit"),
+])
+@pytest.mark.parametrize("cap,accepted", [(599, False), (600, True)])
+def test_spill_limits_include_fixed_following_context(limit, code, cap, accepted):
+    snapshot = case(1, [shift("spill", 11, 23, 9), shift("fixed", 12, 12, 2)])
+    snapshot.period_start = snapshot.period_end = date(2026, 1, 11)
+    profile = snapshot.profiles[0]
+    profile.min_rest_minutes = 0
+    setattr(profile, limit, cap)
+    snapshot.assignments = [Assignment(employee_id="e0", demand_id="fixed", fixed=True)]
+    # The next local day and ISO week contain 8h of spill + 2h fixed work.
+    checked = validate(snapshot, plan(snapshot))
+    assert checked.valid is accepted
+    if not accepted:
+        assert code in {d.code for d in checked.diagnostics}
+    result = solver.solve(snapshot, 3, partial=True)
+    assert result.solver_status == "OPTIMAL"
+    assert {a.demand_id for a in result.assignments} == ({"spill", "fixed"} if accepted else {"fixed"})
+    assert result.validation.valid
+    assert validate(snapshot, result.assignments).valid
+
+
+@pytest.mark.parametrize("limit", ["max_daily_minutes", "max_weekly_minutes"])
+def test_unselected_spill_does_not_activate_unrelated_future_context_limit(limit):
+    snapshot = case(1, [shift("spill", 11, 23, 9), shift("fixed", 12, 12, 10)])
+    snapshot.period_start = snapshot.period_end = date(2026, 1, 11)
+    snapshot.profiles[0].min_rest_minutes = 0
+    setattr(snapshot.profiles[0], limit, 9 * 60)
+    snapshot.assignments = [Assignment(employee_id="e0", demand_id="fixed", fixed=True)]
+    # Fixed future work alone exceeds the cap, outside this planning period.
+    # Do not reject all partial plans merely because a spill candidate exists.
+    checked = validate(snapshot, snapshot.assignments)
+    assert checked.valid and not checked.complete
+    result = solver.solve(snapshot, 3, partial=True)
+    assert result.solver_status == "OPTIMAL"
+    assert {a.demand_id for a in result.assignments} == {"fixed"}
+    assert result.validation.valid
+
+
+@pytest.mark.parametrize("limit", ["max_daily_minutes", "max_weekly_minutes"])
+@pytest.mark.parametrize("assigned,active", [(True, True), (False, True), (True, False)])
+def test_spill_uses_assigned_profile_valid_on_tail_date(limit, assigned, active):
+    snapshot = case(1, [shift("spill", 11, 23, 9)])
+    snapshot.period_start = snapshot.period_end = date(2026, 1, 11)
+    tail_profile = snapshot.profiles[0].model_copy(update={
+        "id": "tail", "valid_from": date(2026, 1, 12 if active else 13), limit: 7 * 60,
+    })
+    snapshot.profiles.append(tail_profile)
+    if assigned:
+        snapshot.employees[0].profile_ids.append("tail")
+    accepted = not (assigned and active)
+    assert validate(snapshot, plan(snapshot)).valid is accepted
+    result = solver.solve(snapshot, 3, partial=True)
+    assert len(result.assignments) == int(accepted)
+    assert result.validation.valid
+
+
+def test_spill_does_not_extend_period_minutes_or_paid_target_accounting():
+    snapshot = case(1, [shift("spill", 11, 23, 9)])
+    snapshot.period_start = snapshot.period_end = date(2026, 1, 11)
+    snapshot.profiles[0].max_period_minutes = 60
+    snapshot.profiles[0].max_daily_minutes = 480
+    snapshot.profiles[0].max_weekly_minutes = 480
+    snapshot.shifts[0].paid_minutes = 120
+    result = solver.solve(snapshot, 3)
+    assert result.solver_status == "OPTIMAL" and result.validation.complete
+    assert result.metrics["employees"]["e0"]["paid_minutes"] == 120
+    assert validate(snapshot, result.assignments).complete
+
+
+def test_long_spill_needs_context_to_end_of_its_last_iso_week():
+    # A deliberately extreme, but contract-supported synthetic duty. There is
+    # no invented duration cap or weekly-rest rule in this fixture.
+    snapshot = case(1, [shift("spill", 4, 23, 177)])
+    snapshot.period_start = snapshot.period_end = date(2026, 1, 4)
+    snapshot.context_end = date(2026, 1, 12)
+    snapshot.profiles[0].max_weekly_minutes = 20000
+    checked = validate(snapshot, plan(snapshot))
+    assert checked.valid and not checked.complete
+    assert "context" in {d.code for d in checked.diagnostics}
+    result = solver.solve(snapshot, 3)
+    assert result.solver_status == "OPTIMAL"
+    assert result.validation.valid and not result.validation.complete
+    snapshot.context_end = date(2026, 1, 18)
+    assert validate(snapshot, plan(snapshot)).complete
+
+
 @pytest.mark.parametrize("kind", ["overlap", "rest", "same_shift"])
 def test_partial_never_keeps_conflicting_assignments(kind):
     snapshot = case(1, [shift("a", 5, 8, 8), shift("b", 5, 16, 8)])

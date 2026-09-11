@@ -358,6 +358,7 @@ def solve(snapshot, time_limit=30, partial=False):
         night = defaultdict(list)
         period_weekend = defaultdict(list)
         paid = []
+        planning_tails = []
         for d, x in entries:
             s = shifts[d.shift_id]
             for day, n in dates_by_shift[s.id].items():
@@ -367,6 +368,9 @@ def solve(snapshot, time_limit=30, partial=False):
                 night[shift_day[s.id]].append(x)
             if snapshot.period_start <= shift_day[s.id] <= snapshot.period_end:
                 paid.append(s.paid_minutes * x)
+                tail = {day for day in dates_by_shift[s.id] if day > snapshot.period_end}
+                if tail:
+                    planning_tails.append((x, tail))
                 for day in dates_by_shift[s.id]:
                     if day.weekday() >= 5:
                         period_weekend[day - timedelta(days=day.weekday())].append(x)
@@ -419,6 +423,24 @@ def solve(snapshot, time_limit=30, partial=False):
                         sum(sum(daily[week + timedelta(days=i)]) for i in range(7))
                         <= p.max_weekly_minutes
                     )
+            # Only a selected in-period duty activates checks for its spill
+            # beyond period_end. Keep all fixed context in the sums, without
+            # rejecting a plan for an unrelated future context-only violation.
+            active_weeks = {day - timedelta(days=day.weekday()) for day in active}
+            for x, tail in planning_tails:
+                tail_days = {
+                    day for day in tail if p.valid_from <= day <= p.valid_until
+                }
+                if p.max_daily_minutes is not None:
+                    for day in tail_days:
+                        model.add(sum(daily[day]) <= p.max_daily_minutes).only_enforce_if(x)
+                if p.max_weekly_minutes is not None:
+                    tail_weeks = {day - timedelta(days=day.weekday()) for day in tail_days}
+                    for week in tail_weeks - active_weeks:
+                        model.add(
+                            sum(sum(daily[week + timedelta(days=i)]) for i in range(7))
+                            <= p.max_weekly_minutes
+                        ).only_enforce_if(x)
             if p.weekly_rest_minutes and p.weekly_rest_frame == "calendar_week":
                 required = p.weekly_rest_minutes + (
                     p.min_rest_minutes if p.weekly_rest_add_daily else 0

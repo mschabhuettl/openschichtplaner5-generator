@@ -39,6 +39,13 @@ Mitternacht; Lücken sind keine Einsatzzeit. `paid_minutes` ist ein eigenständi
 expliziter Wert, der nur für Soll-/Ist-Bewertung eingesetzt wird. Gutschriften sind
 keine Arbeitsintervalle und verbrauchen keine Ruhe.
 
+Beginnt ein gewählter Dienst innerhalb der Planungsperiode und endet erst danach,
+gelten die zugeordneten Tages-/Wochenhöchstgrenzen auch an den überhängenden
+Arbeitstagen, soweit das jeweilige Profil dort gültig ist. Dabei zählen fixe
+Folgedienste desselben Tages bzw. derselben ISO-Woche mit. Ein nicht gewählter
+Kandidat erweitert den Prüfzeitraum nicht. Periodenmaxima bleiben dagegen auf
+die Planungsperiode begrenzt; bezahlte Minuten behalten ihren eigenen Bezug.
+
 Lokale Verfügbarkeitsfenster werden mit IANA-Zeitzonen aufgelöst. Nicht existierende
 Uhrzeiten und mehrdeutige Uhrzeiten ohne explizite Auswahl werden als Eingabefehler
 abgewiesen. `localize(..., fold=0|1)` ermöglicht eine explizite Auswahl in Adaptern.

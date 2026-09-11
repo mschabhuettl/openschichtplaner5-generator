@@ -588,3 +588,53 @@ Quellvollständigkeit und tatsächliche Zeitabweichungen bleiben eigene
 Bestätigungsfragen. Historie darf keine zukünftige Freigabe erzeugen. Das
 pauschale Löschen von `unresolved`, Umbenennen von `unconfirmed` oder Umgehen
 von `eligibility` für beliebige Fixierungen ist kein geeigneter Fix.
+
+## Neuer Grenzbefund: Dienstüberhang nach dem letzten Planungstag
+
+Im Stand `a910623` begrenzten `solver.solve` und `validator._validate` die
+Tages-/Wochenhöchstprüfungen auf Profiltage innerhalb der Planungsperiode.
+`timeutils.day_minutes` zerlegte überhängende Intervalle korrekt; die Minuten
+des Folgetags bzw. der nächsten ISO-Woche wurden aber nicht gegen deren Grenze
+geprüft, wenn diese Kalenderzelle außerhalb der Periode lag.
+
+Synthetisch nachgewiesen (kein Original-Nutzerjob):
+
+- Ein-Tages-Plan Montag, Dienst 20:00 bis Dienstag 16:00, gültiges Tagesmaximum
+  720 Minuten: 240 Minuten am Montag, **960 am Dienstag**. Bisher akzeptiert.
+- Ein-Tages-Plan Sonntag, Dienst 23:00 bis Montag 08:00, gültiges Wochenmaximum
+  420 Minuten: 60 Minuten in der alten, **480 in der nächsten ISO-Woche**.
+  Bisher ebenfalls akzeptiert.
+
+Beide Fälle lieferten vor der Korrektur in Voll- und Teilplanung `OPTIMAL`,
+eine Einteilung und `validation.valid=true`. Vier neue Regressionen schlugen
+zunächst am unabhängig aufgerufenen Validator fehl. Das ist ein gemeinsamer
+Prüfbereichsfehler, keine Lockerung durch Teilplanung oder Zeitbudget.
+
+Die Korrektur lässt eine gewählte In-Perioden-Einteilung die zusätzlichen
+Tages-/Wochenprüfungen ihres Überhangs aktivieren. Solverbedingungen sind an
+die jeweilige Auswahlvariable gebunden; der Validator erweitert seinen
+Prüfbereich aus den tatsächlich gewählten Einteilungen. Beide summieren
+vorhandene fixe Folgezeiten mit. Nur zugeordnete, am Überhangtag gültige
+Profile gelten; es wird weder ein Wochenmaximum erfunden noch ein
+abgelaufenes Profil verlängert. Periodenmaximum und bezahlte Sollbewertung
+werden nicht auf den Folgezeitraum ausgeweitet.
+
+18 Regressionen in `tests/test_partial_limits.py` prüfen die beiden Fehler,
+exakte Grenzwerte einschließlich fixer Folgezeiten, nicht gewählte Kandidaten,
+Profilzuordnung/-gültigkeit und unveränderte Perioden-/Bezahlminuten.
+Unabhängige Gegenprobe: Ein nur möglicher Überhang darf nicht sämtliche
+Teilpläne wegen eines sonst nicht betroffenen zukünftigen Kontextverstoßes
+unzulässig machen.
+Bei langen Überhängen muss außerdem der bestätigte Randkontext bis zum Ende
+der letzten zusätzlich geprüften ISO-Woche reichen. Andernfalls bleibt die
+Validierung ausdrücklich unvollständig, auch bei `OPTIMAL`.
+
+Quellabgrenzung bleibt wichtig: Library `Database.get_schedule` liefert die
+Einteilung am Dienstanfang; Generator `sp5_adapter.import_snapshot` baut die
+Intervalle aus `SHIFT.STARTEND{idx}`, während `DURATION{idx}` die bezahlten
+Minuten liefert. API `work_time_rules._collect_day_data/_check_employee`
+summiert dagegen `shift_hours_on_day`/DURATION auf dem Quelldatum; OSP5
+`WorkTimeRules.tsx` zeigt diese API-Prüfung. Sie ist deshalb kein unabhängiger
+Nachweis für die realminutenbasierte Generator-Grenze. Die genauen Eingaben
+und das Ergebnis des gemeldeten 600-Sekunden-Laufs fehlen weiterhin; dieser
+Grenzfehler allein erklärt noch nicht den konkreten Nutzerplan.
