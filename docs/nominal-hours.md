@@ -109,3 +109,25 @@ und Stunden-Zielbeitrag bleiben konsistent. Liefert bereits die Zertifizierung
 UNKNOWN und die anschließende Suche ebenfalls UNKNOWN, wird der Vorschlag
 nicht als gültiger Plan ausgegeben. Diese kontrollierten Statusgegenproben
 sind kein realer 600-Sekunden-Lasttest und kein Optimalitätsnachweis.
+
+### Zielfunktionswert und Schranke sind phasengebunden
+
+`test_objective_and_bound_remain_in_their_search_phase` prüft Voll-/Teilplanung,
+Qualitätsabschluss/UNKNOWN sowie den JSON-Roundtrip des Ergebnisses. Bei einem
+synthetischen Dienst mit 480 bezahlten Minuten, Soll 0 und Stundengewicht 2
+beträgt der Qualitätsbeitrag 960. Nur nach abgeschlossener Qualitätsoptimierung
+sind `objective_value = best_bound = 960` Qualitätswerte. Beim Rückfall auf die
+Besetzungsphase des Teilplans sind beide Werte 0 (keine offene Mindestbesetzung),
+obwohl derselbe Plan 960 Qualitätspunkte kostet. Die Vollplanung entfernt nach
+der Machbarkeitsphase beide Werte (`null`), solange keine Qualitätslösung folgt.
+FEASIBLE mit identischen Besetzungswerten/Schranken beweist deshalb keine optimale
+Stundenverteilung oder Freizeit. `metrics.objective_phase` muss bei jeder
+Interpretation eines Zielfunktionswerts mitgelesen werden.
+
+Verbraucherprüfung: `static/app.js` zeigt Status, Vollständigkeit und Kennzahlen
+(einschließlich Phase in der technischen Auswertung), aber weder den rohen
+Zielfunktionswert noch dessen Schranke als Stunden/Optimalitätsabstand.
+`export.rows` und `workbook.planning_workbook` berechnen Stunden aus Einteilungen;
+`cli.main` verwendet den Status für den Rückgabecode. In diesen Pfaden ist keine
+Verwechslung von Besetzungsziel und Stundenwert nachgewiesen. Die unterschiedliche
+Bedeutung der Ergebnisfelder ist hingegen für externe JSON-Verbraucher relevant.

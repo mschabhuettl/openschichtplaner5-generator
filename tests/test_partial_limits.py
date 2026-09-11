@@ -636,3 +636,45 @@ def test_account_adjustments_never_offset_elapsed_hard_limits(partial, limit, co
         assert result.validation.valid
         assert result.vacancies == {"s": 1}
         assert result.metrics["employees"]["e0"]["deviation_minutes"] == credit + balance - 6000
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("quality_finishes", [False, True])
+def test_objective_and_bound_remain_in_their_search_phase(monkeypatch, partial, quality_finishes):
+    """No quality gap may be inferred from a feasibility/vacancy fallback."""
+    from sp5generator.models import Objectives, Result
+
+    snapshot = case(1)
+    snapshot.employees[0].target_minutes = 0
+    snapshot.objectives = Objectives(
+        hours=2, changes=0, nights=0, weekends=0, holidays=0, wishes=0,
+        workday_transitions=0,
+    )
+    original = cp_model.CpSolver.solve
+    calls = []
+
+    def controlled_quality(self, model, *args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2 and not quality_finishes:
+            return cp_model.UNKNOWN
+        return original(self, model, *args, **kwargs)
+
+    monkeypatch.setattr(cp_model.CpSolver, "solve", controlled_quality)
+    result = solver.solve(snapshot, 3, partial=partial)
+    # Exercise the persisted/public JSON contract as well as the live result.
+    result = Result.model_validate_json(result.model_dump_json())
+    assert len(calls) == 2
+    assert result.validation.complete and validate(snapshot, result.assignments).complete
+    assert result.metrics["weighted_objective_contributions"]["hours"] == 960
+    if quality_finishes:
+        assert result.solver_status == "OPTIMAL"
+        assert result.metrics["objective_phase"] == "quality"
+        assert result.objective_value == result.best_bound == 960
+    else:
+        assert result.solver_status == "FEASIBLE"
+        assert result.parameters["last_optimization_status"] == "UNKNOWN"
+        assert result.metrics["objective_phase"] == ("vacancies" if partial else "feasibility")
+        if partial:
+            assert result.objective_value == result.best_bound == 0
+        else:
+            assert result.objective_value is None and result.best_bound is None
