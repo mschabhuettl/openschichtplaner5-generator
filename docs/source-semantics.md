@@ -5277,3 +5277,33 @@ gap is 240). Empty new work is valid; deleting the imported context in a test-on
 counterfactual incorrectly admits the duty. This proves the safety effect without
 conflating it with missing import confirmations. A separate 24-hour actual-window
 case is preserved rather than categorically prohibited.
+
+### Import notices versus native solver invalidity (2026-09-12)
+
+`Snapshot.unresolved` mixes specific source/mapping failures with explicit
+review/confirmation notices. `sp5_adapter.import_snapshot` seeds profile/kind/
+approval review, source consistency and boundary-context notices; it separately
+adds period credit/balance review and conditionally team-scope/staffing
+interpretation notices. `api_adapter.import_api` appends API mapping, visibility/
+cache/completeness and out-of-selection membership review notices. These entries
+are strings, not dynamically resolved predicates linked to the current profile,
+approval or source-record state.
+
+Consequently, applying offered approvals and confirming the imported profile or
+duty kinds does not itself remove those notice strings. This is distinct from
+still-missing actual source windows or unsupported in-period special work.
+`domain.input_diagnostics` emits `unresolved` for **every** remaining string;
+`solver.solve` returns public `MODEL_INVALID` on these input diagnostics **before
+constructing `cp_model.CpModel`**. The later native CP-SAT `MODEL_INVALID` branch
+is a different failure path. A successful HTTP/Worker job carrying this public
+status proves neither native solver execution nor a generated plan.
+
+The existing UI's `app.js::renderUnresolved` has an explicit per-notice
+"Nach fachlicher Korrektur als geklärt markieren" action. This audit does not
+invoke it on private data or treat accepting history proposals as blanket
+permission to erase notices about source completeness, balances, missing work,
+team scope or unsupported mappings. Neither should a report label every remaining
+notice as a missing source row or as a hard-time-limit violation. Future issue
+lifecycle work should distinguish the already-existing confirmation requirement
+from a concrete unresolved mapping, without inferring either one is satisfied
+from successful import, elapsed search time or a profile checkbox alone.
