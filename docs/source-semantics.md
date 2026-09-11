@@ -1020,3 +1020,37 @@ Typ-1-Zeitfelder als bestätigte Arbeitsintervalle.
    Solver gegen den unabhängigen Validator prüfen; relevante Runtimekorrektur
    erneut privat gegen die API abnehmen. Die hier ergänzten Tests und dieser
    Befund ändern allein noch keinen Import und rechtfertigen kein Release.
+
+
+### Korrektur der tagbezogenen Randersetzung
+
+Der oben dokumentierte XFAIL-Stand ist historisch: `import_snapshot` bildet
+jetzt vor der zeilenweisen Verarbeitung die ersetzten Personentage aus
+Ist-Sonderzeilen mit gesetzter Dienst-ID. Nur außerhalb der Planungsperiode
+werden normale Zeilen dieser Tage nicht zusätzlich als Randarbeit angelegt.
+Die ursprüngliche Struktur bleibt in `metadata.context_schedule`;
+akzeptierte nominale Ersatzarbeit enthält außerdem
+`metadata.provenance[id].replaced_normal_rows` mit Dienst-/Arbeitsplatz-/
+Gruppenherkunft der ersetzten Normalzeilen. Die Reihenfolge ist unerheblich.
+
+Die sechs ursprünglichen HTTP-Gegenproben bestehen ohne XFAIL. Weitere sechs
+Fälle in
+`test_boundary_replacement_keeps_blockers_additions_and_selected_references`
+sichern beide Referenzsichten, Zusatzdienste mit Dienst-ID 0, Typ 1 und
+abweichende reale Sonderzeiten ab. Nicht darstellbare Ersatzzeiten bleiben
+harte Sonderdienstblocker, auch wenn die ersetzten normalen Randzeiten nicht
+mehr addiert werden. Fehlende Sonderzeiten werden dadurch nicht zu Freizeit
+eines gültigen Plans. Persönliche Freigaben bleiben unbestätigt.
+
+Die Normalisierung der Referenzdienste innerhalb der Planungsperiode bleibt
+ein separater offener Prüfpunkt. Diese Korrektur ändert weder Soll-Referenzen
+noch Bedarfe oder Arbeitszeitgrenzen und reproduziert weiterhin nicht den
+fehlenden Originaljob 0.9.29 mit 600 Sekunden Budget.
+
+Die Import-bis-Solver-Gegenprobe
+`test_imported_boundary_counts_real_weekly_time_without_historical_approval`
+prüft zusätzlich Voll- und Teilplanung mit anderem Ersatzarbeitsplatz:
+vier reale Randstunden (eine bezahlte Stunde) plus vier reale Planstunden
+sind bei ausdrücklich synthetisch konfiguriertem Wochenmaximum 480 Minuten
+zulässig, bei 479 nicht. Solver und unabhängiger Validator stimmen überein;
+die Randhistorie erfordert keine rückdatierte persönliche Freigabe.

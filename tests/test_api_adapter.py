@@ -367,19 +367,9 @@ def test_special_duty_details_use_live_read_only_endpoint_and_never_guess(transp
 
 
 @pytest.mark.parametrize("special_first", [False, True])
-@pytest.mark.parametrize("identity", [
-    "same",
-    pytest.param("workplace", marks=pytest.mark.xfail(
-        strict=True, reason="Known mapping gap: SPSHI replaces the whole person-day, not only the same workplace")),
-    pytest.param("service", marks=pytest.mark.xfail(
-        strict=True, reason="Known mapping gap: SPSHI replaces the whole person-day, not only the same service")),
-])
+@pytest.mark.parametrize("identity", ["same", "workplace", "service"])
 def test_special_replacement_boundary_matches_library_person_day(transport, identity, special_first):
-    """Executable open safety contract; paid and real durations coincide ONLY in this fixture.
-
-    The strict expected failures record an investigated import defect, not an
-    accepted scheduling rule. Remove their markers when day normalization lands.
-    """
+    """Day-wide replacement; paid and real durations coincide only in this fixture."""
     from sp5lib import calculations as calc
 
     responses, calls = transport
@@ -414,6 +404,42 @@ def test_special_replacement_boundary_matches_library_person_day(transport, iden
     actual_minutes = sum((segment.end - segment.start).total_seconds() / 60
                          for work in snapshot.boundary_work for segment in work.segments)
     assert actual_minutes == expected_hours * 60
+    provenance = snapshot.metadata["provenance"][snapshot.boundary_work[0].id]
+    assert provenance["replaced_normal_rows"] == [{
+        field: normal.get(field)
+        for field in ("employee_id", "date", "shift_id", "workplace_id", "group_id")
+    }]
+
+
+@pytest.mark.parametrize("plan", ["ist", "soll"])
+@pytest.mark.parametrize("special_type,service", [(0, 0), (1, 201), (0, 201)])
+def test_boundary_replacement_keeps_blockers_additions_and_selected_references(
+    transport, plan, special_type, service
+):
+    responses, _ = transport
+    normal = {"employee_id": 101, "date": "2026-01-05", "kind": "shift",
+              "shift_id": 201, "workplace_id": 301}
+    special = {**normal, "kind": "special_shift", "shift_id": service,
+               "spshi_type": special_type}
+    reference = {**normal, "date": "2026-01-06"}
+    responses[("schedule", "2026", "1", "ist")] = [normal, special, reference]
+    responses[("schedule", "2026", "1", "soll")] = [reference]
+    responses["/api/einsatzplan"] = [{
+        "id": 901, "employee_id": 101, "date": "2026-01-05",
+        "shift_id": service, "workplace_id": 301, "type": special_type,
+        # Non-nominal replacement cannot be silently accepted.
+        "startend": "08:00-14:00", "duration": 6,
+    }]
+    snapshot = import_api(
+        date(2026, 1, 6), date(2026, 1, 6), "1", "UTC", reference_plan=plan
+    )
+    assert any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved)
+    assert len(snapshot.boundary_work) == (1 if service == 0 else 0)
+    assert len(snapshot.metadata["reference_schedule"]) == 1
+    assert snapshot.metadata["reference_schedule"][0]["date"] == "2026-01-06"
+    assert snapshot.employees[0].approvals == []
+    assert any(row["kind"] == "shift" and row["date"] == "2026-01-05"
+               for row in snapshot.metadata["context_schedule"])
 
 
 @pytest.mark.parametrize("special_type", [0, 1])

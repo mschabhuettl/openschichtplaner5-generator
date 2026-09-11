@@ -466,7 +466,28 @@ def import_snapshot(
     month = context_start.replace(day=1)
     seen_schedule = set()
     while month <= context_end:
-        for row in _reference_schedule(db, scope, month.year, month.month, period_start, period_end, reference_plan):
+        schedule = _reference_schedule(
+            db, scope, month.year, month.month, period_start, period_end, reference_plan
+        )
+        # Library replacement is person-day-wide, independent of TYPE/workplace.
+        # Restrict normalization to Ist boundary work, never Soll references.
+        replaced_days = {
+            (row.get("employee_id"), calc.to_date(row.get("date")))
+            for row in schedule
+            if row.get("kind") == "special_shift"
+            and row.get("shift_id") not in (None, 0, "", "0")
+        }
+        replaced_rows = {}
+        for row in schedule:
+            day = calc.to_date(row.get("date"))
+            key = (row.get("employee_id"), day)
+            if (row.get("kind") == "shift" and key in replaced_days
+                    and day is not None and not period_start <= day <= period_end):
+                replaced_rows.setdefault(key, []).append({
+                    field: row.get(field)
+                    for field in ("employee_id", "date", "shift_id", "workplace_id", "group_id")
+                })
+        for row in schedule:
             d = calc.to_date(row.get("date"))
             eid = f"sp5:employee:{row.get('employee_id')}"
             if (
@@ -499,6 +520,10 @@ def import_snapshot(
             seen_schedule.add(schedule_key)
             metadata["context_schedule"].append(safe)
             kind = row.get("kind")
+            if (kind == "shift" and (row.get("employee_id"), d) in replaced_rows
+                    and not period_start <= d <= period_end):
+                # Preserve raw context above; unknown special times still block.
+                continue
             if kind == "special_shift" and row.get("spshi_type", 0) == 0 and row.get("shift_id") in native_shifts:
                 idx = calc.day_index(d, holidays)
                 try:
@@ -611,6 +636,7 @@ def import_snapshot(
                         "schedule_group_id": row.get("group_id"),
                         "workplace_id": row.get("workplace_id"),
                         "time_source": f"sp5:SHIFT.STARTEND{idx}",
+                        "replaced_normal_rows": replaced_rows.get((row.get("employee_id"), d), []),
                     }
                     boundary_work[sid] = BoundaryWork(
                         id=sid,

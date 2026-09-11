@@ -185,7 +185,8 @@ def test_single_direct_membership_does_not_prove_context_assignment_team(explici
 
 @pytest.mark.parametrize("partial", [False, True])
 @pytest.mark.parametrize("maximum, assigned", [(479, False), (480, True)])
-def test_imported_boundary_counts_real_weekly_time_without_historical_approval(partial, maximum, assigned):
+@pytest.mark.parametrize("replacement", [False, True])
+def test_imported_boundary_counts_real_weekly_time_without_historical_approval(partial, maximum, assigned, replacement):
     """Real import -> explicit synthetic setup -> solver AND independent validator."""
     pytest.importorskip("sp5lib")
     from test_sp5_adapter import SyntheticDatabase
@@ -196,8 +197,15 @@ def test_imported_boundary_counts_real_weekly_time_without_historical_approval(p
 
     class Source(SyntheticDatabase):
         def get_schedule(self, year, month, **kwargs):
-            return ([{"employee_id": 101, "date": "2026-01-05", "kind": "shift",
-                      "shift_id": 201}] if (year, month) == (2026, 1) else [])
+            if (year, month) != (2026, 1):
+                return []
+            rows = [{"employee_id": 101, "date": "2026-01-05", "kind": "shift",
+                     "shift_id": 201, "workplace_id": 301}]
+            if replacement:
+                rows.append({**rows[0], "kind": "special_shift", "workplace_id": 302,
+                             "spshi_type": 0, "startend": "08:00-10:00;11:00-13:00",
+                             "duration": 1})
+            return rows
         def get_shifts(self, **kwargs):
             # Four hours of real work, one paid hour. No workplace/team on history.
             return [{**s, **{f"DURATION{i}": 1 for i in range(8)}}
