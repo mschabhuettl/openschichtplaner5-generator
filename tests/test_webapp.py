@@ -248,3 +248,19 @@ def test_readiness_uses_solver_input_checks_without_saving(tmp_path):
         assert report.json()['ready'] is False
         assert any(d['code'] == 'unresolved' for d in report.json()['diagnostics'])
         assert client.get('/api/snapshots').json() == []
+
+
+def test_readiness_explains_empty_additional_qualification_gate(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        snapshot = client.get('/api/demo').json()
+        position = snapshot['positions'][0]
+        position['qualifications_required'] = True
+        position['qualification_ids'] = []
+        report = client.post('/api/readiness', json=snapshot).json()
+        assert not report['ready']
+        assert any(d['code'] == 'qualification' and position['name'] in d['message']
+                   and 'deaktivieren' in d['message'] for d in report['diagnostics'])
+        position['qualifications_required'] = False
+        report = client.post('/api/readiness', json=snapshot).json()
+        assert not any(d['code'] == 'qualification' for d in report['diagnostics'])
+        assert client.get('/api/snapshots').json() == []

@@ -257,6 +257,16 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     def readiness(snapshot: Snapshot):
         from .domain import input_diagnostics
         issues = input_diagnostics(snapshot)
+        from .models import Diagnostic
+        for position in snapshot.positions:
+            if position.qualifications_required and not position.qualification_ids:
+                issues.append(Diagnostic(
+                    code='qualification',
+                    message=f'{position.name}: Zusätzlicher Qualifikationsnachweis ist aktiviert, '
+                    'aber keine Qualifikation angegeben. Unter Regeln & Bedarf eine '
+                    'Qualifikation eintragen oder die zusätzliche Nachweispflicht deaktivieren. '
+                    'Persönliche Dienstfreigaben bleiben erforderlich.',
+                ))
         return {'ready': not issues, 'diagnostics': issues}
 
     @app.post('/api/snapshots/check')
