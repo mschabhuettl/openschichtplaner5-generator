@@ -120,6 +120,24 @@ def test_special_and_zero_preserved_not_summed():
     assert len(s.metadata["unresolved_native"]) == 3
 
 
+@pytest.mark.parametrize("group_field", ["GROUPID", "group_id"])
+@pytest.mark.parametrize("group,retained", [(1, True), (99, False), (0, True), (None, True)])
+def test_daily_requirement_team_scope_preserves_unresolved_semantics(group_field, group, retained):
+    class Source(SyntheticDatabase):
+        def get_staffing_requirements(self):
+            data = super().get_staffing_requirements()
+            data["daily_requirements"] = [{"ID": 601, group_field: group, "START": 600, "MIN": 3}]
+            return data
+
+    s = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    rows = s.metadata["unresolved_native"].get("daily_requirements", [])
+    assert rows == ([{"ID": 601, group_field: group, "START": 600, "MIN": 3}] if retained else [])
+    assert any(message.startswith("DADEM:") for message in s.unresolved) is retained
+    # DADEM remains uninterpreted: do not add its MIN to a shift requirement.
+    assert len(s.demands) == 1 and s.demands[0].minimum == 1
+    assert not s.employees[0].approvals and not s.profiles[0].confirmed
+
+
 def test_restriction_grades_retained():
     for level in [0, 1, 2]:
 

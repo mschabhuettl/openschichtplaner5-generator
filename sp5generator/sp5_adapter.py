@@ -194,7 +194,9 @@ def import_snapshot(
     daily = [
         r
         for r in requirements.get("daily_requirements", [])
-        if r.get("group_id") in (*scope, 0, None)
+        # The library returns raw DADEM records (unlike normalized SHDEM).
+        # Preserve unresolved global rows, but never import another team's rows.
+        if r.get("GROUPID", r.get("group_id")) in (*scope, 0, None)
     ]
     if daily:
         unresolved.append(

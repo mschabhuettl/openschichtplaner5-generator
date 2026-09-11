@@ -124,6 +124,43 @@ belegt insbesondere SPDEM-Vorrang und „kein Bedarf“ als eigene Kategorie.
    nutzen, aber unbestätigte Platzhalter nicht durch ein zusätzliches Profil
    vermeintlich „überstimmen“. Keine Werte oder Freigaben erfinden.
 
+### Tatsächlich vorhandene positive Freigabequelle: Generator-Entwürfe
+
+Die OSP5-Seite `frontend/src/pages/Generator.tsx:48` hat bereits eine
+**explizite persönliche Funktions-/Arbeitsplatzfreigabe**: Ein Checkboxklick
+ergänzt `employee.approvals` mit Funktion, Arbeitsplatz, Planungszeitraum und
+`supervised:false`. `save` (Zeile 31) sendet den gesamten Entwurf an
+`POST /api/generator/snapshots`. In der API persistiert
+`routers/generator.py:save_snapshot` über `sp5generator.jobs.Store` in
+`state_path("generator.sqlite")`, benutzerbezogen; `get_snapshot` liest ihn
+wieder. Das ist keine RESTR-/EMPL-Originaltabelle.
+
+`routers/generator.py:import_source` ruft dagegen ausschließlich
+`sp5_adapter.import_snapshot` auf, ohne ältere gespeicherte Entwürfe
+zusammenzuführen. Auch der eigenständige API-Import liest keine solche
+Snapshot-ID. **Ein Neuimport übernimmt daher keine früher in einem
+OSP5-Generatorentwurf gesetzten Freigaben.** Falls solche Entwürfe tatsächlich
+vorliegen, ist Wiederöffnen/gezielte Wiederverwendung der nachgewiesenen
+Freigaben eine andere Datenstrecke als ein frischer Original-SP5-Import.
+Ob passende private Entwürfe existieren, wurde hier nicht vorausgesetzt oder
+aus fremden Benutzerkonten ermittelt. Übernahme über Personen-, Dienst-,
+Arbeitsplatz- und Gültigkeitsgrenzen hinweg ist nicht autorisiert.
+
+Die API-Kompetenzmatrix ist wiederum eine dritte Quelle:
+`master_data.py:_skills_path/_load_skills` lädt `state_path("skills.json")`;
+`SkillAssignment` enthält Person, Skill, Stufe und `certified_until`, aber
+keine Dienst-/Arbeitsplatzfreigabe. Eine Skillzuordnung darf somit ohne
+explizites fachliches Mapping nicht als persönliche Dienstfreigabe gelten.
+Die Ruheprüfkonfiguration `work_time_rules.py:_load_rules` liegt separat in
+`backend_dir()/data/work_time_rules.json`; deren Defaults 10h/48h/6 Tage
+sind **keine** zusätzlich vom Nutzer bestätigten Generatorgrenzen.
+
+Randkontext bleibt ebenfalls differenziert: `validator.validate` meldet
+`context_complete=False` als `context`, macht damit `complete=False`, aber
+nicht allein `valid=False` (`validator.py:421–428`). Der Import hält darüber
+hinaus ausdrücklich zu klärende Kontextfragen in `unresolved`; diese blockieren
+schon den Eingabevorcheck. Nicht beide Ebenen als denselben Fehler ausgeben.
+
 ### Prüfstand dieses Analyseschritts
 
 Generator: **165 Tests bestanden** (`test_sp5_adapter.py`,
@@ -134,6 +171,30 @@ mit der bestehenden Generator-Testumgebung, da die Library keine eigene
 `.venv` besitzt. API/OSP5-Pfade wurden gelesen, nicht als vollständige
 API-/Browser-Testabnahme ausgegeben. Die zusätzlichen Minimalreproduktionen
 oben verwenden ausschließlich neu erzeugte synthetische Strukturen.
+
+Anschließende gezielte Quellprüfung: **11 API-Generator-Routentests**
+(`tests/generator/test_routes.py`, `test_demo.py`) und **3 OSP5-Generator-
+Komponententests** (`frontend/src/generator/generator.test.tsx`) bestanden.
+API-Tests mit isoliertem temporärem Backend und ohne übergeordnete
+Originaldaten-Fixtures ausgeführt. Die Routentests decken insbesondere
+Eigentümerisolation, Snapshotversionen und Sichtbarkeitsgrenzen ab; die
+Komponententests Speichern tatsächlicher Änderungen und Ergebnisfehler.
+Kein vollständiger Browser-End-to-End-Nachweis für persönliche Freigaben.
+
+### Erste abgeleitete Korrektur: DADEM-Scope
+
+Der oben am Ausgangsstand reproduzierte DADEM-Feldnamenfehler ist korrigiert:
+`GROUPID` wird als originales Quellfeld gelesen; `group_id` bleibt für bereits
+normalisierte Quellen kompatibel. Globale und fehlende Gruppenzuordnungen
+bleiben sichtbar ungeklärt. Aus DADEM entstehen weiterhin keine erfundenen
+Schichtbedarfe, Freigaben oder bestätigten Profile.
+
+`test_daily_requirement_team_scope_preserves_unresolved_semantics` prüft
+beide Feldformen jeweils für ausgewähltes Team, fremdes Team, 0 und None.
+Vor Änderung: **1 fehlgeschlagen, 7 bestanden**; nach Änderung:
+**gesamte Generator-Pythonsuite 411 bestanden**. Das behebt einen echten
+Scopefehler, aber weder fehlende Sollbuchungen noch fehlende Freigaben oder
+sämtliche Ursachen uneindeutiger Referenzen.
 
 Kein neuer Echtdatenlauf für unveränderte Version 0.9.29: dessen unmittelbar
 vorheriger privater Ist/Soll-Prüfnachweis bleibt im Automation-Scratch.
