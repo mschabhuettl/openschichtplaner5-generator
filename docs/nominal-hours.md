@@ -88,3 +88,24 @@ Gutschrift in der ausdrücklich so beschrifteten Ist-Spalte zusammen.
 Absichtlich verfälschte zwischengespeicherte Ergebniskennzahlen beeinflussen
 diese exportierte Bilanz nicht (`export.rows`, `workbook.planning_workbook`).
 Damit ist hier keine abweichende Exportarithmetik nachgewiesen.
+
+### Zeitabbruch und zertifizierter Initialplan
+
+Die Bilanz bleibt auch in den gezielt kontrollierten Zeitabbruchzweigen
+identisch: `test_quality_timeout_preserves_independently_validated_partial_incumbent`
+prüft einen Teilplan mit acht realen, aber nur einer bezahlten Stunde. Die
+harte Achtstunden-Wochengrenze erlaubt weiterhin nur einen der zwei Dienste;
+Gutschrift und Saldo kompensieren keine Einsatzzeit. Nach UNKNOWN in der
+Qualitätsphase bleibt das unabhängig geprüfte Ergebnis FEASIBLE. Seine
+`objective_phase` bleibt `vacancies`: `objective_value = 1` bezeichnet die
+offene Besetzung, **nicht** die Stundenabweichung von 60 Minuten.
+
+`test_initial_plan_timeout_requires_certificate_and_keeps_account_balance`
+aktiviert mit 40 synthetischen Personen den bestehenden Initialplanpfad der
+Vollplanung (`solver.solve`). Ein echtes CP-SAT-Zertifikat für die festgelegten
+Einteilungen plus unabhängige Validierung erlaubt bei anschließendem UNKNOWN
+den FEASIBLE-Rückfall. Gutschrift, positiver/negativer Saldo, bezahlte Minuten
+und Stunden-Zielbeitrag bleiben konsistent. Liefert bereits die Zertifizierung
+UNKNOWN und die anschließende Suche ebenfalls UNKNOWN, wird der Vorschlag
+nicht als gültiger Plan ausgegeben. Diese kontrollierten Statusgegenproben
+sind kein realer 600-Sekunden-Lasttest und kein Optimalitätsnachweis.

@@ -278,9 +278,15 @@ def test_strictest_assigned_profile_wins_but_unassigned_limit_does_not_apply():
     assert result.validation.valid
 
 
-def test_quality_timeout_preserves_independently_validated_partial_incumbent(monkeypatch):
+@pytest.mark.parametrize("credit,balance", [(480, 0), (0, 480), (720, -240)])
+def test_quality_timeout_preserves_independently_validated_partial_incumbent(monkeypatch, credit, balance):
     snapshot = case(1, [shift("a", 5, 8, 8), shift("b", 6, 8, 8)])
     snapshot.profiles[0].max_weekly_minutes = 480
+    snapshot.employees[0].target_minutes = 480
+    snapshot.employees[0].credit_minutes = credit
+    snapshot.employees[0].balance_minutes = balance
+    for duty in snapshot.shifts:
+        duty.paid_minutes = 60
     original = cp_model.CpSolver.solve
     calls = []
 
@@ -298,6 +304,14 @@ def test_quality_timeout_preserves_independently_validated_partial_incumbent(mon
     assert len(result.assignments) == 1
     assert result.validation.valid and not result.validation.complete
     assert validate(snapshot, result.assignments).valid
+    metrics = result.metrics["employees"]["e0"]
+    assert metrics["paid_minutes"] == 60
+    assert metrics["credit_minutes"] == credit
+    assert metrics["balance_minutes"] == balance
+    assert metrics["deviation_minutes"] == 60
+    assert result.metrics["objective_contributions"]["hours"] == 60
+    assert result.metrics["objective_phase"] == "vacancies"
+    assert result.objective_value == 1  # Vacancy count, not the hours-quality cost.
 
 
 def test_feasible_partial_can_finish_before_hours_and_block_optimization(monkeypatch):
@@ -327,6 +341,63 @@ def test_unknown_without_incumbent_never_returns_unchecked_assignments(monkeypat
     assert result.solver_status == "UNKNOWN"
     assert not result.assignments and not result.validation.valid
     assert result.metrics["planning_diagnostics"]["employees"]["e0"]["reason"] == "no_valid_plan"
+
+
+@pytest.mark.parametrize("credit,balance", [(480, 0), (0, 480), (720, -240)])
+@pytest.mark.parametrize("certified", [False, True])
+def test_initial_plan_timeout_requires_certificate_and_keeps_account_balance(
+    monkeypatch, credit, balance, certified,
+):
+    from sp5generator.models import Objectives
+
+    # Forty employees activate the existing full-plan initial proposal path.
+    # This is deliberately not a partial-plan or 600-second load reproduction.
+    snapshot = case(40)
+    snapshot.profiles[0].max_daily_minutes = 480
+    snapshot.profiles[0].max_weekly_minutes = 480
+    snapshot.objectives = Objectives(
+        hours=1, changes=0, nights=0, weekends=0, holidays=0, wishes=0,
+        workday_transitions=0,
+    )
+    for employee in snapshot.employees:
+        employee.target_minutes = 480
+        employee.credit_minutes = credit
+        employee.balance_minutes = balance
+    original = cp_model.CpSolver.solve
+    calls = []
+
+    def certificate_then_unknown(self, model, *args, **kwargs):
+        calls.append(bool(self.parameters.fix_variables_to_their_hinted_value))
+        if len(calls) == 1 and certified:
+            return original(self, model, *args, **kwargs)
+        return cp_model.UNKNOWN
+
+    monkeypatch.setattr(cp_model.CpSolver, "solve", certificate_then_unknown)
+    result = solver.solve(snapshot, 10)
+    assert calls == [True, False]
+    assert result.parameters["last_optimization_status"] == "UNKNOWN"
+    if not certified:
+        assert result.parameters["warm_start_certificate_status"] == "UNKNOWN"
+        assert result.solver_status == "UNKNOWN"
+        assert not result.assignments and not result.validation.valid
+        assert all(d["reason"] == "no_valid_plan" for d in
+                   result.metrics["planning_diagnostics"]["employees"].values())
+        return
+    assert result.parameters["warm_start_certificate_status"] == "OPTIMAL"
+    assert result.solver_status == "FEASIBLE"
+    assert result.metrics["objective_phase"] == "validated_initial_solution"
+    assert result.validation.complete and validate(snapshot, result.assignments).complete
+    assert len(result.assignments) == 1
+    assigned = result.assignments[0].employee_id
+    for eid, metrics in result.metrics["employees"].items():
+        paid = 480 if eid == assigned else 0
+        assert metrics["paid_minutes"] == paid
+        assert metrics["credit_minutes"] == credit
+        assert metrics["balance_minutes"] == balance
+        assert metrics["deviation_minutes"] == paid
+    assert result.metrics["objective_contributions"]["hours"] == 480
+    assert result.metrics["weighted_objective_contributions"]["hours"] == 480
+    assert result.objective_value == 480
 
 
 def test_no_rule_requires_every_eligible_employee_to_receive_a_duty():
