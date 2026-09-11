@@ -219,6 +219,7 @@ def test_generator_aborts_and_does_not_cache_failed_source(source, client, table
 
 
 MESSAGES = {
+    'temporal_value': 'Bedarfsquelle enthält ungültige Datums- oder Wochentagswerte.',
     'numeric_value': 'Bedarfsquelle enthält ungeklärte Zahlenwerte.',
     'structure': 'Bedarfsquelle ist strukturell unvollständig oder ungültig.',
     'read': 'Bedarfsquelle konnte nicht vollständig gelesen werden.',
@@ -455,8 +456,9 @@ def test_explicit_numeric_staffing_contract(source, client, monkeypatch, table, 
 @pytest.mark.parametrize('table,url,method', ROUTES)
 @pytest.mark.parametrize('state', ['populated', 'empty', 'deleted'])
 @pytest.mark.parametrize('kind', ['valid', 'blank', 'invalid', 'wrong_type'])
+@pytest.mark.parametrize('calendar_opt_in', [False, True])
 def test_temporal_presence_does_not_validate_value(
-        source, client, monkeypatch, table, url, method, state, kind):
+        source, client, monkeypatch, table, url, method, state, kind, calendar_opt_in):
     """Required descriptors alone cannot establish usable calendar semantics."""
     import struct
 
@@ -485,12 +487,27 @@ def test_temporal_presence_does_not_validate_value(
     def read(name):
         if name == table:
             return reader.read_dbf(db._table(name), strict=True,
-                                   numeric_fields=('MIN', 'MAX'), required_fields=fields)
+                                   numeric_fields=('MIN', 'MAX'), required_fields=fields,
+                                   **({('date_fields' if table == 'SPDEM' else 'weekday_fields'):
+                                       (temporal,)} if calendar_opt_in else {}))
         return original_read(name)
 
     monkeypatch.setattr(db, '_read', read)
     http, sanitized = client
     response = http.get(url + '?group_id=1')
+    if calendar_opt_in and (kind == 'wrong_type' or
+                            (state == 'populated' and kind in ('blank', 'invalid'))):
+        category = ('structure' if kind == 'wrong_type' else
+                    'numeric_value' if table == 'SHDEM' and kind == 'blank' else
+                    'temporal_value')
+        assert response.status_code == 500
+        assert_source_error(response, category)
+        assert sanitized == []
+        # Filtering must not hide corrupt source rows as a successful empty result.
+        filtered = http.get(url + '?group_id=999&date=2026-09-01')
+        assert filtered.status_code == 500
+        assert_source_error(filtered, category)
+        return
     if table == 'SHDEM' and kind == 'blank' and state == 'populated':
         assert response.status_code == 500
         assert_source_error(response, 'numeric_value')
@@ -508,3 +525,34 @@ def test_temporal_presence_does_not_validate_value(
         assert filtered.status_code == 200
         assert filtered.json() == (rows if kind == 'valid' else [])
     assert sanitized == []
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('args,category', [
+    (('invalid_required_date',), 'temporal_value'),
+    (('invalid_required_weekday',), 'temporal_value'),
+    (('invalid_required_date SYNTHETIC_PRIVATE',), 'numeric_value'),
+    (('invalid_required_date', 'SYNTHETIC_PRIVATE'), 'numeric_value'),
+    ((), 'numeric_value'),
+])
+def test_temporal_error_allowlist_is_source_free(source, client, monkeypatch,
+                                                table, url, method, args, category):
+    db, reader, _ = source
+
+    def fail(**kwargs):
+        error = reader.DBFValueError('synthetic')
+        error.args = args  # Exercise malformed exception metadata without constructor errors.
+        raise error
+
+    monkeypatch.setattr(db, method, fail)
+    http, sanitized = client
+    response = http.get(url, params={'group_id': 999})
+    assert response.status_code == 500
+    assert_source_error(response, category)
+    assert 'SYNTHETIC_PRIVATE' not in response.text
+    assert sanitized == []
+    completed = subprocess.run(
+        ['node', 'tools/audit_upstream_staffing_error.cjs', os.environ['SP5_OSP5_FRONTEND']],
+        input=json.dumps(response.json()), text=True, capture_output=True, check=True,
+    )
+    assert json.loads(completed.stdout) == MESSAGES[category]

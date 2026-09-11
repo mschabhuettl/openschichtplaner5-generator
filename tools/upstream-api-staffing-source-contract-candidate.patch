@@ -8,7 +8,7 @@
  
  from .. import cache
  from ..dependencies import (
-@@ -18,6 +19,33 @@
+@@ -18,6 +19,36 @@
  from ..schemas import ShiftResponse
  
  router = APIRouter()
@@ -18,10 +18,12 @@
 +    """Stable source-free failure; never substitute empty/zero staffing.
 +
 +    Requires the opt-in strict Library reader candidate. Deliberately do not
-+    include str(error), file paths, field values or exception-provided codes.
++    expose str(error), file paths, field values or exception-provided codes.
 +    """
 +    if isinstance(error, DBFValueError):
-+        category = "numeric_value"
++        category = ("temporal_value" if error.args in (
++            ("invalid_required_date",), ("invalid_required_weekday",),
++        ) else "numeric_value")
 +    elif isinstance(error, DBFStructureError):
 +        category = "structure"
 +    elif isinstance(error, DBFReadError):
@@ -30,6 +32,7 @@
 +        return _sanitize_500(error)
 +    messages = {
 +        "numeric_value": "Bedarfsquelle enthält ungeklärte Zahlenwerte.",
++        "temporal_value": "Bedarfsquelle enthält ungültige Datums- oder Wochentagswerte.",
 +        "structure": "Bedarfsquelle ist strukturell unvollständig oder ungültig.",
 +        "read": "Bedarfsquelle konnte nicht vollständig gelesen werden.",
 +    }
@@ -42,7 +45,7 @@
  
  
  @router.get(
-@@ -125,14 +153,17 @@
+@@ -125,14 +156,17 @@
      month: int | None = Query(None),
      group_id: int | None = Query(None, description="Filter by group ID"),
  ):
@@ -68,7 +71,7 @@
  
  
  # ── Staffing Requirements Write ──────────────────────────────
-@@ -813,7 +844,7 @@
+@@ -813,7 +847,7 @@
      try:
          return get_db().get_special_staffing(date=date, group_id=group_id)
      except Exception as e:

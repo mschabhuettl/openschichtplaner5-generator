@@ -4352,3 +4352,30 @@ GET audit for the relevant runtime change. No repeated unchanged private baselin
 was run for this isolated candidate. No evidence here establishes malformed real
 DBF dates or explains the original 0.9.29 result; its exact input/job/result is
 still missing. No weekly maximum, employee obligation or duty prohibition added.
+
+### Temporal API error category (isolated follow-up)
+
+The source-contract API patch now maps exactly the Library error argument tuples
+`invalid_required_date` and `invalid_required_weekday` to `temporal_value`, with
+fixed German text. Unknown/extended argument tuples retain the numeric fallback;
+no exception values or paths are returned. Structural type failures remain
+`structure`; blank numeric weekdays remain `numeric_value`.
+
+`tools/test_upstream_staffing_source_contract.py` now compares descriptor-only
+and explicitly calendar-enabled reads through the actual Library mapping and API
+route. Invalid active dates/weekdays fail before group/date filtering, including
+an unrelated group. Valid holiday slot 7, empty and deleted sources retain their
+semantics. The existing OSP5 error consumer displays the fixed temporal message;
+malformed exception metadata cannot leak source content.
+
+Validation: **453 passed**, two known dependency warnings (source contract,
+temporal reader, strict reader and full-app compatibility); Ruff, diff check and
+API patch dry-run passed. Four initial test failures were fixture construction
+errors (DBFValueError requires one constructor argument); corrected tests mutate
+synthetic exception metadata after valid construction.
+
+This is still an isolated patch, not a runtime change or release. Full-app tests
+cover existing staffing activation, not yet automatic temporal activation.
+Generator currently rejects this new category with its generic HTTP-500 message;
+specific Generator diagnostics and full-app temporal activation remain next.
+No private baseline repetition or claim of reproducing the reported 0.9.29 plan.
