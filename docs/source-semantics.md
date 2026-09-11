@@ -1556,3 +1556,55 @@ Vorhandene Librarytests `test_soll_ist_plan.py` sowie
 oben ist darin nicht abgedeckt. Kein Generator-Runtimefix, kein neues Release;
 Korrekturpriorität: planbewusste Zyklus-Unterdrückung upstream mit diesen drei
 Fällen und Sonderersatz/Kontoberechnung absichern, anschließend Quellenabnahme.
+
+### Zeitkonto zählt alternative Soll-Dienste als Iststunden
+
+Zusätzlich am Library-Stand `0dac443` über die unveränderte öffentliche Fassade
+`SP5Database.calculate_time_balance` reproduziert:
+`_calc_inputs` → `_movement_by_employee("MASHI", ...)` filtert nur Datum und
+Person, nicht die Plansicht. `_plan_kwargs` reicht sämtliche Zeilen an
+`calculations.get_actual_hours` → `get_work_hours` weiter; dort werden die
+regulären Dienste ebenfalls ohne MASHI-TYPE-Filter summiert.
+`_time_balance_from_inputs` veröffentlicht die Summe als monatliche
+`actual_hours` und jährliche `total_actual_hours`.
+
+Wiederholbare, ausschließlich synthetische Probe:
+
+```sh
+PYTHONPATH=/path/to/libopenschichtplaner5 .venv/bin/python tools/audit_upstream_plan_accounting.py
+```
+
+Das Werkzeug ersetzt nur Tabellen-/Stammdatenleser, verwendet echte
+Fassaden-/Berechnungsfunktionen und greift weder auf DBF-Dateien noch eine API
+zu. Alle Dienste liegen am 07.09.2026, 08–16 Uhr, DURATION=8; keine
+Buchungen, Abwesenheiten oder Sonderdienste. Monat und Jahr ergeben jeweils:
+
+| MASHI-Typen | ohne Zyklus | mit gleichwertigem Zyklus |
+| --- | --- | --- |
+| nur Ist (0) | 8h | nicht separat geprüft |
+| nur Soll (1) | **8h Iststunden** | **8h Iststunden** |
+| Ist und Soll (0, 1) | **16h Iststunden** | **16h Iststunden** |
+| keine | nicht separat geprüft | 8h |
+
+Sechs Fälle mit zwölf Assertions charakterisieren den fehlerhaften Iststand,
+nicht den gewünschten Vertrag. Nach einem Upstream-Fix muss die Probe bewusst
+angepasst werden; sie ist kein Generator-CI-Gate. Ein erster Fixturelauf ohne
+STARTEND-Fenster lieferte korrekt 0h; die endgültige Probe setzt sowohl reale
+Zeitfenster als auch bezahlte Dauer explizit.
+
+Datenfluss bis zur Anzeige: API `routers/reports.py:get_zeitkonto_detail`
+ruft `calculate_time_balance` auf; Übersicht/Summary verwenden
+`get_zeitkonto` mit demselben Berechnungspfad. OSP5 `api/client.ts`
+`getZeitkontoDetail`/`getZeitkonto` und `pages/Zeitkonto.tsx` zeigen diese
+Iststunden direkt an. Generator `api_adapter.py`/`sp5_adapter.py` verwenden
+diese Zeitkonto-Endpunkte und `actual_hours`-Gesamtsummen dagegen nicht.
+Keine direkte Übernahme dieser Doppelzählung in die Generator-Zielfunktion
+belegt. Ein Vergleich gegen das OSP5-Zeitkonto ist daher allein keine
+unabhängige Stundenvalidierung.
+
+Korrektur muss upstream die Plansicht für **beide** Schritte konsistent
+festlegen: MASHI-Auswahl und Zyklusunterdrückung. Nur TYPE=1 aus der Summierung
+zu entfernen ließe bei vorhandener Soll-Materialisierung weiterhin den
+zuvor unterdrückten Ist-Zyklus fehlen. Sonderersatz und Zuschläge bleiben als
+weitere gemeinsame Verbraucher zu prüfen. Keine produktive Quelle geändert,
+keine harten Generatorgrenzen verändert, kein Original-600s-Ursachennachweis.
