@@ -100,6 +100,24 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   await page.locator('#people tbody tr').nth(4).getByRole('button',{name:'Bearbeiten',exact:true}).click();
   await page.click('#removePerson');
   await page.waitForFunction(()=>window.PlannerApp.getState().snapshot.employees.length===4);
+  // The calculation summary exposes the exact inclusive period and real review routes.
+  await navigate('calculate');
+  assert.match(await page.locator('#calcPeriod').innerText(), /02\. Feb\. 2026.*06\. Feb\. 2026/);
+  assert.equal(await page.locator('#calcDays').innerText(),'5');
+  assert.equal(await page.locator('#calcTimezone').innerText(),'Europe/Vienna');
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:1000});
+    await screenshot(`calculation-review-${width}.png`);
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Calculation has no horizontal page overflow');
+    const teamReview=page.locator('#readinessActions [data-navigate="team"]');
+    await teamReview.focus();await page.keyboard.press('Enter');
+    assert.equal(await page.locator('#teamTitle').evaluate(el=>el===document.activeElement),true);
+    await navigate('calculate');
+    await page.locator('#readinessActions [data-navigate="rules"]').click();
+    assert.equal(await page.locator('#rulesTitle').evaluate(el=>el===document.activeElement),true);
+    await navigate('calculate');
+  }
+  await page.setViewportSize({width:1440,height:1000});
   await navigate('rules');
   const contextConfirmation=page.locator('#contextConfirmation input[type="checkbox"]');
   assert.equal(await contextConfirmation.isChecked(),false);

@@ -154,6 +154,7 @@
     byId('topSaveIndicator').classList.toggle('dirty',!!(current.dirty||current.jsonDirty));
     byId('headerSave').disabled=busy()||byId('save').disabled;
     byId('headerBackup').disabled=byId('backup').disabled;
+    text('calcPeriod',`${date(project.period_start)} – ${date(project.period_end)}`);text('calcDays',number(days));text('calcTimezone',project.timezone||'—');
     text('calcPeople',number(employees.length));text('calcShifts',number(shifts.length));text('calcDemand',number(minimum));text('calcFixed',number(assignments.filter(assignment=>assignment.fixed).length));text('calcProfiles',number(profiles.length));
     text('calculationReadiness',blockers?`${number(blockers)} ${blockers===1?'Angabe braucht':'Angaben brauchen'} noch Ihre Prüfung. Details finden Sie bei Team, Regeln und Bedarf.`:contextIncomplete?'Randzeiten sind noch nicht vollständig bestätigt. Prüfen Sie den Kontext vor einer vollständigen Planung.':missingApprovals?`${number(missingApprovals)} Personen haben noch keine Freigaben. Prüfen Sie die Teammatrix vor der Berechnung.`:'Bereit zur Vorprüfung. Die Berechnung prüft, ob sich der Bedarf mit Ihren Regeln und Freigaben besetzen lässt.');
     byId('calculationReadiness').classList.toggle('warning',!!(blockers||contextIncomplete||missingApprovals));show('calculationProgress',!!(current.solving||current.jobId));show('planEmpty',!assignments.length);
