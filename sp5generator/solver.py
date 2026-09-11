@@ -48,6 +48,9 @@ def solve(snapshot, time_limit=30, partial=False):
         "random_seed": 0,
         "objective_semantics": "lexicographic vacancies, then configured weighted costs",
         "phase_seconds": timings,
+        # Aggregate, identifier-free evidence from this run. Native status is
+        # not an independent-validation or global optimality claim.
+        "search_trace": [],
     }
 
     def result(status, assignments=None, validation=None, **kwargs):
@@ -998,8 +1001,19 @@ def solve(snapshot, time_limit=30, partial=False):
         solver.parameters.max_time_in_seconds = remaining
         search_started = monotonic()
         status = solver.solve(model)
-        timings["search"] = timings.get("search", 0) + monotonic() - search_started
+        search_seconds = monotonic() - search_started
+        timings["search"] = timings.get("search", 0) + search_seconds
         name = solver.status_name(status)
+        trace = {
+            "phase": phase,
+            "started_seconds": search_started - started,
+            "budget_seconds": remaining,
+            "search_seconds": search_seconds,
+            "native_status": name,
+            "independently_valid": None,
+            "accepted": False,
+        }
+        parameters["search_trace"].append(trace)
         parameters["last_optimization_status"] = name
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             if best:
@@ -1042,6 +1056,7 @@ def solve(snapshot, time_limit=30, partial=False):
             timings.get("result_validation", 0) + monotonic() - validation_started
         )
         hard = [d for d in checked.diagnostics if d.code not in ("vacancy", "context")]
+        trace["independently_valid"] = checked.valid
         if hard:
             # Valid inequalities: violating employee schedules cannot remain
             # entirely selected. For non-monotone rules use exact no-good.
@@ -1131,6 +1146,13 @@ def solve(snapshot, time_limit=30, partial=False):
             )
             != w.want
         ]
+        trace.update({
+            "accepted": True,
+            "vacancy_count": metrics["vacancy_count"],
+            "weighted_quality_cost": sum(metrics["weighted_objective_contributions"].values()),
+            "objective_value": solver.objective_value,
+            "best_bound": solver.best_objective_bound,
+        })
         if phase == "quality" and not coverage_proven:
             name = "FEASIBLE"
             metrics["quality_scope"] = "fixed incumbent coverage; global coverage unproven"

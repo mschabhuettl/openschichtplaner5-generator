@@ -7,7 +7,7 @@ import pytest
 from ortools.sat.python import cp_model
 
 from sp5generator import solver
-from sp5generator.models import Assignment, Objectives, Result
+from sp5generator.models import Assignment, Diagnostic, Objectives, Result, Validation
 from sp5generator.validator import validate
 from test_core_rules import case, shift
 
@@ -162,6 +162,39 @@ def test_conditional_quality_unknown_keeps_valid_coverage_result(monkeypatch):
     assert not result.parameters['coverage_proven']
     assert len(result.assignments) == 1
     assert validate(snapshot, result.assignments).valid
+    coverage, unknown = result.parameters['search_trace']
+    assert coverage['accepted'] and coverage['independently_valid']
+    assert unknown['phase'] == 'quality'
+    assert unknown['native_status'] == 'UNKNOWN'
+    assert not unknown['accepted'] and unknown['independently_valid'] is None
+    assert 'weighted_quality_cost' not in unknown
+    assert 'objective_value' not in unknown
+
+
+def test_trace_does_not_count_validator_rejected_candidate_as_incumbent(monkeypatch):
+    snapshot = case(1, [shift('a', 5, 8, 8)])
+    original = solver.validate
+    rejected = []
+
+    def reject_once(source, assignments):
+        if assignments and not rejected:
+            rejected.append(True)
+            # Exercise the existing exact no-good separation path.
+            return Validation(valid=False, complete=False, diagnostics=[
+                Diagnostic(code='night_block', message='Synthetic separation probe'),
+            ])
+        return original(source, assignments)
+
+    monkeypatch.setattr(solver, 'validate', reject_once)
+    result = solver.solve(snapshot, 3, partial=True)
+    trace = result.parameters['search_trace']
+    assert rejected and len(trace) == 3
+    assert trace[0]['native_status'] == 'OPTIMAL'
+    assert trace[0]['independently_valid'] is False
+    assert not trace[0]['accepted']
+    assert 'weighted_quality_cost' not in trace[0]
+    assert all(t['accepted'] and t['independently_valid'] for t in trace[1:])
+    assert result.validation.valid
 
 
 def test_conditional_quality_shares_original_deadline(monkeypatch):
@@ -190,3 +223,13 @@ def test_conditional_quality_shares_original_deadline(monkeypatch):
     assert result.parameters['last_optimization_status'] == 'OPTIMAL'
     assert result.metrics['objective_phase'] == 'quality'
     assert validate(snapshot, result.assignments).valid
+    first, second = result.parameters['search_trace']
+    assert [t['budget_seconds'] for t in (first, second)] == pytest.approx(budgets)
+    assert first['started_seconds'] == 0
+    assert first['search_seconds'] == pytest.approx(2.4)
+    assert second['started_seconds'] == pytest.approx(2.4)
+    assert second['search_seconds'] == pytest.approx(0.45)
+    # Conditional native OPTIMAL stays visible without promoting overall status.
+    assert second['native_status'] == 'OPTIMAL'
+    assert first['vacancy_count'] == second['vacancy_count'] == 1
+    assert first['weighted_quality_cost'] >= second['weighted_quality_cost']

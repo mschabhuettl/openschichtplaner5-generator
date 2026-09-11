@@ -5128,3 +5128,29 @@ now also exercises conditional quality while preserving imported fixed duties
 and rejecting a stricter configured elapsed-time weekly maximum independently.
 The configured private 600-second Worker gate must establish practical behavior
 before this candidate is described as an improvement on the real project.
+
+### Per-search evidence for the bounded strategy
+
+`solver.solve` records `parameters.search_trace`, an identifier-free list of
+search attempts in this run. Each entry records its phase, elapsed start time,
+allocated budget, actual search duration, native status, independent-validation
+state and whether it became the accepted incumbent. Only accepted, independently
+checked candidates include actual vacancy count, weighted quality cost and the
+phase-local objective and bound. A native OPTIMAL candidate rejected by validation
+is **not** an incumbent. UNKNOWN has no fabricated objective or quality cost.
+The warm-plan certificate is still reported separately by the existing
+`warm_start_certificate_*` parameters; it is not a search-trace entry.
+
+These measurements do not change budget allocation, constraints or selection.
+They allow comparison of coverage and weighted costs **within the same run**,
+including quality UNKNOWN returning the earlier coverage incumbent. Native
+conditional OPTIMAL remains distinct from the public overall FEASIBLE status.
+`test_conditional_quality_shares_original_deadline` checks timings, budgets and
+JSON round-trip; the UNKNOWN and rejected-candidate tests check that failed
+attempts cannot masquerade as improvements. The two
+`test_equal_coverage_feasible_incumbent_reaches_conditional_quality` cases now
+verify the actual 960-to-0 quality change in the trace at unchanged coverage.
+These are deterministic synthetic assertions, not evidence of improved coverage
+or runtime on the private project. The fixed 80/20 policy remains a candidate;
+phase-level measurements on the private 600-second case are still needed before
+choosing a better coverage/quality scheduling policy.

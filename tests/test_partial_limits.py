@@ -387,6 +387,14 @@ def test_equal_coverage_feasible_incumbent_reaches_conditional_quality(monkeypat
     assert timed.solver_status == ("FEASIBLE" if unavoidable_vacancy else "OPTIMAL")
     assert timed.metrics["objective_phase"] == "quality"
     assert timed.metrics["objective_contributions"]["hours"] == 0
+    coverage_trace, quality_trace = timed.parameters["search_trace"]
+    assert coverage_trace["phase"] == "vacancies"
+    assert quality_trace["phase"] == "quality"
+    assert coverage_trace["weighted_quality_cost"] == 960
+    assert quality_trace["weighted_quality_cost"] == 0
+    assert coverage_trace["vacancy_count"] == quality_trace["vacancy_count"] == int(unavoidable_vacancy)
+    assert all(t["accepted"] and t["independently_valid"]
+               for t in (coverage_trace, quality_trace))
     assert optimized.metrics["objective_phase"] == "quality"
     assert optimized.metrics["objective_contributions"]["hours"] == 0
     assert timed.vacancies == optimized.vacancies == ({"unfillable": 1} if unavoidable_vacancy else {})
