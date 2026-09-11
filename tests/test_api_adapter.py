@@ -155,6 +155,22 @@ def test_http_time_slots_match_library_for_demand_and_boundary(transport, slot, 
     assert all(request.get_method() == "GET" for request in calls)
 
 
+@pytest.mark.parametrize("weekday", [8, -1, None, "7"])
+def test_http_invalid_requirement_weekday_is_currently_silently_not_generated(transport, weekday):
+    """Characterize the next SHDEM gap, not permission to discard hard demand."""
+    responses, _ = transport
+    responses["/api/staffing-requirements"]["shift_requirements"][0]["weekday"] = weekday
+    day = date(2026, 1, 6)
+    snapshot = import_api(day, day, "1", history_start=day - timedelta(days=1),
+                          history_end=day - timedelta(days=1))
+    assert not snapshot.shifts
+    assert not snapshot.demands
+    assert not any(issue.startswith("SHDEM ") for issue in snapshot.unresolved)
+    assert snapshot.metadata["restriction_shift_scope_counts"] == {
+        "unknown_source_shift": 0, "known_shift_not_generated": 1,
+    }
+
+
 def test_incomplete_absence_visibility_blocks(transport):
     transport[0]["/api/auth/me"]["showabs_mode"] = 2
     with pytest.raises(APIImportError, match="Abwesenheitsinformationen"):
@@ -785,6 +801,10 @@ def test_http_restriction_mapping_diagnoses_scope_and_invalid_rows(
     counts = snapshot.metadata["restriction_mapping_counts"]
     assert counts[category] == 1
     assert sum(counts.values()) == 1
+    assert snapshot.metadata["restriction_shift_scope_counts"] == {
+        "unknown_source_shift": int(category == "outside_shift_scope"),
+        "known_shift_not_generated": 0,
+    }
     assert not snapshot.employees[0].approvals
 
 
@@ -853,6 +873,11 @@ def test_http_restriction_shift_scope_does_not_identify_root_cause(
     assert len(snapshot.restrictions) == int(cause == "zero_maximum")
     counts = snapshot.metadata["restriction_mapping_counts"]
     assert counts["outside_shift_scope"] == int(cause != "zero_maximum")
+    unknown = cause in ("unknown_restriction_shift", "missing_demand_shift")
+    assert snapshot.metadata["restriction_shift_scope_counts"] == {
+        "unknown_source_shift": int(unknown),
+        "known_shift_not_generated": int(not unknown and cause != "zero_maximum"),
+    }
     assert counts["mapped_rows"] == int(cause == "zero_maximum")
     assert not any("RESTR" in issue for issue in snapshot.unresolved)
     assert any("Stammdatenreferenz fehlt" in issue for issue in snapshot.unresolved) == (

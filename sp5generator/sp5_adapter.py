@@ -467,6 +467,11 @@ def import_snapshot(
          "invalid_weekday", "invalid_grade", "mapped_rows", "mapped_instances"), 0
     )
     metadata["restriction_mapping_counts"] = restriction_counts
+    # Refinement of outside_shift_scope, not additional exclusive row outcomes.
+    # Keep the aggregate stable for existing consumers. Only selected employees
+    # enter this scope; a dangling foreign row must not block unrelated planning.
+    shift_scope_counts = dict.fromkeys(("unknown_source_shift", "known_shift_not_generated"), 0)
+    metadata["restriction_shift_scope_counts"] = shift_scope_counts
     for row in native_restrictions:
         eid = f"sp5:employee:{row['employee_id']}"
         if eid not in employee_map:
@@ -480,6 +485,11 @@ def import_snapshot(
                 candidates.append((sid, d))
         if not candidates:
             restriction_counts["outside_shift_scope"] += 1
+            reason = (
+                "known_shift_not_generated" if row["shift_id"] in native_shifts
+                else "unknown_source_shift"
+            )
+            shift_scope_counts[reason] += 1
             continue
         weekday = row.get("weekday")
         if type(weekday) is not int or weekday not in range(8):

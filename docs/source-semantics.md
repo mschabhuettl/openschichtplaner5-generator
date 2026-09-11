@@ -3591,3 +3591,40 @@ SHDEM/SPDEM-Provenienz aufschlüsseln. Unbekannte fremde Quellsätze nicht pausc
 zum globalen Planungsblocker machen. Originaljob 0.9.29 bleibt für den
 600-Sekunden-Kausalnachweis erforderlich. Keine Runtimeänderung in diesem
 Prüfschritt und keine identische private API-Abnahme wiederholt.
+
+### RESTR-Quellreferenzdiagnose und nächste SHDEM-Lücke
+
+2026-09-11: `sp5_adapter.import_snapshot` ergänzt
+`metadata.restriction_shift_scope_counts` mit `unknown_source_shift` und
+`known_shift_not_generated`. Beide sind Unterkategorien des unveränderten
+`restriction_mapping_counts.outside_shift_scope`, keine zusätzlichen exklusiven
+Zeilenergebnisse. Ihre Summe entspricht dem Sammelzähler. Erst wird der
+Personenscope geprüft; fremde Personen werden hier nicht zusätzlich gezählt.
+Es werden keine Originalzeilen oder Namen in die neuen Zähler aufgenommen.
+
+Der Dienststamm wird bereits mit `include_hidden=True` geladen. Ein dort
+bekannter, aber nicht erzeugter Dienst ist nicht automatisch eine verwaiste
+Referenz. Die erneut gelesenen Quellen `Database.get_restrictions` und API
+`schedule.get_restrictions` behalten dagegen tatsächlich unbekannte SHIFT-IDs.
+Die bestehenden 16 HTTP-Ursachenfälle prüfen nun die getrennten Unterkategorien,
+die 18 Scope-/Ungültigkeitsfälle weiterhin den exklusiven Sammelzähler. Keine
+Änderung an Freigaben, Sperrstufen, Bedarfen oder Solverregeln.
+
+Anschließender begrenzter Prüfschritt:
+`test_http_invalid_requirement_weekday_is_currently_silently_not_generated`
+belegt vier weitere SHDEM-Zustände (8, -1, null, String "7"): Bei ansonsten
+auflösbarem Bedarf entstehen weder Dienst noch Bedarf, aber auch kein eigener
+SHDEM-Blocker. Die RESTR-Unterkategorie lautet korrekt
+`known_shift_not_generated`. Dies ist eine **offene Eingabevalidierungslücke**,
+kein erlaubter Umgang mit ungültigen harten Bedarfen.
+
+Quellbeleg: Library `Database.get_staffing_requirements` reicht `SHDEM.WEEKDAY`
+unverändert weiter; API `master_data.get_staffing_requirements` filtert nur die
+Gruppe. Dessen Schreibmodell begrenzt den Wochentag auf 0–7, aber der GET-Pfad
+validiert vorhandene Quelldaten nicht darüber. Generator
+`api_adapter._Database.get_staffing_requirements` prüft nur Listen/Objekte;
+`import_snapshot` vergleicht anschließend `idx == row.get("weekday")`.
+Nächste Korrektur: ungültige ausgewählte SHDEM-Wochentage explizit blockieren,
+fremde Teams und gültige nicht passende Tage nicht global blockieren; danach
+SPDEM-Vorrang und weitere Verwerfungsursachen einbeziehen. Kein Kausalnachweis
+für den weiterhin fehlenden Originaljob 0.9.29.
