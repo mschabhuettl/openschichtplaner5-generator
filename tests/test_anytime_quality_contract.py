@@ -80,6 +80,28 @@ def test_quality_bound_must_not_leak_into_resumed_coverage(monkeypatch):
     assert checked_search(snapshot, primary) == (0, 960)
 
 
+def test_neighbourhood_optimal_does_not_prove_fixed_coverage_quality(monkeypatch):
+    snapshot = case(1, [shift(str(day), day, 8, 8) for day in range(5, 9)])
+    for duty in snapshot.shifts:
+        duty.paid_minutes = 120
+    for demand in snapshot.demands:
+        demand.minimum = 0
+    snapshot, primary = coverage_model(monkeypatch, snapshot)
+    assert validate(snapshot, []).valid
+    quality = primary.clone()
+    quality.add(sum(variables(quality, 'vacancy:')) == 0)
+    quality.minimize(sum(variables(quality, 'hours:')))
+    neighbourhood = quality.clone()
+    # Around the empty valid incumbent, at most two assignment flips means
+    # at most two additions. This is a search restriction, not a staffing rule.
+    neighbourhood.add(sum(variables(neighbourhood, 'assign:')) <= 2)
+    assert checked_search(snapshot, neighbourhood) == (0, 240)
+    assert checked_search(snapshot, quality) == (0, 480)
+    # Both native searches prove OPTIMAL, but the local optimum still has
+    # 240 paid minutes of target deviation. A neighbourhood status/bound must
+    # never be presented as a proof for unrestricted fixed-coverage quality.
+
+
 @pytest.mark.parametrize('rule', ['weekly_cap', 'daily_cap', 'rest', 'approval',
                                        'overlap', 'daily_elapsed', 'weekly_elapsed'])
 def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule):

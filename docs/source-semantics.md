@@ -5369,3 +5369,28 @@ assignment and cost 480. Both results independently validate. Thus fixed coverag
 means fixed *missing minimum staffing*, not a fixed assignment count; optional
 staffing may improve configured quality only within the existing maximum. Neither
 an employee target nor a quality weight creates additional demand capacity.
+
+### Local neighbourhood optimality is not quality optimality (2026-09-12)
+
+Before promoting a bounded neighbourhood search, the production-model regression
+`test_neighbourhood_optimal_does_not_prove_fixed_coverage_quality` establishes a
+second proof-scope boundary. Four optional duties, each with 120 paid minutes,
+can meet a 480-minute target at zero vacancies. Starting from the independently
+valid empty plan, a clone restricted to two assignment additions proves native
+`OPTIMAL` with 240 minutes of target deviation. The unrestricted quality clone
+also proves native `OPTIMAL`, but reaches zero deviation at identical coverage.
+Both plans independently validate; all configured hard constraints are retained.
+
+Thus even **proven coverage** does not permit a neighbourhood's native optimal
+status or bound to stand in for unrestricted quality optimality. A future local
+candidate mechanism must preserve the incumbent on failure, independently validate
+accepted candidates, compare the original full weighted objective, share the
+original deadline, and expose the narrower proof scope. The restriction must not
+leak into subsequent general search or become a new staffing rule.
+
+Existing-solution preflight: OR-Tools already provides LNS and RINS neighbourhood
+generators; `use_lns_only` is explicitly experimental in the
+[version 9.15 parameter definitions](https://github.com/google/or-tools/blob/v9.15/ortools/sat/sat_parameters.proto).
+Their availability alone is not evidence of a gain for this application's worker
+configuration or a reason to change production parameters. This change adds a
+synthetic proof-scope regression only, not a new production search policy.
