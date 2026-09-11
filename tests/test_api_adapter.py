@@ -61,6 +61,7 @@ def transport(monkeypatch, tmp_path):
                             "workplace_id": 301,
                         }
                     ]
+                result = responses.get(("schedule", params["year"][0], params["month"][0], params["plan"][0]), result)
             else:
                 result = responses[path.path]
             return BytesIO(json.dumps(result).encode())
@@ -248,3 +249,25 @@ def test_requirement_rows_must_be_objects(transport):
         "shift_requirements": ["invalid"], "daily_requirements": []}
     with pytest.raises(APIImportError, match="Bedarfsformat"):
         import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+
+
+def test_api_reference_view_is_separate_from_history_and_actual_context(transport):
+    responses, calls = transport
+    responses[('schedule', '2026', '1', 'soll')] = [
+        {'employee_id': 101, 'date': '2026-01-06', 'kind': 'shift', 'shift_id': 201, 'workplace_id': 301},
+        {'employee_id': 101, 'date': '2026-01-05', 'kind': 'absence', 'interval': 0},
+    ]
+    snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC',
+                          date(2026, 1, 1), date(2026, 1, 5), 'ist', reference_plan='soll')
+    assert snapshot.metadata['reference_plan'] == 'soll'
+    assert snapshot.metadata['history_plan'] == 'ist'
+    assert len(snapshot.metadata['reference_schedule']) == 1
+    assert snapshot.metadata['history_matrix'][0]['observed_assignment_count'] == 1
+    assert snapshot.employees[0].unavailable[0].start.hour == 10
+    assert not snapshot.employees[0].approvals
+    assert not snapshot.context_complete and snapshot.unresolved
+    schedules = [parse_qs(urlsplit(c.full_url).query) for c in calls if urlsplit(c.full_url).path == '/api/schedule']
+    assert any(q['plan'] == ['soll'] for q in schedules)
+    assert any(q['plan'] == ['ist'] for q in schedules)
+    with pytest.raises(APIImportError, match='Referenzplansicht'):
+        import_api(date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC', reference_plan='both')

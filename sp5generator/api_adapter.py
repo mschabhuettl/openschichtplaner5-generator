@@ -213,6 +213,7 @@ def import_api(
     history_plan="ist",
     team_ids=None,
     existing_plan_mode="reference",
+    reference_plan="ist",
 ):
     """Read canonical snapshots and explicit history proposals through the existing API."""
     if not 0 <= (period_end - period_start).days < MAX_PLANNING_DAYS:
@@ -227,6 +228,8 @@ def import_api(
         raise APIImportError("Historischer Zeitraum ist ungültig oder zu lang.")
     if history_plan not in ("ist", "soll", "both"):
         raise APIImportError("Historische Plansicht muss ist, soll oder both sein.")
+    if reference_plan not in ("ist", "soll"):
+        raise APIImportError("Referenzplansicht muss ist oder soll sein.")
     try:
         client = APIClient()
         client.authorize()
@@ -239,7 +242,7 @@ def import_api(
             raise APIImportError(
                 "API-Personensicht ist für die ausgewählte Gruppe unvollständig."
             )
-        snapshot = import_snapshot(db, period_start, period_end, timezone=timezone, team_ids=[str(g) for g in scope], existing_plan_mode=existing_plan_mode)
+        snapshot = import_snapshot(db, period_start, period_end, timezone=timezone, team_ids=[str(g) for g in scope], existing_plan_mode=existing_plan_mode, reference_plan=reference_plan)
         matrix = historical_matrix(
             db, snapshot, history_start, history_end, history_plan
         )

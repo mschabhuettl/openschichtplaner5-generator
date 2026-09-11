@@ -100,6 +100,7 @@ def test_remote_source_and_import_stay_server_configured(tmp_path, monkeypatch):
         response = c.post('/api/remote-import', json={'period_start': '2026-01-05', 'period_end': '2026-01-18', 'team_id': '1', 'timezone': 'UTC'})
         assert response.status_code == 200
         assert seen[0]['history_plan'] == 'ist'
+        assert seen[0]['reference_plan'] == 'ist'
         assert 'directory' not in seen[0]
 
 
@@ -397,3 +398,25 @@ def test_readiness_person_diagnostics_keep_identity_with_duplicate_names(tmp_pat
         assert all(d['employee_id'] == first['id'] for d in issues)
         assert all(second['id'] != d['employee_id'] for d in issues)
         assert client.get('/api/snapshots').json() == []
+
+
+@pytest.mark.parametrize('endpoint,module', [('/api/import', 'sp5_adapter'), ('/api/remote-import', 'api_adapter')])
+def test_reference_selection_request_validates_and_passes_independently(tmp_path, monkeypatch, endpoint, module):
+    from sp5generator.demo import make_demo
+    import importlib
+    adapter = importlib.import_module('sp5generator.' + module)
+    seen = []
+    def importer(**kwargs):
+        seen.append(kwargs)
+        return make_demo()
+    monkeypatch.setattr(adapter, 'import_directory' if module == 'sp5_adapter' else 'import_api', importer)
+    payload = {'period_start': '2026-01-05', 'period_end': '2026-01-18', 'team_id': '1', 'timezone': 'UTC',
+               'history_plan': 'both', 'reference_plan': 'soll'}
+    if module == 'sp5_adapter':
+        payload['directory'] = 'synthetic'
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        assert client.post(endpoint, json=payload).status_code == 200
+        assert seen[0]['reference_plan'] == 'soll' and seen[0]['history_plan'] == 'both'
+        assert seen[0]['existing_plan_mode'] == 'reference'
+        assert client.post(endpoint, json={**payload, 'reference_plan': 'both'}).status_code == 422
+        assert len(seen) == 1

@@ -29,6 +29,7 @@ class ApiImportRequest(BaseModel):
     team_ids: list[str] | None = None
     timezone: str
     history_plan: Literal['ist', 'soll', 'both'] = 'ist'
+    reference_plan: Literal['ist', 'soll'] = 'ist'
     auto_history: bool = False
     history_min_days: int = Field(default=3, ge=2, le=1097)
     existing_plan_mode: Literal['reference', 'fixed'] = 'reference'

@@ -54,6 +54,11 @@ class Handler(BaseHTTPRequestHandler):
                 for person in responses.get(f'/api/groups/{group}/members', []):
                     rows.append({'employee_id': person['ID'], 'date': str(date(2026, 1, 12)),
                                  'kind': 'shift', 'shift_id': 201, 'workplace_id': 302})
+            if params['year'] == ['2026'] and params['month'] == ['2'] and params.get('plan') == ['soll'] and group == 2:
+                rows = [
+                    {'employee_id': 101, 'date': '2026-02-02', 'kind': 'shift', 'shift_id': 201, 'workplace_id': 301},
+                    {'employee_id': 101, 'date': '2026-02-02', 'kind': 'absence', 'interval': 0},
+                ]
             data = rows
         else:
             if request.path not in responses:

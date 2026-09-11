@@ -126,6 +126,34 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await uploadProject(originalPath);await navigate('rules');
     await page.setViewportSize({width:1440,height:1000});
 
+    // Select a distinct Soll baseline without changing history, availability or approvals.
+    await reveal('#referencePlan');
+    assert.equal(await page.locator('#referencePlan').inputValue(),'ist');
+    await page.selectOption('#referencePlan','soll');
+    assert.equal(await page.locator('#historyPlan').inputValue(),'ist');
+    assert.match(await page.locator('#referencePlanHelp').innerText(),/Abwesenheiten, Sonderdienste und Randkontext bleiben aus dem Istplan/);
+    const sollImported=page.waitForResponse(r=>r.url().endsWith('/api/remote-import')&&r.request().method()==='POST');
+    await page.click('#import');const sollResponse=await sollImported;
+    assert.equal(sollResponse.status(),200);
+    const sollSnapshot=(await sollResponse.json()).snapshot;
+    assert.equal(sollSnapshot.metadata.reference_plan,'soll');
+    assert.equal(sollSnapshot.metadata.history_plan,'ist');
+    assert.equal(sollSnapshot.metadata.reference_schedule.length,1);
+    assert.equal(sollSnapshot.metadata.reference_schedule[0].shift_id,201);
+    assert(sollSnapshot.employees.every(person=>person.approvals.length===0&&person.unavailable.length===0));
+    assert(sollSnapshot.profiles.every(profile=>!profile.confirmed));
+    assert.equal(sollSnapshot.context_complete,false);
+    assert(sollSnapshot.unresolved.length>0);
+    await navigate('rules');
+    assert.match(await referenceBox.innerText(),/Sollplan/);
+    assert.match(await referenceBox.innerText(),/Eindeutig zugeordnet: 1/);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});await screenshot(`reference-overview-soll-${width}.png`);
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    }
+    await reveal('#referencePlan');await page.selectOption('#referencePlan','ist');
+    await uploadProject(originalPath);await navigate('rules');
+    await page.setViewportSize({width:1440,height:1000});
     const readiness=page.waitForResponse(r=>r.url().endsWith('/api/readiness'));
     await page.getByRole('button',{name:'Planungsbereitschaft prüfen',exact:true}).click();
     assert.equal((await readiness).status(),200);

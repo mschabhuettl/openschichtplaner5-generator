@@ -93,8 +93,9 @@ def test_directory_rejects_source_escape_and_ambiguous_roots(tmp_path, monkeypat
         adapter.inspect_directory(str(tmp_path))
 
 
+@pytest.mark.parametrize("reference_plan", ["ist", "soll"])
 def test_import_detects_concurrent_change_and_keeps_source_readonly(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, reference_plan
 ):
     marker = tmp_path / "5EMPL.DBF"
     marker.write_bytes(b"synthetic")
@@ -110,7 +111,9 @@ def test_import_detects_concurrent_change_and_keeps_source_readonly(
         "UTC",
         date(2026, 1, 1),
         date(2026, 1, 5),
+        reference_plan=reference_plan,
     )
+    assert snapshot.metadata["reference_plan"] == reference_plan
     assert snapshot.metadata["history_matrix"][0]["observed_assignment_count"] == 2
     assert marker.read_bytes() == b"synthetic"
     original = adapter.historical_matrix

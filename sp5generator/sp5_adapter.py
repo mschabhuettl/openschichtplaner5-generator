@@ -62,6 +62,22 @@ def _scope_schedule(db, scope, year, month, **kwargs):
     return result
 
 
+def _reference_schedule(db, scope, year, month, period_start, period_end, plan):
+    """Select regular baseline duties only; preserve Ist context and availability."""
+    from sp5lib.calculations import to_date
+
+    actual = _scope_schedule(db, scope, year, month, plan="ist")
+    if plan == "ist" or (year, month) < (period_start.year, period_start.month) or (year, month) > (period_end.year, period_end.month):
+        return actual
+
+    def selected(row):
+        day = to_date(row.get("date"))
+        return row.get("kind") == "shift" and day is not None and period_start <= day <= period_end
+
+    planned = _scope_schedule(db, scope, year, month, plan=plan)
+    return [row for row in actual if not selected(row)] + [row for row in planned if selected(row)]
+
+
 def _parse_native_windows(value):
     """Parse every native interval; never silently discard malformed pieces."""
     tokens = str(value or "").replace(";", " ").split()
@@ -106,6 +122,7 @@ def import_snapshot(
     db, period_start: date, period_end: date, team_id: str | None = None,
     timezone: str = "Europe/Vienna", team_ids: list[str] | None = None,
     existing_plan_mode: str = "reference",
+    reference_plan: str = "ist",
 ) -> Snapshot:
     """Read from an explicitly supplied library database; never writes or opens a default source.
 
@@ -120,6 +137,8 @@ def import_snapshot(
         raise ValueError("Zeitraum bietet keinen Platz für den erforderlichen Randkontext.")
     if existing_plan_mode not in ("reference", "fixed"):
         raise ValueError("Bestehender Plan: Modus muss reference oder fixed sein.")
+    if reference_plan not in ("ist", "soll"):
+        raise ValueError("Referenzplansicht muss ist oder soll sein.")
     zone = ZoneInfo(timezone)
     groups = db.get_groups() if hasattr(db, "get_groups") else [{"ID": int(str(team_id).removeprefix("sp5:group:"))}]
     scope = resolve_group_selection(groups, team_id, team_ids)
@@ -140,7 +159,10 @@ def import_snapshot(
         "context_schedule": [],
         "existing_plan_mode": existing_plan_mode,
         "reference_schedule": [],
-        "reference_plan": "ist",
+        "reference_plan": reference_plan,
+        "context_plan": "ist",
+        "availability_plan": "ist",
+        "special_shift_plan": "ist",
         "service_matrix_version": 1,
         "selected_team_id": str(native_team),
         "selected_group_ids": scope,
@@ -364,7 +386,7 @@ def import_snapshot(
     month = context_start.replace(day=1)
     seen_schedule = set()
     while month <= context_end:
-        for row in _scope_schedule(db, scope, month.year, month.month, plan="ist"):
+        for row in _reference_schedule(db, scope, month.year, month.month, period_start, period_end, reference_plan):
             d = calc.to_date(row.get("date"))
             eid = f"sp5:employee:{row.get('employee_id')}"
             if (
@@ -797,6 +819,7 @@ def import_directory(
     history_plan="ist",
     team_ids=None,
     existing_plan_mode="reference",
+    reference_plan="ist",
 ):
     """Explicit local directory import with change detection and matrix suggestions."""
     if not 0 <= (period_end - period_start).days < MAX_PLANNING_DAYS:
@@ -805,7 +828,7 @@ def import_directory(
     before = _source_fingerprint(files)
     snapshot = import_snapshot(
         db, period_start, period_end, team_id, timezone, team_ids=team_ids,
-        existing_plan_mode=existing_plan_mode,
+        existing_plan_mode=existing_plan_mode, reference_plan=reference_plan,
     )
     history_end = history_end or period_start - timedelta(days=1)
     history_start = history_start or history_end - timedelta(days=89)

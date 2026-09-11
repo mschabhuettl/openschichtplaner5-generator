@@ -554,3 +554,65 @@ def test_reference_source_is_explicit_ist_independent_of_library_default():
     assert len(snapshot.assignments) == 1
     assert not snapshot.employees[0].approvals
     assert snapshot.unresolved
+
+
+@pytest.mark.parametrize('plan,service', [('ist', 201), ('soll', 202)])
+@pytest.mark.parametrize('mode,fixed', [('reference', False), ('fixed', True)])
+def test_reference_selection_never_switches_context_absences_or_special_duties(plan, service, mode, fixed):
+    class Source(SyntheticDatabase):
+        calls = []
+
+        def get_shifts(self, **kw):
+            original = super().get_shifts()[0]
+            return [original, {**original, 'ID': 202, 'NAME': 'Soll-Dienst'}]
+
+        def get_staffing_requirements(self):
+            original = super().get_staffing_requirements()['shift_requirements'][0]
+            return {'shift_requirements': [original, {**original, 'id': 402, 'shift_id': 202}], 'daily_requirements': []}
+
+        def get_schedule(self, year, month, *, plan, **kw):
+            self.calls.append((year, month, plan))
+            if (year, month) != (2026, 1):
+                return []
+            sid = 201 if plan == 'ist' else 202
+            return [
+                *[{'employee_id': 101, 'date': f'2026-01-{day:02}', 'kind': 'shift', 'shift_id': sid, 'workplace_id': 301} for day in (5, 6, 7)],
+                {'employee_id': 101, 'date': '2026-01-06', 'kind': 'absence', 'interval': 3,
+                 'start_time': 480 if plan == 'ist' else 720, 'end_time': 540 if plan == 'ist' else 780},
+                {'employee_id': 101, 'date': '2026-01-06', 'kind': 'special_shift', 'shift_id': 201,
+                 'spshi_type': 1, 'duration': 1 if plan == 'ist' else 2},
+            ]
+
+    source = Source()
+    snapshot = import_snapshot(source, date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC',
+                               reference_plan=plan, existing_plan_mode=mode)
+    assert snapshot.metadata['reference_plan'] == plan
+    assert snapshot.metadata['context_plan'] == snapshot.metadata['availability_plan'] == snapshot.metadata['special_shift_plan'] == 'ist'
+    references = snapshot.metadata['reference_schedule']
+    assert len(references) == 1 and references[0]['shift_id'] == service
+    reference = next(a for a in snapshot.assignments if a.demand_id == references[0]['demand_id'])
+    assert reference.fixed is fixed
+    context = [r for r in snapshot.metadata['context_schedule'] if r['date'] != '2026-01-06']
+    assert len(context) == 2 and all(r['shift_id'] == 201 for r in context)
+    assert all(a.fixed for a in snapshot.assignments if a != reference)
+    assert snapshot.employees[0].unavailable[0].start.hour == 8
+    special = next(r for r in snapshot.metadata['context_schedule'] if r['kind'] == 'special_shift')
+    assert special['duration'] == 1
+    assert sum(d.source == 'sp5:SHDEM' for d in snapshot.demands) == 2
+    assert not snapshot.employees[0].approvals and not snapshot.context_complete
+    assert all(not p.confirmed for p in snapshot.profiles)
+    assert any('Sonderdienst' in message for message in snapshot.unresolved)
+    assert all((year, month) == (2026, 1) for year, month, selected in source.calls if selected == 'soll')
+
+
+def test_empty_soll_reference_does_not_fall_back_to_ist_or_accept_both():
+    class Source(ExistingPlanDatabase):
+        def get_schedule(self, year, month, *, plan, **kw):
+            return [] if plan == 'soll' else super().get_schedule(year, month, **kw)
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC', reference_plan='soll')
+    assert snapshot.metadata['reference_schedule'] == []
+    assert snapshot.assignments == []
+    assert len(snapshot.demands) == 1
+    with pytest.raises(ValueError, match='Referenzplansicht'):
+        import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), '1', 'UTC', reference_plan='both')
