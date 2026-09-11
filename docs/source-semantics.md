@@ -4745,3 +4745,12 @@ employment end dates, orphan memberships, and valid duplicates.
 API's loss but now asserts rejection at the direct Generator join. This guard
 cannot discover memberships the remote API has already dropped. Malformed ID
 semantics and full-app API candidate propagation remain separate follow-ups.
+
+The packaged combined-candidate gate now includes the person-join patch and
+`tools/person_full_app_contract.py` through the actual API app middleware for
+both `/api` and `/api/v1`. It checks unauthenticated rejection, sanitized orphan
+and conflict responses/headers, valid response preservation, and Generator
+`APIClient` import failure without caching the error. Both packaged cases pass;
+API deployment/login/startup background tasks remain outside this source-only
+synthetic gate. Generator currently displays the generic sanitized HTTP 500
+message for this contract; category-specific presentation is not claimed.

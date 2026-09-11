@@ -121,6 +121,9 @@ def run_contract(prefix):
             if os.environ.get('SP5_IDENTITY_ACTIVATION'):
                 from tools.test_upstream_identity_reader import check_identity_api
                 check_identity_api(http, headers, prefix, root, SP5Database)
+            if os.environ.get('SP5_PERSON_ACTIVATION'):
+                from person_full_app_contract import check_person_join
+                check_person_join(http, headers, prefix)
             del _sessions[token]
             assert http.get(prefix + '/staffing-requirements', headers=headers).status_code == 401
             print('full-app contract passed')

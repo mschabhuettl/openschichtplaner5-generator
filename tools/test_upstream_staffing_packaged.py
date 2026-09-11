@@ -46,6 +46,7 @@ def test_packaged_staffing_runtime(tmp_path, prefix):
         'upstream-library-staffing-identity-activation-candidate.patch',
         'upstream-api-staffing-source-contract-candidate.patch',
         'upstream-api-staffing-activation-candidate.patch',
+        'upstream-api-person-integrity-candidate.patch',
     ]
     for name in patches:
         subprocess.run(['git', 'apply', str(Path(__file__).parent.resolve() / name)],
@@ -62,7 +63,7 @@ def test_packaged_staffing_runtime(tmp_path, prefix):
         'LOG_FILE': str(backend / 'api.log'),
         'SP5_AUDIT_LOG': str(backend / 'audit.json'),
         'SP5_PACKAGED_RUNTIME': str(code), 'SP5_TEMPORAL_ACTIVATION': '1',
-        'SP5_IDENTITY_ACTIVATION': '1',
+        'SP5_IDENTITY_ACTIVATION': '1', 'SP5_PERSON_ACTIVATION': '1',
         'SP5_STAFFING_DATABASE': str(code / 'sp5lib/database.py'),
     }
     completed = subprocess.run(
