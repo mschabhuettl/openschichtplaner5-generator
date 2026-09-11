@@ -123,6 +123,45 @@ def test_shift_template_requires_valid_schedule_and_staffing(patch):
         build(data)
 
 
+@pytest.mark.parametrize(('field', 'value'), [
+    ('min_rest_hours', 11.001), ('after_night_rest_hours', 11.001),
+    ('weekly_rest_hours', 36.001), ('max_daily_hours', 12.009),
+    ('max_weekly_hours', 48.009),
+])
+def test_rule_hours_are_never_silently_rounded(field, value):
+    data = project_payload()
+    data['rules'][field] = value
+    with pytest.raises(ValueError, match='ganzen Minuten'):
+        build(data)
+
+
+@pytest.mark.parametrize(('hours', 'minutes'), [(11.25, 675), (6.1, 366), (1 / 60, 1)])
+def test_minute_aligned_rules_are_preserved(hours, minutes):
+    data = project_payload()
+    for field in ('min_rest_hours', 'after_night_rest_hours', 'weekly_rest_hours',
+                  'max_daily_hours', 'max_weekly_hours'):
+        data['rules'][field] = hours
+    profile = build(data).profiles[0]
+    assert [profile.min_rest_minutes, profile.after_night_rest_minutes,
+            profile.weekly_rest_minutes, profile.max_daily_minutes,
+            profile.max_weekly_minutes] == [minutes] * 5
+
+
+def test_api_explains_subminute_rules_without_creating_project(tmp_path):
+    pytest.importorskip('fastapi')
+    from fastapi.testclient import TestClient
+    from sp5generator.webapp import create_app
+
+    data = project_payload()
+    data['rules']['min_rest_hours'] = 11.001
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        response = client.post('/api/projects/new', json=data)
+        assert response.status_code == 422
+        assert 'ganzen Minuten' in response.json()['detail']
+        assert 'Projekt Alpha' not in response.text
+        assert client.get('/api/snapshots').json() == []
+
+
 def test_setup_budget_is_checked_before_expanding_shift_objects(monkeypatch):
     data = project_payload()
     data['shift_templates'][0]['demands'][0].update(minimum=1000, maximum=1000)

@@ -1,6 +1,7 @@
 """Build real standalone projects from explicit, bounded setup choices."""
 
 from datetime import UTC, date, datetime, timedelta
+import math
 from typing import Annotated, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -134,8 +135,26 @@ class ProjectCreateRequest(SetupModel):
         return self
 
 
+def _rule_minutes(rules: ProjectRules):
+    converted = {}
+    for field, label in (
+        ('min_rest', 'Mindestruhe'), ('after_night_rest', 'Ruhe nach Nachtdienst'),
+        ('weekly_rest', 'Wochenruhe'), ('max_daily', 'Tägliche Höchstarbeitszeit'),
+        ('max_weekly', 'Wöchentliche Höchstarbeitszeit'),
+    ):
+        minutes = getattr(rules, field + '_hours') * 60
+        rounded = round(minutes)
+        # Allow only floating-point representation noise, not sub-minute rules.
+        # Rounding minima down or maxima up would silently weaken confirmed rules.
+        if not math.isclose(minutes, rounded, rel_tol=0, abs_tol=2 * math.ulp(minutes)):
+            raise ValueError(f'{label}: Stundenwert muss ganzen Minuten entsprechen; beispielsweise 11 oder 11.5 Stunden.')
+        converted[field + '_minutes'] = rounded
+    return converted
+
+
 def create_project(data: ProjectCreateRequest) -> Snapshot:
     """Expand recurring shifts only after checking their total execution budget."""
+    rule_minutes = _rule_minutes(data.rules)
     days = (data.period_end - data.period_start).days + 1
     occurrences = [
         sum((data.period_start.weekday() + offset) % 7 in template.weekdays for offset in range(days))
@@ -158,7 +177,7 @@ def create_project(data: ProjectCreateRequest) -> Snapshot:
 
     rules = data.rules
     horizon = max(8, rules.max_consecutive_work_days, rules.max_consecutive_nights,
-                  (round(max(rules.min_rest_hours, rules.after_night_rest_hours) * 60) + 1439) // 1440)
+                  (max(rule_minutes['min_rest_minutes'], rule_minutes['after_night_rest_minutes']) + 1439) // 1440)
     if ((data.period_start - date.min).days <= horizon
             or (date.max - data.period_end).days <= horizon + 1):
         raise ValueError('Der Zeitraum liegt zu nahe an der Grenze des unterstützten Datumsbereichs.')
@@ -166,13 +185,9 @@ def create_project(data: ProjectCreateRequest) -> Snapshot:
     context_end = data.period_end + timedelta(days=horizon)
     profile = RuleProfile(
         id='project-rules', valid_from=context_start, valid_until=context_end,
-        min_rest_minutes=round(rules.min_rest_hours * 60),
-        after_night_rest_minutes=round(rules.after_night_rest_hours * 60),
+        **rule_minutes,
         max_consecutive_work_days=rules.max_consecutive_work_days,
         max_consecutive_nights=rules.max_consecutive_nights,
-        max_daily_minutes=round(rules.max_daily_hours * 60),
-        max_weekly_minutes=round(rules.max_weekly_hours * 60),
-        weekly_rest_minutes=round(rules.weekly_rest_hours * 60),
         confirmed=True, source='project-setup',
     )
     positions = [Position(id=f'position-{index + 1}', name=p.name,
