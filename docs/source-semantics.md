@@ -2742,3 +2742,29 @@ API und OSP5 eine vollständige Arbeitszeitprüfung ausweisen. Diese Änderung i
 hier **noch nicht produktiv implementiert**; die Tests charakterisieren bewusst
 den aktuellen Fehlerzustand. Keine Originalrepoänderung, kein Release, keine
 neue Aussage zur unveränderten privaten Abnahme oder zum fehlenden Originaljob.
+
+### Isolierter Library-Strict-Reader-Kandidat
+
+`tools/upstream-library-strict-reader-candidate.patch` erweitert den vorhandenen
+`sp5lib/dbf_reader.py:read_dbf_buffer` um das optionale `strict=True`. Der
+bestehende Standardpfad bleibt unverändert; kein zweiter Generatorparser.
+`DBFStructureError.code` unterscheidet kurze Header, ungültige Größen,
+unvollständige Felddeskriptoren, Feld-/Satzbreitenfehler, abgeschnittene physische
+Sätze und ungültige Löschmarker. Die Prüfung läuft vor der Datensatzselektion:
+kein stiller Präfix und kein falscher Fehler wegen regulär gelöschter Sätze.
+Fehlermeldungen enthalten nur feste Kategorien, keine Dateipfade oder Nutzdaten.
+Headerpadding (FoxPro-Backlink) und optionales EOF-Zeichen bleiben zulässig.
+
+15 synthetische Kandidatentests plus die sieben bisherigen Charakterisierungen
+bestehen (22 gesamt), Ruff und Diffcheck grün. Reproduzierbar: Patch auf eine
+isolierte Librarykopie anwenden und `SP5_STRICT_READER` auf deren
+`sp5lib/dbf_reader.py` setzen; mit Original-Library auf `PYTHONPATH` beide
+`tools/test_upstream_{strict_reader,source_read_integrity}.py` ausführen.
+
+**Grenzen:** reine strukturelle Pufferprüfung, keine semantische Feldprüfung,
+kein Snapshot und keine neue Vollständigkeitszusage. Der produktive
+`SP5Database._read` ruft strict noch nicht auf. Datei fehlt/unlesbar muss im
+nächsten Integrationsschritt vor dem Parser explizit gemeldet werden; Diagnose
+muss dabei den mtime/size-Schnellcache umgehen und die Fehlerkategorien bis zur
+API transportieren. Originalrepos und produktive API sind unverändert. Kein
+Release und kein Ursachenbeweis für das weiterhin fehlende 0.9.29-Originaljobpaar.

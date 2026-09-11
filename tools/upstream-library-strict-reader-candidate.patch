@@ -1,0 +1,58 @@
+--- a/sp5lib/dbf_reader.py
++++ b/sp5lib/dbf_reader.py
+@@ -232,13 +232,54 @@
+     return read_dbf_buffer(data)
+ 
+ 
+-def read_dbf_buffer(data: bytes) -> list[dict[str, Any]]:
++class DBFStructureError(ValueError):
++    """Machine-readable structural failure without source data in the message."""
++
++    def __init__(self, code: str):
++        self.code = code
++        super().__init__(code)
++
++
++def _validate_dbf_structure(data: bytes) -> None:
++    if len(data) < 32:
++        raise DBFStructureError("short_header")
++    count, header_size, record_size = struct.unpack_from("<IHH", data, 4)
++    if header_size < 33 or header_size > len(data):
++        raise DBFStructureError("invalid_header_size")
++    if record_size < 1:
++        raise DBFStructureError("invalid_record_size")
++    position = 32
++    field_bytes = 0
++    while position < header_size and data[position] != 0x0D:
++        if position + 32 > header_size:
++            raise DBFStructureError("truncated_field_descriptor")
++        width = data[position + 16]
++        if not width:
++            raise DBFStructureError("invalid_field_width")
++        field_bytes += width
++        position += 32
++    if position >= header_size:
++        raise DBFStructureError("missing_header_terminator")
++    # Allow header padding (e.g. FoxPro backlink), but not record padding:
++    # the existing parser consumes one deletion marker and all field widths.
++    if field_bytes + 1 != record_size:
++        raise DBFStructureError("record_width_mismatch")
++    if len(data) < header_size + count * record_size:
++        raise DBFStructureError("truncated_records")
++    for position in range(header_size, header_size + count * record_size, record_size):
++        if data[position] not in (0x20, 0x2A):
++            raise DBFStructureError("invalid_deletion_marker")
++
++
++def read_dbf_buffer(data: bytes, *, strict: bool = False) -> list[dict[str, Any]]:
+     """Parst einen bereits eingelesenen .DBF-Bytepuffer (siehe :func:`read_dbf`).
+ 
+     Getrennt vom Dateizugriff, damit Aufrufer die Bytes nur EINMAL lesen müssen
+     (z. B. der DBF-Cache, der dieselben Bytes auch für die Inhalts-Prüfung hasht)
+     — wichtig bei langsamen Bind-Mounts/Netzpfaden.
+     """
++    if strict:
++        _validate_dbf_structure(data)
+     if len(data) < 32:
+         return []
+     f = io.BytesIO(data)
