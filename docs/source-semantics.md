@@ -5394,3 +5394,16 @@ generators; `use_lns_only` is explicitly experimental in the
 Their availability alone is not evidence of a gain for this application's worker
 configuration or a reason to change production parameters. This change adds a
 synthetic proof-scope regression only, not a new production search policy.
+
+The native dispatch also matters: in the tagged
+[9.15 `cp_model_solver.cc`](https://github.com/google/or-tools/blob/v9.15/ortools/sat/cp_model_solver.cc),
+`SolveCpModel` enters `SolveCpModelParallel` for multiple workers, interleaved
+search, explicit/filter subsolvers, or `use_ls_only`. Merely setting
+`use_lns_only` is not one of those dispatch conditions. Generator
+`solver.SEARCH_WORKERS = 1` and the solver parameter setup do not enable the
+other conditions. Therefore the existence/default availability of native LNS
+generators must not be mistaken for evidence that this production sequential
+path already runs an LNS portfolio. A native comparison would need a deliberately
+configured, separately verified dispatch (potentially one-worker interleaving),
+not an untested increase in worker count: the single-worker policy preserves a
+previously established process-safety workaround.
