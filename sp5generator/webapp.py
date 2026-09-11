@@ -231,7 +231,7 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
             snapshot = import_directory(**data.model_dump())
         except (OSError, ImportError) as exc:
             raise HTTPException(400, 'Import nicht möglich: Verzeichnis und SP5-Erweiterung prüfen') from exc
-        return {'snapshot': snapshot, 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
+        return {'snapshot': check_project_structure(snapshot), 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
 
     @app.get('/api/remote-source')
     def remote_source():
@@ -242,7 +242,7 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     def remote_import(data: ApiImportRequest):
         from .api_adapter import import_api
         snapshot = import_api(**data.model_dump())
-        return {'snapshot': snapshot, 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
+        return {'snapshot': check_project_structure(snapshot), 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
 
     @app.post('/api/snapshots/check')
     def check_snapshot(snapshot: Snapshot):

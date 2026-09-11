@@ -183,6 +183,15 @@ def supervised(snapshot, employee, demand):
     return bool(approvals) and all(a.supervised for a in approvals)
 
 
+def planning_record_count(value):
+    """Count records once, including scalar list entries, not their container twice."""
+    if isinstance(value, dict):
+        return 1 + sum(planning_record_count(v) for v in value.values())
+    if isinstance(value, list):
+        return sum(planning_record_count(v) if isinstance(v, (dict, list)) else 1 for v in value)
+    return 0
+
+
 def input_diagnostics(snapshot):
     errors = []
 
@@ -203,16 +212,10 @@ def input_diagnostics(snapshot):
         return errors
 
     payload = snapshot.model_dump(exclude={"metadata"})
-    def record_count(value):
-        if isinstance(value, dict):
-            return 1 + sum(record_count(v) for v in value.values())
-        if isinstance(value, list):
-            return len(value) + sum(record_count(v) for v in value)
-        return 0
-
-    if record_count(payload) > MAX_RECORDS:
+    if planning_record_count(payload) > MAX_RECORDS:
         issue("size_limit", "Zu viele verschachtelte Planungsdatensätze.")
         return errors
+
     calendar_checks = len(snapshot.employees) * planning_days * len(snapshot.profiles)
     calendar_checks += sum(max(0, (
         min(v.valid_until, snapshot.context_end)

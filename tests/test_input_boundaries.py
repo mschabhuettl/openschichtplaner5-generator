@@ -74,3 +74,10 @@ def test_staffing_slot_budget_prevents_unbounded_candidate_expansion():
     result = solve(snapshot, time_limit=0.1)
     assert result.solver_status == "MODEL_INVALID"
     assert result.validation.diagnostics[0].code == "size_limit"
+
+
+def test_nested_record_count_does_not_double_count_list_records():
+    from sp5generator.domain import planning_record_count
+    assert planning_record_count({"rows": [{"id": 1}, {"id": 2}]}) == 3
+    assert planning_record_count({"rows": [{"parts": [{"start": 1, "end": 2}]}]}) == 3
+    assert planning_record_count({"ids": [1, 2, 3]}) == 4

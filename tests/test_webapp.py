@@ -202,3 +202,18 @@ def test_unconfirmed_rules_remain_editable_projects(tmp_path):
         snapshot['unresolved'] = ['Synthetic source rule requires confirmation']
         assert c.post('/api/snapshots/check', json=snapshot).status_code == 200
         assert c.put('/api/snapshots', json=snapshot).status_code == 200
+
+
+def test_remote_import_rejects_unsavable_structure_at_import(tmp_path, monkeypatch):
+    from sp5generator.demo import make_demo
+    snapshot = make_demo()
+    snapshot.employees[0].availability *= 26000
+    monkeypatch.setattr('sp5generator.api_adapter.import_api', lambda **kwargs: snapshot)
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        result = client.post('/api/remote-import', json={
+            'period_start': '2026-01-01', 'period_end': '2026-01-31',
+            'timezone': 'UTC', 'team_ids': ['1'],
+        })
+        assert result.status_code == 422
+        assert 'size_limit' in result.json()['detail']
+        assert client.get('/api/snapshots').json() == []

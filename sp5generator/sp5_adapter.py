@@ -240,7 +240,7 @@ def import_snapshot(
     )
     employee_map = {e.id: e for e in employees}
     shifts, positions, demands, restrictions, assignments = {}, {}, [], [], []
-    rows = list(requirements.get("shift_requirements", [])) + [values[0] for values in special_cells.values() if len(values) == 1]
+    rows = _unique_rows(list(requirements.get("shift_requirements", [])) + [values[0] for values in special_cells.values() if len(values) == 1])
     for row in rows:
         gid = row.get("group_id")
         if gid not in (*scope, 0, None):
@@ -318,7 +318,7 @@ def import_snapshot(
                     )
                     demands.append(
                         Demand(
-                            id=f"sp5:demand:{row.get('_source', 'SHDEM')}:{row['id']}:{d}",
+                            id=f"sp5:demand:{row.get('_source', 'SHDEM')}:{gid}:{sid}:{wid}:{row['id']}:{d}",
                             shift_id=shift_id,
                             position_id=position_id,
                             minimum=row["min"],

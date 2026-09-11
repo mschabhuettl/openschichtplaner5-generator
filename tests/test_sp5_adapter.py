@@ -454,3 +454,18 @@ def test_import_period_limits_are_checked_before_source_access(entrypoint, days)
             import_directory("source-must-not-be-opened", start, end, "1", "UTC")
         else:
             import_api(start, end, "1", "UTC")
+
+
+def test_requirement_ids_are_scoped_to_the_native_cell():
+    class Source(SyntheticDatabase):
+        def get_shifts(self, **kwargs):
+            first = super().get_shifts(**kwargs)[0]
+            return [first, {**first, "ID": 202, "NAME": "Schicht B"}]
+        def get_staffing_requirements(self):
+            source = super().get_staffing_requirements()
+            first = source["shift_requirements"][0]
+            source["shift_requirements"] = [first, dict(first), {**first, "shift_id": 202}]
+            return source
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.demands) == 2
+    assert len({d.id for d in snapshot.demands}) == 2
