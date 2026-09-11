@@ -4048,3 +4048,35 @@ Runtimeänderung und kein Release. Die unveränderte private API-Abnahme wird
 nicht wiederholt. Originalprojekt/Jobeingabe/Ergebnis des gemeldeten
 0.9.29-Laufs sind weiterhin nicht verfügbar; dieser Test ist kein Nachweis
 für dessen Ursache und keine Reproduktion des 600-Sekunden-Zeitlimits.
+# Generator staffing count boundary: characterization (2026-09-11)
+
+Following the DBF numeric-column candidate, twelve synthetic HTTP-import cases
+now locate the remaining generator boundary precisely:
+
+- `api_adapter.import_api` -> `sp5_adapter.import_snapshot` compares `max` with
+  `-1` and `min` before validating their types. Text in either field (`"0"`,
+  empty text or nonnumeric text) produces the generic API import-contract error,
+  rather than a local staffing-field diagnosis.
+- Boolean `true` and integral float `1.0` survive those comparisons and Pydantic
+  `Demand` construction as integer 1. This demonstrates coercion, not evidence
+  that upstream booleans are legitimate staffing counts.
+- Fractional `1.5` reaches `Demand`, is rejected, and is caught by the surrounding
+  shift-construction `ValueError` handler. The unresolved diagnostic incorrectly
+  starts with `SHIFT`, although the invalid field belongs to staffing; no demand
+  is created. The snapshot remains unresolved, not a validated plan.
+
+Evidence: `tests/test_api_adapter.py` tests
+`test_staffing_text_counts_currently_fail_before_local_diagnosis`,
+`test_staffing_boolean_and_integral_float_counts_currently_coerced` and
+`test_fractional_staffing_count_currently_reported_as_shift_error`.
+These intentionally characterize current behavior pending the corrective change.
+Focused API-adapter plus partial-limit run: **347 passed**; Ruff and diff check pass.
+
+Next correction: validate staffing values before comparisons, reject booleans,
+text and fractional/nonfinite values without echoing raw source values; settle
+integral JSON-number normalization consistently with DBF N/F output, retain
+MAX=-1 and zero semantics, and preserve blocking unresolved source rows. Cover
+both regular and dated staffing before private API revalidation. This is a
+mapping/diagnostic finding, not a proven cause of the user's 0.9.29 partial plan;
+the exact original job/project/result is still unavailable. No runtime change
+or release was made for this characterization.

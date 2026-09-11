@@ -72,6 +72,37 @@ def transport(monkeypatch, tmp_path):
     return responses, calls
 
 
+@pytest.mark.parametrize("field", ["min", "max"])
+@pytest.mark.parametrize("value", ["0", "", "not-a-count"])
+def test_staffing_text_counts_currently_fail_before_local_diagnosis(transport, field, value):
+    """Characterize the missing count contract, not desired acceptance policy."""
+    responses, _ = transport
+    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = value
+    with pytest.raises(APIImportError, match="Importvertrag"):
+        import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+
+
+@pytest.mark.parametrize("field", ["min", "max"])
+@pytest.mark.parametrize("value", [True, 1.0])
+def test_staffing_boolean_and_integral_float_counts_currently_coerced(transport, field, value):
+    """Expose coercion separately from malformed text; no actual source data."""
+    responses, _ = transport
+    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = value
+    snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.demands) == 1
+    assert getattr(snapshot.demands[0], {"min": "minimum", "max": "maximum"}[field]) == 1
+
+
+@pytest.mark.parametrize("field", ["min", "max"])
+def test_fractional_staffing_count_currently_reported_as_shift_error(transport, field):
+    responses, _ = transport
+    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = 1.5
+    snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert snapshot.demands == []
+    assert any(message.startswith("SHIFT 201 2026-01-06:")
+               and "int_from_float" in message for message in snapshot.unresolved)
+
+
 def test_existing_api_import_read_only_history_and_no_credentials(transport):
     assert [(g["id"], g["name"]) for g in inspect_api()["groups"]] == [("1", "Team A")]
     snapshot = import_api(
