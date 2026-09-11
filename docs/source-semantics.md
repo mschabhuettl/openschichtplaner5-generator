@@ -2710,3 +2710,35 @@ keine Originalrepo-/Datenänderung und kein Release. Für produktive Integration
 fehlen weiterhin ein belegter konsistenter Quellen-Snapshot samt Fehlerstatus,
 tragfähige Quellidentitäten über mehrere Abrufe und der gesonderte Ruhekontext.
 Die bisherigen anfragelokalen Ordinale werden nicht zu DB-Schlüsseln umgedeutet.
+
+### Quellenintegrität: abgeschnittene DBF ist nicht zuverlässig ein Lesefehler
+
+Sieben synthetische Charakterisierungstests in
+`tools/test_upstream_source_read_integrity.py` prüfen jetzt den **unveränderten**
+Librarypfad `SP5Database._read -> dbf_reader.read_dbf_buffer` mit selbst erzeugten
+DBF-Bytes. Fehlende Datei und gültige leere Tabelle liefern beide `[]`; nur die
+fehlende Datei erzeugt ein Log. Weniger als 32 Headerbytes liefern dagegen
+geräuschlos `[]`, das `_read` als erfolgreich geparste Tabelle cached. Bei einem
+abgeschnittenen letzten Datensatz beendet der Parser seine Schleife und liefert
+den vollständigen Präfix – ebenfalls ohne Fehlerstatus und anschließend gecached.
+Der Test unterscheidet fehlenden letzten Datensatz und unvollständige Restbytes.
+
+Ein zusätzlicher Cachetest ersetzt eine synthetische Datei durch andere Bytes
+bei identischer Größe und wiederhergestellter mtime: direkter Parser sieht ID 20,
+`_read` weiterhin ID 10. Der Hash wird im mtime/size-Schnellpfad nicht erneut
+geprüft. Das ist eine reproduzierte Cachegrenze, kein behaupteter Vorgang auf der
+produktiven API. Ein weiterer Test zeigt, warum `len(parsed) == num_records`
+kein geeigneter Integritätscheck ist: regulär gelöschte DBF-Sätze werden korrekt
+nicht zurückgegeben, obwohl sie zum physischen Headerzähler gehören.
+
+**Priorisierte Integrationskorrektur:** vorhandenen Libraryreader um einen
+ausdrücklich strikten, strukturierten Lesestatus erweitern, statt im Generator
+einen zweiten DBF-Parser oder Logauswertung einzuführen. Fehlend/unlesbar,
+strukturell abgeschnitten und gültig leer müssen unterscheidbar sein; physische
+Satzvollständigkeit muss vor dem Ausfiltern gelöschter Sätze geprüft werden.
+Ein Diagnose-Snapshot benötigt außerdem einen belegten gemeinsamen Quellenstand;
+mtime/size und aufruflokale deepcopy allein reichen nicht. Erst danach können
+API und OSP5 eine vollständige Arbeitszeitprüfung ausweisen. Diese Änderung ist
+hier **noch nicht produktiv implementiert**; die Tests charakterisieren bewusst
+den aktuellen Fehlerzustand. Keine Originalrepoänderung, kein Release, keine
+neue Aussage zur unveränderten privaten Abnahme oder zum fehlenden Originaljob.
