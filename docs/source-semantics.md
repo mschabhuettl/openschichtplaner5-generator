@@ -3387,3 +3387,39 @@ und wurde zutreffend als `boundary_period` abgewiesen. Korrigiert wurde nur die
 Fixture: Beginn am Vortag mit Überhang. Keine Runtimeänderung. 191 Tests aus
 Teilplangrenzen, Randarbeitszeit und Kernregeln bestanden. Die unveränderte private
 API-Abnahme wird nicht wiederholt; Originaljob 0.9.29 weiterhin nicht reproduziert.
+
+### Individuelle Ausschlüsse: Gegenplan und gezielte Wiederzulassung
+
+2026-09-11: `test_remaining_individual_exclusions_and_explicit_recovery` prüft
+zwölf Kombinationen (Voll-/Teilplanung × Dienstart, Wochenende, Feiertag,
+optionale Qualifikation, Anfrage-Sperre, Abwesenheit). Der explizite Gegenplan
+wird jeweils mit genau dem erwarteten Ausschlusscode abgewiesen; der Solver
+liefert keine Einteilung. Teilplanung bleibt gültig, aber unvollständig, und
+meldet `individually_ineligible` mit dem passenden Ausschlusszähler. Nach einer
+gezielten Änderung ausschließlich der synthetischen Sperre ist derselbe Bedarf
+vollständig besetzt und validiert. Eine unmittelbar bei Dienstbeginn endende
+Abwesenheit blockiert nicht. Eine bestätigte Anfrage (Stufe 1) erlaubt den
+Dienst, aber Stufe 2 bleibt auch mit gesetztem `approved` gesperrt.
+
+Quellkette erneut gelesen: `sp5lib/database.py:Database.get_restrictions` liest
+`RESTR.RESTRICT`; `set_restriction` dokumentiert 0/1/2 als keine/Anfrage/nie.
+`sp5api/routers/schedule.py:get_restrictions` reicht die Datensätze unverändert
+weiter. OSP5 `frontend/src/pages/Employees.tsx` rendert bei `restrictions.map`
+Name und Begründung, nicht die Stufe. Generator
+`api_adapter._Database.get_restrictions` → `sp5_adapter.import_snapshot`
+übernimmt die Stufe und setzt keine Anfragebestätigung voraus (`approved=False`).
+`domain.eligibility` wird sowohl für Solver-Kandidaten als auch durch
+`validator.validate` verwendet: die Ergebnisprüfung läuft separat, der
+individuelle Ausschlussprädikat ist jedoch geteilt, also kein unabhängiger
+Neuimplementierungsbeweis. Persönliche positive Freigaben bleiben zusätzlich
+erforderlich. Bestehende Importtests `test_restriction_grades_retained` und
+`test_import_uses_personal_approval_without_implicit_qualification_gate` sichern
+die Stufenübernahme und den optionalen Qualifikationsfilter.
+
+238 gezielte Tests bestanden; Ruff und Diffprüfung grün. Keine neue belegte
+Runtimeabweichung in diesen Fällen, kein Release, keine identische private
+API-Abnahme wiederholt. Die fehlende OSP5-Stufenanzeige bleibt eine belegte
+Darstellungslücke, keine Erlaubnis zum Lockern einer Sperre. Nächster fachlicher
+Prüfpunkt: Wochentags-/Feiertagszuordnung nativer RESTR bei über Mitternacht
+reichenden Diensten gegen Library und Generator, statt weitere Wiederholung
+bereits abgedeckter individueller Ausschlusscodes.

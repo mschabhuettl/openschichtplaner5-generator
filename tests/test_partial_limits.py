@@ -472,6 +472,72 @@ def test_nonassignment_diagnostics_use_actual_eligibility(excluded, code):
     assert result.validation.valid and not result.validation.complete
 
 
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("code", ["kind", "weekend", "holiday", "qualification", "restriction", "absence"])
+def test_remaining_individual_exclusions_and_explicit_recovery(partial, code):
+    from sp5generator.models import Restriction
+
+    # Saturday keeps the weekend predicate explicit, with full weekly context.
+    snapshot = case(1, [shift("s", 10, 8, 8)])
+    employee = snapshot.employees[0]
+    duty = snapshot.shifts[0]
+    if code == "kind":
+        employee.allowed_kinds = ["night"]
+    elif code == "weekend":
+        employee.allow_weekends = False
+    elif code == "holiday":
+        duty.holiday = True
+        employee.allow_holidays = False
+    elif code == "qualification":
+        snapshot.positions[0].qualifications_required = True
+        snapshot.positions[0].qualification_ids = ["explicit-test-qualification"]
+    elif code == "restriction":
+        snapshot.restrictions = [Restriction(employee_id="e0", shift_id="s", level=1)]
+    else:
+        employee.unavailable = [duty.segments[0].model_copy()]
+
+    counterplan = validate(snapshot, plan(snapshot))
+    assert not counterplan.valid
+    assert {d.code for d in counterplan.diagnostics} == {code}
+    result = solver.solve(snapshot, 3, partial=partial)
+    assert result.assignments == []
+    assert result.solver_status == ("OPTIMAL" if partial else "INFEASIBLE")
+    assert result.validation.valid is partial
+    if partial:
+        diagnostic = result.metrics["planning_diagnostics"]["employees"]["e0"]
+        assert diagnostic["reason"] == "individually_ineligible"
+        assert diagnostic["eligible_demands"] == 0
+        assert diagnostic["exclusions"] == {code: 1}
+
+    # Deliberate synthetic setup edits, never implicit production relaxation.
+    if code == "kind":
+        employee.allowed_kinds.append("day")
+    elif code == "weekend":
+        employee.allow_weekends = True
+    elif code == "holiday":
+        employee.allow_holidays = True
+    elif code == "qualification":
+        snapshot.positions[0].qualifications_required = False
+    elif code == "restriction":
+        snapshot.restrictions[0].approved = True
+    else:
+        # Half-open absence ending at duty start must not exclude the duty.
+        employee.unavailable = [Interval(start=duty.segments[0].start - timedelta(hours=1),
+                                         end=duty.segments[0].start)]
+    recovered = solver.solve(snapshot, 3, partial=partial)
+    assert recovered.solver_status == "OPTIMAL"
+    assert len(recovered.assignments) == 1
+    assert validate(snapshot, recovered.assignments).valid
+    assert recovered.validation.complete
+    assert recovered.metrics["planning_diagnostics"]["employees"]["e0"]["reason"] == "assigned"
+    if code == "restriction":
+        # An approval for an on-request restriction never overrides 'never'.
+        snapshot.restrictions[0].level = 2
+        forbidden = solver.solve(snapshot, 3, partial=partial)
+        assert forbidden.assignments == []
+        assert not validate(snapshot, plan(snapshot)).valid
+
+
 @pytest.mark.parametrize("maximum,reason", [(0, "no_positive_capacity_demand"), (1, "not_selected_with_candidates")])
 def test_optional_and_zero_capacity_demands_are_distinguished(maximum, reason):
     snapshot = case(1)
