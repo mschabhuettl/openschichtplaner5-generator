@@ -80,7 +80,8 @@ def test_quality_bound_must_not_leak_into_resumed_coverage(monkeypatch):
     assert checked_search(snapshot, primary) == (0, 960)
 
 
-@pytest.mark.parametrize('rule', ['weekly_cap', 'daily_cap', 'rest', 'approval'])
+@pytest.mark.parametrize('rule', ['weekly_cap', 'daily_cap', 'rest', 'approval',
+                                       'overlap', 'daily_elapsed', 'weekly_elapsed'])
 def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule):
     snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
     profile = snapshot.profiles[0]
@@ -93,6 +94,19 @@ def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule):
     elif rule == 'rest':
         snapshot.shifts[1] = shift('b', 6, 2, 8)
         profile.min_rest_minutes = 660  # Ten hours between these duties.
+    elif rule == 'overlap':
+        snapshot.shifts[1] = shift('b', 5, 12, 8)
+        profile.min_rest_minutes = 0
+    elif rule in ('daily_elapsed', 'weekly_elapsed'):
+        for duty in snapshot.shifts:
+            duty.paid_minutes = 60
+        if rule == 'daily_elapsed':
+            snapshot.shifts[1] = shift('b', 5, 17, 8)
+            snapshot.shifts[1].paid_minutes = 60
+            profile.min_rest_minutes = 0
+            profile.max_daily_minutes = 480
+        else:
+            profile.max_weekly_minutes = 480
     else:
         snapshot.employees[0].approvals[0].valid_until = snapshot.period_start
 
@@ -100,8 +114,9 @@ def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule):
     quality = primary.clone()
     quality.add(sum(variables(quality, 'vacancy:')) == 1)
     quality.minimize(sum(variables(quality, 'hours:')))
-    assert checked_search(snapshot, primary) == (1, 480)
-    assert checked_search(snapshot, quality) == (1, 480)
+    paid = 60 if rule in ('daily_elapsed', 'weekly_elapsed') else 480
+    assert checked_search(snapshot, primary) == (1, paid)
+    assert checked_search(snapshot, quality) == (1, paid)
 
     # Full coverage must remain impossible in both independent models.
     for model in (primary, quality):
@@ -110,3 +125,15 @@ def test_quality_clone_preserves_configured_hard_constraints(monkeypatch, rule):
         search.parameters.num_search_workers = 1
         search.parameters.max_time_in_seconds = 3
         assert search.solve(model) == cp_model.INFEASIBLE
+
+
+def test_quality_clone_does_not_invent_a_24_hour_duty_ban(monkeypatch):
+    snapshot = case(1, [shift('a', 5, 8, 24)])
+    snapshot.shifts[0].paid_minutes = 480
+    snapshot, primary = coverage_model(monkeypatch, snapshot)
+    quality = primary.clone()
+    quality.add(sum(variables(quality, 'vacancy:')) == 0)
+    quality.minimize(sum(variables(quality, 'hours:')))
+    # No configured daily/weekly maximum: duration alone is not a violation.
+    assert checked_search(snapshot, primary) == (0, 480)
+    assert checked_search(snapshot, quality) == (0, 480)

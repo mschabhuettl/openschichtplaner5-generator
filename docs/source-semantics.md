@@ -5083,3 +5083,14 @@ synthetic explicit configurations, not inferred limits for the user's project.
 each chosen plan. This evidence covers cloning these constraints, not the future
 scheduler's deadline handling or its validator-driven separation loop; those
 still require runtime integration and timeout tests before enabling anytime search.
+
+Four further clone contracts isolate elapsed-time semantics: overlapping duties
+remain incompatible even with zero configured inter-duty rest; two duties paying
+only one hour each still cannot exceed an explicit eight-hour daily or weekly
+elapsed-time cap. Both the coverage model and its fixed-coverage quality clone
+reject forced full coverage and independently validate their one-duty solution.
+Conversely, a single 24-hour duty paying eight hours remains feasible in both
+models when no daily/weekly maximum forbids it. This is a synthetic configuration,
+not evidence that any particular customer duty is permitted. These tests prevent
+an hours-quality objective from being mistaken for an elapsed-time limit and
+avoid inventing a blanket 24-hour ban. No search-runtime behavior changed.
