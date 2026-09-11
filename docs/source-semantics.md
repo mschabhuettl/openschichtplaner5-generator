@@ -1101,3 +1101,28 @@ abweichende reale Zeiten bei unverändert bezahlten Stunden und echte
 Zusatzdienste ohne Dienst-ID in beiden Sichten/Modi ab. Sonderblocker
 bleiben erhalten; Zusatzdienste löschen den Normaldienst nicht.
 Dies beweist nicht die Ursache des weiterhin fehlenden Original-600s-Jobs.
+
+### Fixierter Ersatzdienst bis Solver und unabhängige Validierung
+
+`test_replacement_fixed_import_enforces_hard_limits_through_solver` prüft acht
+synthetische HTTP-Import-bis-Solver-Fälle: Ist/Soll × Voll-/Teilplanung ×
+Wochenmaximum 239/240 Minuten. Vor der ausdrücklich synthetischen Einrichtung
+bleiben alle Fälle `MODEL_INVALID`: Referenzen liefern weder persönliche
+Freigaben noch eine Profilbestätigung. Auch die Dienstklassifikation wird in
+der Testeinrichtung ausdrücklich als Tagdienst gesetzt; Quellzeiten allein
+sind keine bestätigte Klassifikation.
+
+Bei 240 Minuten erhält der Ist-Teilplan genau den korrigierten, fixierten
+Vierstunden-Ersatzdienst und meldet eine offene Bedarfsposition. Er ist unabhängig
+validiert, aber nicht vollständig. Bei 239 Minuten bleibt auch die Teilplanung
+`INFEASIBLE`: Die Fixierung darf weder entfallen noch die harte Wochenobergrenze
+überschreiten. Vollplanung bleibt wegen der zwei überlappenden Bedarfe unmöglich.
+Die Soll-Kontrolle erhält beide fixierten Quellreferenzen und bleibt wegen der
+Konflikte unplanbar; sie wird nicht durch Löschen einer Soll-Zielvorgabe passend
+gemacht. Der unabhängige Validator bestätigt die jeweiligen Wochenverstöße.
+Die bereits importierten 11h/36h-Ruhedefaults bleiben unverändert aktiv.
+
+Dies ist eine Absicherung der vorhandenen Korrektur, kein neuer Runtime-Fix und
+kein Nachweis für den fehlenden Original-600s-Job. Insbesondere ist das hier
+gewählte Vierstunden-Wochenmaximum ausschließlich ein synthetischer Grenzwert,
+keine aus Sollstunden abgeleitete oder für den Nutzer eingeführte Regel.

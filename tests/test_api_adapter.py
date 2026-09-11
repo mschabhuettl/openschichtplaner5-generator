@@ -442,11 +442,7 @@ def test_boundary_replacement_keeps_blockers_additions_and_selected_references(
                for row in snapshot.metadata["context_schedule"])
 
 
-@pytest.mark.parametrize("plan", ["ist", "soll"])
-@pytest.mark.parametrize("special_first", [False, True])
-@pytest.mark.parametrize("mode", ["reference", "fixed"])
-def test_in_period_replacement_reference_respects_selected_plan(transport, plan, special_first, mode):
-    """Ist hours replace normal work; preserve separate Soll/source special context."""
+def _import_in_period_replacement(transport, plan, special_first, mode):
     responses, calls = transport
     day = date(2026, 1, 6)
     normal = {"employee_id": 101, "date": day.isoformat(), "kind": "shift",
@@ -464,6 +460,15 @@ def test_in_period_replacement_reference_respects_selected_plan(transport, plan,
         "startend": "08:00-10:00;11:00-13:00", "duration": 4,
     }]
     snapshot = import_api(day, day, "1", "UTC", reference_plan=plan, existing_plan_mode=mode)
+    return snapshot, calls
+
+
+@pytest.mark.parametrize("plan", ["ist", "soll"])
+@pytest.mark.parametrize("special_first", [False, True])
+@pytest.mark.parametrize("mode", ["reference", "fixed"])
+def test_in_period_replacement_reference_respects_selected_plan(transport, plan, special_first, mode):
+    """Ist hours replace normal work; preserve separate Soll/source special context."""
+    snapshot, calls = _import_in_period_replacement(transport, plan, special_first, mode)
     assert all(c.get_method() == "GET" for c in calls)
     assert not snapshot.employees[0].approvals
     assert not snapshot.profiles[0].confirmed
@@ -528,3 +533,52 @@ def test_library_special_replacement_is_day_wide_and_not_type_selected(special_t
                          "WORKPLACID": 303, "DURATION": 3, "TYPE": special_type}],
     )
     assert hours == (3 if special_shift_id else 11)
+
+
+@pytest.mark.parametrize("plan", ["ist", "soll"])
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("weekly_limit", [239, 240])
+def test_replacement_fixed_import_enforces_hard_limits_through_solver(transport, plan, partial, weekly_limit):
+    """Explicit synthetic setup only: imported history never grants permission."""
+    from sp5generator.models import Approval
+    from sp5generator.solver import solve
+    from sp5generator.validator import validate
+
+    snapshot, _ = _import_in_period_replacement(transport, plan, False, "fixed")
+    assert not snapshot.employees[0].approvals
+    assert not snapshot.profiles[0].confirmed
+    assert solve(snapshot, 3, partial=partial).solver_status == "MODEL_INVALID"
+    # Fixture declares complete context, zero credits/balances and exact
+    # workplace permissions. No real import is confirmed by this test.
+    snapshot.context_complete = True
+    snapshot.unresolved = []
+    profile = snapshot.profiles[0]
+    profile.confirmed = True
+    profile.source = "synthetic-test"
+    profile.max_weekly_minutes = weekly_limit
+    assert profile.min_rest_minutes == 660
+    assert profile.weekly_rest_minutes == 2160
+    # Source times alone do not classify duties; the synthetic setup does.
+    for duty in snapshot.shifts:
+        duty.kind = "day"
+    employee = snapshot.employees[0]
+    employee.approvals = [Approval(
+        function_id=p.function_id, workplace_id=p.workplace_id,
+        valid_from=snapshot.context_start, valid_until=snapshot.context_end,
+    ) for p in snapshot.positions]
+    fixed = [(a.employee_id, a.demand_id) for a in snapshot.assignments]
+    checked = validate(snapshot, snapshot.assignments)
+    codes = {d.code for d in checked.diagnostics}
+    assert ("weekly_limit" in codes) is (weekly_limit == 239 or plan == "soll")
+    result = solve(snapshot, 3, partial=partial)
+    if plan == "ist" and partial and weekly_limit == 240:
+        assert result.solver_status == "OPTIMAL", (checked.diagnostics, result.validation.diagnostics)
+        assert [(a.employee_id, a.demand_id) for a in result.assignments] == fixed
+        assert all(a.fixed for a in result.assignments)
+        assert sum(result.vacancies.values()) == 1
+        assert result.validation.valid and not result.validation.complete
+        assert validate(snapshot, result.assignments).valid
+        assert result.metrics["employees"][employee.id]["paid_minutes"] == 240
+    else:
+        # Partial relaxes demand coverage, never fixed work or a hard cap.
+        assert result.solver_status == "INFEASIBLE"
