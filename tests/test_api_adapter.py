@@ -197,6 +197,45 @@ def test_changed_source_and_incomplete_shape_rejected(transport, monkeypatch):
         import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
 
 
+def test_repeated_responses_do_not_prove_atomic_source_revision(monkeypatch):
+    """Characterize the existing guard, not an endorsement of mixed snapshots.
+
+    The source alternates between two internally consistent revisions. Each
+    endpoint repeats, but the cached pair never existed together at the source.
+    No amount of hashing those responses establishes a source transaction.
+    """
+    client = object.__new__(APIClient)
+    client.cache = {}
+    revisions = [
+        {"/api/shifts": [{"ID": 1}], "/api/schedule": [{"shift_id": 1}]},
+        {"/api/shifts": [{"ID": 2}], "/api/schedule": [{"shift_id": 2}]},
+    ]
+    reads = []
+
+    def read(path):
+        revision = revisions[len(reads) % 2]
+        reads.append(path)
+        return revision[path]
+
+    monkeypatch.setattr(client, "_read", read)
+    client.get("/api/shifts")
+    client.get("/api/schedule")
+    assert all(client.cache != revision for revision in revisions)
+    assert client.cache["/api/shifts"][0]["ID"] != client.cache["/api/schedule"][0]["shift_id"]
+    fingerprint = client.verify()
+    assert len(fingerprint) == 64
+    assert client.verify() == fingerprint
+    assert reads == ["/api/shifts", "/api/schedule"] * 3
+
+
+def test_api_import_retains_nontransactional_source_blocker(transport):
+    snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert snapshot.metadata["source_consistency"] == (
+        "repeated-response-comparison; no API transaction"
+    )
+    assert any("Quelltransaktion" in reason for reason in snapshot.unresolved)
+
+
 def test_configuration_is_only_server_owned(transport, monkeypatch):
     monkeypatch.setenv("SP5_API_URL", "https://user:password@source.test")
     with pytest.raises(APIImportError, match="ohne Zugangsdaten"):

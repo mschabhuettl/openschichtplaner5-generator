@@ -3159,3 +3159,54 @@ Prüfung: Audit mit beiden oben genannten Quelldateien: sieben Fälle bestanden;
 `tests/test_sp5_adapter.py`, `tools/test_rest_source_window_contract.py` und
 `tests/test_partial_limits.py`: 182 bestanden. Ruff grün. Keine Runtimeänderung,
 kein Release und deshalb keine redundante Abnahme desselben Dockerstands.
+
+### Wiederholte API-Antworten sind kein atomarer Quellenstand
+
+Analyse 2026-09-11, gleiche oben dokumentierte Library/API/OSP5-Quellstände.
+Vorhandenen Mechanismus geprüft, keine zweite Snapshot-Implementierung gebaut:
+
+- Library `database.py:SP5Database._read` sichert den DBF-Cache je Tabelle mit
+  `_CACHE_LOCK`, liest aber nicht alle Tabellen in einer gemeinsamen Transaktion.
+  Der Schnellpfad verwendet Änderungszeit und Größe; der Inhalts-Hash wird erst
+  bei deren Änderung berechnet. Das ist kein globaler Quellenrevisionsvertrag.
+- API `dependencies.py:get_db` wählt das Backend; `routers/master_data.py:get_shifts`
+  und `routers/schedule.py:get_schedule` liefern getrennte Abfragen. Dieser Befund
+  betrifft den untersuchten DBF-Pfad, nicht eine behauptete PostgreSQL-Isolation.
+- OSP5 `frontend/src/pages/Schedule.tsx:loadSchedule` lädt Plan, Feiertage und
+  Konflikte mit `Promise.all`; SSE veranlasst erneutes Laden. Weder gemeinsame
+  Anzeige noch paralleles Laden beweisen einen transaktionalen Quellenstand.
+- Generator `api_adapter.py:APIClient.get` cached pro URL; `verify` liest jede
+  URL erneut und vergleicht Antworten. Der SHA-256 identifiziert die gesammelten
+  Antworten, nicht eine serverseitige Transaktion. `import_api` kennzeichnet das
+  bereits ehrlich in `source_consistency` und behält einen offenen Quellblocker.
+
+Neuer synthetischer Gegenbeweis
+`test_repeated_responses_do_not_prove_atomic_source_revision`: Zwei jeweils
+intern konsistente Quellenstände wechseln zwischen den Endpunktabfragen. Die
+gesammelte Dienst-/Plan-Kombination existierte in keinem dieser Stände; dennoch
+bestehen zwei aufeinanderfolgende `verify`-Durchläufe mit gleichem Fingerprint.
+Das charakterisiert eine Vertragsgrenze, keinen erfolgreichen Import dieses
+inkonsistenten Beispiels. Die übrigen Importprüfungen werden damit nicht umgangen.
+`test_api_import_retains_nontransactional_source_blocker` sichert zusätzlich die
+bestehende Kennzeichnung und den offenen Klärungsbedarf im vollständigen Import.
+Der vorhandene Änderungstest prüft weiterhin die Ablehnung abweichender Antworten.
+
+Priorisierte Konsequenz: Für belastbare Reproduktion den tatsächlich verwendeten
+Generator-Projekt-/Jobstand und das Ergebnis privat erhalten. Für einen künftig
+atomaren Import ist ein quellseitig konsistenter Export oder ein über sämtliche
+Antworten gültiger Snapshot-/Revisionsvertrag nötig; weitere Vergleichsrunden
+allein lösen das Problem nicht. Keine solche Garantie aus Zeitstempeln, SSE oder
+Hash ableiten. Kein Beleg, dass diese Lücke den Originalfall 0.9.29 verursacht hat;
+fehlende Freigaben, Profilbestätigung und harte Grenzwerte bleiben separat zu prüfen.
+
+Unmittelbarer Folgecheck: `master_data.py:get_shifts` verwendet zusätzlich
+`sp5api/cache.py` mit 60 Sekunden Default-TTL. API-Schreibpfade invalidieren
+`shifts:`; eine externe Änderung ist dadurch allein nicht erfasst. Der isolierte
+Audit `tools/audit_upstream_source_cache.py` führt das vorhandene Cache-Modul mit
+synthetischen Dienstfenstern und kontrollierter Uhr aus: zweimal gleiche alte
+Antwort vor Ablauf, Cache-Miss nach Ablauf, explizite Invalidierung funktioniert.
+Das ist ein Frische-Gegenbeispiel für den Cache, kein Nachweis eines tatsächlich
+veralteten privaten Imports. Warten auf TTL würde weiterhin keine Atomarität
+herstellen. Verifikation: 201 API-/Teilplan-/Kalenderlimit-Tests, drei Cachefälle,
+Ruff und `git diff --check` bestanden. Nur Analyse-/Teständerungen, kein Release;
+unveränderte private Dockerabnahme nicht wiederholt.
