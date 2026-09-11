@@ -4280,3 +4280,37 @@ descriptor types/values and valid empty/deleted tables before extending activati
 Do not conflate a required descriptor with a valid date or weekday value. No
 runtime or release changed, so the unchanged private API baseline was not rerun.
 The original 0.9.29 project/job/result remains necessary for causal reproduction.
+
+### Temporal values: descriptor presence is not calendar validity (2026-09-11)
+
+`test_temporal_presence_does_not_validate_value` adds 24 synthetic cases through
+DBF -> actual Library -> isolated API GET, using the optional required temporal
+descriptor contract. Populated, empty and deleted-only files are exercised.
+
+* SHDEM: numeric weekday 7 survives (holiday slot); 8 also survives despite being
+  outside Generator's accepted 0..7 range. A DATE-typed WEEKDAY survives as an ISO
+  string. A blank numeric WEEKDAY is already rejected as `numeric_value` by strict
+  `_validate_dbf_numbers`, which checks all numeric columns, not only MIN/MAX.
+* SPDEM: valid D-typed 20260901 becomes 2026-09-01. Blank and impossible dates
+  become null via `_parse_date`; N-typed DATE survives as an integer. Required
+  descriptor presence rejects none of these three malformed date cases.
+  `SP5Database.get_special_staffing(date=...)` hides them with HTTP 200 empty,
+  whereas the team-only request exposes the unusable value.
+* Valid empty and deleted-only sources remain empty HTTP 200; deleted values do
+  not become active staffing. Structural type checking and active-row calendar
+  value checking must therefore be distinguished when extending the candidate.
+
+Downstream paths remain as documented above: OSP5 forwards a date filter;
+Generator fetches team-only and validates dates/weekdays. Prioritize explicit
+source field types and active-row temporal ranges before enabling a broader
+strict contract. Do not synthesize replacement dates or staffing. The candidate
+activation and all production runtimes remain unchanged.
+
+Combined source-contract, partial-limit and calendar-limit suites: **356 passed**,
+two known dependency warnings; Ruff passed. The first characterization run had
+one incorrect expectation (blank numeric WEEKDAY was assumed to pass); inspection
+of `_validate_dbf_numbers` and the observed categorized HTTP 500 corrected it.
+These are synthetic source-integrity findings, not proof of corruption in real
+SP5 data or a reproduction of the reported 0.9.29 plan. Exact original input,
+job and result are still needed for that causal claim. No repeated private API
+run was warranted for this test/documentation-only change.

@@ -450,3 +450,61 @@ def test_explicit_numeric_staffing_contract(source, client, monkeypatch, table, 
             assert rows[0]['min'] == 0
             assert rows[0]['max'] == (-1 if state == 'unlimited' else 0)
     assert sanitized == []
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('state', ['populated', 'empty', 'deleted'])
+@pytest.mark.parametrize('kind', ['valid', 'blank', 'invalid', 'wrong_type'])
+def test_temporal_presence_does_not_validate_value(
+        source, client, monkeypatch, table, url, method, state, kind):
+    """Required descriptors alone cannot establish usable calendar semantics."""
+    import struct
+
+    db, reader, path = source
+    temporal = 'DATE' if table == 'SPDEM' else 'WEEKDAY'
+    cases = ({'valid': ('D', b'20260901', '2026-09-01'),
+              'blank': ('D', b'        ', None),
+              'invalid': ('D', b'20260230', None),
+              'wrong_type': ('N', b'20260901', 20260901)} if table == 'SPDEM' else
+             {'valid': ('N', b'0007', 7),  # Holiday slot is valid, not day 8.
+              'blank': ('N', b'    ', 0),
+              'invalid': ('N', b'0008', 8),
+              'wrong_type': ('D', b'20260901', '2026-09-01')})
+    ftype, raw, expected = cases[kind]
+    fields = ('MIN', 'MAX', 'GROUPID', 'SHIFTID', 'WORKPLACID', temporal)
+    payload = bytearray(staffing_columns(fields, []))
+    payload[32 + 5 * 32 + 11] = ord(ftype)
+    payload[32 + 5 * 32 + 16] = len(raw)
+    records = [] if state == 'empty' else [
+        (b'*' if state == 'deleted' else b' ') + b'0001' * 5 + raw]
+    struct.pack_into('<I', payload, 4, len(records))
+    struct.pack_into('<H', payload, 10, 1 + 20 + len(raw))
+    (path / f'5{table}.DBF').write_bytes(bytes(payload) + b''.join(records))
+    original_read = db._read
+
+    def read(name):
+        if name == table:
+            return reader.read_dbf(db._table(name), strict=True,
+                                   numeric_fields=('MIN', 'MAX'), required_fields=fields)
+        return original_read(name)
+
+    monkeypatch.setattr(db, '_read', read)
+    http, sanitized = client
+    response = http.get(url + '?group_id=1')
+    if table == 'SHDEM' and kind == 'blank' and state == 'populated':
+        assert response.status_code == 500
+        assert_source_error(response, 'numeric_value')
+        assert sanitized == []
+        return
+    assert response.status_code == 200
+    rows = response.json()['shift_requirements'] if table == 'SHDEM' else response.json()
+    if state != 'populated':
+        assert rows == []
+    else:
+        assert len(rows) == 1
+        assert rows[0][temporal.lower()] == expected
+    if table == 'SPDEM':
+        filtered = http.get(url + '?group_id=1&date=2026-09-01')
+        assert filtered.status_code == 200
+        assert filtered.json() == (rows if kind == 'valid' else [])
+    assert sanitized == []
