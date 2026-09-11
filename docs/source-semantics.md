@@ -5215,3 +5215,65 @@ month limits, complete preserved work, profile extent, absent approvals and
 unconfirmed context. Deliberately shortening the corrected envelope still
 produces the validator's `context` error. These tests address one fresh-import
 MODEL_INVALID cause, not the unverified original 0.9.29 input/result pair.
+
+### Explicit special-duty boundary intervals (candidate, 2026-09-11)
+
+A separate nominal-only normalization defect is now reproduced and corrected for
+**out-of-period personal work**. Source data flows from `5SPSHI.STARTEND` and
+`DURATION` through Library `SP5Database.get_spshi_entries_for_day` (database.py),
+API `sp5api/routers/schedule.py::get_einsatzplan` (`GET /api/einsatzplan`), and
+Generator `sp5_adapter._scope_schedule`'s unique person/service/workplace/type
+join into `import_snapshot`. OSP5 `SonderdiensteModal` in
+`frontend/src/pages/Einsatzplan.tsx` maintains `startend` and `duration` as
+separate inputs and submits both. They are not required to equal the nominal
+`SHIFT.STARTEND{day_index}` / `DURATION{day_index}` fields.
+
+Previously the importer accepted a TYPE-0 special row only when both its actual
+windows and paid minutes exactly matched the nominal service. This rejected
+known overnight/split work, known times with different pay, and valid actual
+work whose nominal slot was empty. The normal person-day replacement had already
+been removed; a generic blocking unresolved notice remained. This was **not**
+silent successful planning with missing work, but a concrete fresh-import
+MODEL_INVALID cause. Four synthetic cases fail before the correction because
+no `BoundaryWork` is produced; their four in-period controls correctly remain
+blocked.
+
+The boundary branch now uses the existing `BoundaryWork` contract with explicit
+SPSHI intervals for known-service TYPE-0 rows with valid nonnegative paid details.
+It never substitutes nominal windows. `provenance` separately retains
+`time_source=sp5:SPSHI.STARTEND`, `paid_source=sp5:SPSHI.DURATION`, paid minutes,
+unique detail ID where available and replaced normal rows. Paid values do not
+become worked duration, period target credit or a staffing requirement. Distinct
+explicit windows at the same person/date/service/workplace get distinct stable
+boundary identities; duplicate identical source rows still count once.
+
+No source row, employee approval, profile confirmation, day/night confirmation,
+context completeness flag or in-period special-work blocker is invented or
+cleared. Unsupported types/services and missing/invalid details remain blocking.
+Within the planning period only the existing exact nominal mapping is supported:
+`BoundaryWork` cannot be used to hide such work because `domain.input_diagnostics`
+rejects it with `boundary_period`. The established solver/validator consume
+boundary intervals for elapsed daily/weekly limits, overlaps and rest, not paid
+period targets (see `tests/test_boundary_work.py`, particularly
+`test_boundary_context_preserves_hard_rules_without_staffing` and
+`test_elapsed_limits_target_and_roundtrip`).
+
+New adapter regressions cover actual-versus-nominal intervals, split work,
+paid-only differences, empty nominal slots, missing/invalid/negative/nonfinite
+details, distinct same-service duties and Vienna DST (9/11 real hours with
+2 paid hours retained separately). Existing Ist/Soll API replacement tests now
+verify actual six-hour boundary work instead of the old blanket rejection,
+while unsupported TYPE/service and in-period cases remain strict. This correction
+addresses a supported subset of the fresh-import blocker, not the unestablished
+original 0.9.29 input/result pair, nor a claim that every employee must be assigned
+or 24-hour duties violate an unspecified maximum.
+
+`test_imported_special_boundary_enforces_actual_time_in_solver_and_validator`
+additionally connects the actual importer output to an explicitly configured
+synthetic project: twelve elapsed context hours versus four paid source hours,
+followed by four proposed work hours. Both solver modes reject the proposal at
+959 weekly minutes, 719 daily minutes or a 241-minute rest requirement (the actual
+gap is 240). Empty new work is valid; deleting the imported context in a test-only
+counterfactual incorrectly admits the duty. This proves the safety effect without
+conflating it with missing import confirmations. A separate 24-hour actual-window
+case is preserved rather than categorically prohibited.

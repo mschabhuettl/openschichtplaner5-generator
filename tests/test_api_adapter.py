@@ -589,14 +589,20 @@ def test_boundary_replacement_keeps_blockers_additions_and_selected_references(
     responses["/api/einsatzplan"] = [{
         "id": 901, "employee_id": 101, "date": "2026-01-05",
         "shift_id": service, "workplace_id": 301, "type": special_type,
-        # Non-nominal replacement cannot be silently accepted.
+        # Explicit TYPE-0 work is context, not a staffing/approval inference.
         "startend": "08:00-14:00", "duration": 6,
     }]
     snapshot = import_api(
         date(2026, 1, 6), date(2026, 1, 6), "1", "UTC", reference_plan=plan
     )
-    assert any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved)
-    assert len(snapshot.boundary_work) == (1 if service == 0 else 0)
+    supported = special_type == 0 and service == 201
+    assert any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved) == (not supported)
+    assert len(snapshot.boundary_work) == (1 if service == 0 or supported else 0)
+    if supported:
+        work, = snapshot.boundary_work
+        assert work.kind == "unknown"
+        assert sum((v.end - v.start).total_seconds() for v in work.segments) == 6 * 3600
+        assert snapshot.metadata["provenance"][work.id]["time_source"] == "sp5:SPSHI.STARTEND"
     assert len(snapshot.metadata["reference_schedule"]) == 1
     assert snapshot.metadata["reference_schedule"][0]["date"] == "2026-01-06"
     assert snapshot.employees[0].approvals == []

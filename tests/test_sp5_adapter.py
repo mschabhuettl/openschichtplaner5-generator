@@ -980,3 +980,159 @@ def test_final_context_day_overnight_preserves_extent_and_source_window(period_e
     if spills:
         shortened = snapshot.model_copy(update={"context_end": last_source_day})
         assert any(d.code == "context" for d in input_diagnostics(shortened))
+
+
+@pytest.mark.parametrize("outside", [False, True])
+@pytest.mark.parametrize("actual,paid,empty_nominal,elapsed", [
+    ("20:00-08:00", 4, False, 720),
+    ("08:00-10:00;11:00-13:00", 2, False, 240),
+    ("06:00-08:00;18:00-20:00", 4, False, 240),
+    ("08:00-13:00", 4, True, 300),
+    ("08:00-08:00", 4, False, 1440),
+])
+def test_explicit_special_boundary_uses_actual_work_not_nominal(outside, actual, paid, empty_nominal, elapsed):
+    """Known source times must not disappear or be replaced by the catalog."""
+    from sp5generator.domain import input_diagnostics
+    from sp5generator.timeutils import segments
+
+    day = "2026-01-05" if outside else "2026-01-06"
+
+    class Source(SyntheticDatabase):
+        def get_shifts(self, **kw):
+            rows = super().get_shifts(**kw)
+            if empty_nominal:
+                rows[0].update({f"STARTEND{i}": "" for i in range(8)})
+            return rows
+
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (2026, 1):
+                return []
+            return [{"employee_id": 101, "date": day, "kind": kind,
+                     "shift_id": 201, "workplace_id": 301, "spshi_type": 0}
+                    for kind in ("shift", "special_shift")]
+
+        def get_spshi_entries_for_day(self, date_str, **kw):
+            return [{"id": 901, "employee_id": 101, "date": date_str,
+                     "shift_id": 201, "workplace_id": 301, "type": 0,
+                     "startend": actual, "duration": paid}]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.assignments  # Never invent a demand for special work.
+    assert not snapshot.employees[0].approvals
+    assert not snapshot.profiles[0].confirmed
+    assert not snapshot.context_complete
+    assert len(snapshot.metadata["context_schedule"]) == 2  # Original rows retained.
+    if outside:
+        work, = snapshot.boundary_work
+        assert work.kind == "unknown"  # Actual time is not day/night confirmation.
+        source = snapshot.metadata["provenance"][work.id]
+        assert source["time_source"] == "sp5:SPSHI.STARTEND"
+        assert source["paid_minutes"] == paid * 60
+        assert len(source["replaced_normal_rows"]) == 1
+        assert sum(b - a for a, b in segments(work)) == elapsed
+        assert not any(text.startswith("Sonderdienst") for text in snapshot.unresolved)
+        assert "boundary_kind" in {d.code for d in input_diagnostics(snapshot)}
+    else:
+        assert not snapshot.boundary_work  # Not a bypass for in-period paid work.
+        assert any(text.startswith("Sonderdienst") for text in snapshot.unresolved)
+
+
+@pytest.mark.parametrize("actual,paid", [
+    ("", 4), ("invalid", 4), ("20:00-08:00", None),
+    ("20:00-08:00", -1), ("20:00-08:00", "NaN"),
+])
+def test_special_boundary_missing_or_invalid_details_never_reuses_nominal(actual, paid):
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (2026, 1):
+                return []
+            return [{"employee_id": 101, "date": "2026-01-05", "kind": kind,
+                     "shift_id": 201, "workplace_id": 301, "spshi_type": 0,
+                     "startend": actual, "duration": paid}
+                    for kind in ("shift", "special_shift")]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.boundary_work
+    assert not snapshot.assignments
+    assert any(text.startswith("Sonderdienst") for text in snapshot.unresolved)
+
+
+@pytest.mark.parametrize("day,period,expected", [
+    ("2026-03-28", date(2026, 3, 29), 9 * 60),
+    ("2026-10-24", date(2026, 10, 25), 11 * 60),
+])
+def test_special_boundary_preserves_real_dst_duration_independently_of_paid(day, period, expected):
+    from sp5generator.timeutils import day_minutes
+
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            if month != period.month:
+                return []
+            return [{"employee_id": 101, "date": day, "kind": "special_shift",
+                     "shift_id": 201, "workplace_id": 301, "spshi_type": 0,
+                     "startend": "22:00-08:00", "duration": 2}]
+
+    snapshot = import_snapshot(Source(), period, period, "1", "Europe/Vienna")
+    work, = snapshot.boundary_work
+    assert sum(day_minutes(work, snapshot.timezone).values()) == expected
+    assert snapshot.metadata["provenance"][work.id]["paid_minutes"] == 120
+    assert work.segments[0].end.hour == 8
+    assert work.kind == "unknown"
+
+
+def test_distinct_special_boundary_windows_do_not_collapse_by_service_and_workplace():
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (2026, 1):
+                return []
+            return [{"employee_id": 101, "date": "2026-01-05", "kind": "special_shift",
+                     "shift_id": 201, "workplace_id": 301, "spshi_type": 0,
+                     "startend": value, "duration": 2}
+                    for value in ("06:00-08:00", "18:00-20:00", "06:00-08:00")]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.boundary_work) == 2  # Identical source row counted once.
+    assert len({v.id for v in snapshot.boundary_work}) == 2
+    assert {v.segments[0].start.hour for v in snapshot.boundary_work} == {6, 18}
+    assert not snapshot.assignments
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("rule", ["daily_limit", "weekly_limit", "rest"])
+def test_imported_special_boundary_enforces_actual_time_in_solver_and_validator(rule, partial):
+    from sp5generator.models import Assignment
+    from sp5generator.solver import solve
+    from sp5generator.validator import validate
+    from test_core_rules import case, shift
+
+    class Source(SyntheticDatabase):
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (2026, 1):
+                return []
+            return [{"employee_id": 101, "date": "2026-01-05", "kind": "special_shift",
+                     "shift_id": 201, "workplace_id": 301, "spshi_type": 0,
+                     "startend": "20:00-08:00", "duration": 4}]
+
+    imported = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    work, = imported.boundary_work  # 12 actual hours, only 4 paid source hours.
+    # Separate explicitly configured synthetic project, not clearing import
+    # blockers or claiming permission to confirm real source classifications.
+    snapshot = case(1, [shift("new", 6, 12, 4)])
+    snapshot.period_start = snapshot.period_end = date(2026, 1, 6)
+    snapshot.boundary_work = [work.model_copy(update={"employee_id": "e0", "kind": "night"})]
+    profile = snapshot.profiles[0]
+    profile.min_rest_minutes = 241 if rule == "rest" else 0
+    if rule == "daily_limit":
+        profile.max_daily_minutes = 719  # 8 context + 4 new actual hours.
+    elif rule == "weekly_limit":
+        profile.max_weekly_minutes = 959  # 12 context + 4 new actual hours.
+    proposed = [Assignment(employee_id="e0", demand_id="new")]
+    assert validate(snapshot, []).valid
+    assert rule in {d.code for d in validate(snapshot, proposed).diagnostics}
+    result = solve(snapshot, 5, partial=partial)
+    assert result.solver_status == ("OPTIMAL" if partial else "INFEASIBLE")
+    assert not result.assignments
+    assert result.validation.valid is partial
+    # Counterfactual proves that dropping the actual work loses this protection.
+    without_context = snapshot.model_copy(update={"boundary_work": []})
+    assert validate(without_context, proposed).complete

@@ -660,6 +660,8 @@ def import_snapshot(
             seen_schedule.add(schedule_key)
             metadata["context_schedule"].append(safe)
             kind = row.get("kind")
+            special_windows = None
+            special_paid = None
             if kind == "shift" and (row.get("employee_id"), d) in replaced_rows:
                 # Preserve raw context above; unknown special times still block.
                 continue
@@ -667,9 +669,17 @@ def import_snapshot(
                 idx = calc.day_index(d, holidays)
                 try:
                     actual = _parse_native_windows(row.get("startend"))
-                    nominal = _parse_native_windows(native_shifts[row["shift_id"]].get(f"STARTEND{idx}"))
-                    if actual and actual == nominal and row.get("duration") is not None and _minutes(row["duration"]) == _minutes(native_shifts[row["shift_id"]].get(f"DURATION{idx}")):
-                        kind = "shift"
+                    actual_paid = _minutes(row["duration"]) if row.get("duration") is not None else None
+                    if actual and actual_paid is not None and actual_paid >= 0:
+                        if not period_start <= d <= period_end:
+                            # Personal context has no staffing/paid-period target.
+                            # Preserve explicit SPSHI work, not nominal SHIFT time.
+                            special_windows, special_paid = actual, actual_paid
+                            kind = "shift"
+                        else:
+                            nominal = _parse_native_windows(native_shifts[row["shift_id"]].get(f"STARTEND{idx}"))
+                            if actual == nominal and actual_paid == _minutes(native_shifts[row["shift_id"]].get(f"DURATION{idx}")):
+                                kind = "shift"
                 except ValueError:
                     pass
             if kind == "absence":
@@ -751,7 +761,7 @@ def import_snapshot(
                 native = native_shifts[row["shift_id"]]
                 idx = calc.day_index(d, holidays)
                 try:
-                    windows = _parse_native_windows(
+                    windows = special_windows if special_windows is not None else _parse_native_windows(
                         str(native.get(f"STARTEND{idx}") or "")
                     )
                     if not windows:
@@ -767,6 +777,11 @@ def import_snapshot(
                     workplace = "unresolved" if workplace in (None, "") else str(workplace)
                     sid = (f"sp5:context:{row['employee_id']}:{d}:{row['shift_id']}"
                            f":workplace:{workplace}:group:{row.get('group_id') or 'unresolved'}")
+                    if special_windows is not None:
+                        # Multiple explicit special duties must not collapse by
+                        # service/workplace alone. Identical source rows were
+                        # already deduplicated above.
+                        sid += ":special:" + sha256(schedule_key.encode()).hexdigest()[:16]
                     if sid in boundary_work:
                         # Nominal duty and an identical special replacement
                         # describe the same personal work, not two duties.
@@ -779,6 +794,13 @@ def import_snapshot(
                         "time_source": f"sp5:SHIFT.STARTEND{idx}",
                         "replaced_normal_rows": replaced_rows.get((row.get("employee_id"), d), []),
                     }
+                    if special_windows is not None:
+                        metadata["provenance"][sid].update({
+                            "time_source": "sp5:SPSHI.STARTEND",
+                            "paid_source": "sp5:SPSHI.DURATION",
+                            "paid_minutes": special_paid,
+                            "detail_id": row.get("detail_id"),
+                        })
                     boundary_work[sid] = BoundaryWork(
                         id=sid,
                         employee_id=eid,
