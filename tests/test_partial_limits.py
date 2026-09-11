@@ -480,6 +480,30 @@ def test_no_rule_requires_every_eligible_employee_to_receive_a_duty():
     assert all(d["eligible_demands"] == 1 for d in diagnostics["employees"].values())
 
 
+@pytest.mark.parametrize('zero_capacity_demand', [False, True])
+def test_approved_service_without_positive_demand_does_not_create_assignments(zero_capacity_demand):
+    snapshot = case(2)
+    unused_position = snapshot.positions[0].model_copy(update={
+        'id': 'unused', 'function_id': 'approved_but_not_requested',
+    })
+    snapshot.positions.append(unused_position)
+    snapshot.employees[1].approvals[0].function_id = unused_position.function_id
+    snapshot.employees[1].target_minutes = 480
+    if zero_capacity_demand:
+        snapshot.demands.append(snapshot.demands[0].model_copy(update={
+            'id': 'prohibited', 'position_id': unused_position.id, 'minimum': 0, 'maximum': 0,
+        }))
+    result = solver.solve(snapshot, 3, partial=True)
+    assert result.validation.valid and result.validation.complete
+    assert [(a.employee_id, a.demand_id) for a in result.assignments] == [('e0', 's')]
+    diagnostic = result.metrics['planning_diagnostics']['employees']['e1']
+    assert diagnostic['reason'] == 'individually_ineligible'
+    assert diagnostic['positive_capacity_demands'] == 1
+    assert diagnostic['eligible_demands'] == 0
+    assert diagnostic['exclusions']['approval'] == 1
+    assert diagnostic['exclusions'].get('zero_capacity', 0) == int(zero_capacity_demand)
+
+
 def test_linear_hours_target_can_tie_while_block_goal_concentrates_work():
     from sp5generator.models import Objectives
 

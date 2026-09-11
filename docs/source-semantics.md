@@ -4952,3 +4952,26 @@ before replacement. Two characterization tests preserve this finding. Correct
 replacement accounting needs its own write-failure/rollback and dry-run tests;
 multiple normal duties per person/day and special-duty accounting are likewise
 not resolved by the month-context correction.
+
+### Approved service is not the same as requested positive-capacity demand
+
+Generator `domain.eligibility` requires an approval matching
+`Position.function_id`, workplace (or wildcard), and the complete duty date
+range. A saved approval can remain valid while its service has no demand in the
+selected period/team scope, or only demands with `maximum=0`. The existence of
+a position or a nominal hours target does not create a staffing requirement.
+A person may therefore have approvals yet zero eligible positive-capacity
+candidates. Existing `planning_diagnostics` reports this as
+`individually_ineligible`; its exclusion counts concern candidate combinations,
+not distinct people, and multiple reasons can apply to the same candidate.
+
+Synthetic evidence:
+`tests/test_partial_limits.py::test_approved_service_without_positive_demand_does_not_create_assignments`
+covers both a registered position without a demand and an explicit zero-capacity
+demand. Another worker can fully cover the actual requirement while the worker
+approved only for the unrequested service remains unassigned, even with a
+positive hours target. No approval, demand, or mandatory assignment is invented.
+This distinguishes missing input capacity from a solver choosing not to use an
+otherwise eligible person; the latter has reason
+`not_selected_with_candidates`, as covered by
+`test_no_rule_requires_every_eligible_employee_to_receive_a_duty`.
