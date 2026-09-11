@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .jobs import Store, Conflict, run_worker
 from .models import Snapshot, Assignment, Result
@@ -67,8 +67,24 @@ class LocalIntervalRequest(BaseModel):
     end: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$')
 
 
+class SetupReviewMetadata(BaseModel):
+    newPeople: list[str]
+    newServices: list[str]
+    review: list[str]
+    reusedPeople: int = Field(ge=0)
+    classified: int = Field(ge=0)
+
+
 def check_project_structure(snapshot: Snapshot):
     """Reject unsafe display/input boundaries while allowing unfinished rules."""
+    if snapshot.metadata.get('setup_review') is not None:
+        try:
+            # Validate known UI metadata without dropping custom or future fields.
+            SetupReviewMetadata.model_validate(snapshot.metadata['setup_review'], strict=True)
+        except ValidationError as exc:
+            raise HTTPException(422, 'Einrichtungsübersicht in den Projektmetadaten '
+                                '(setup_review) ist beschädigt. Eine unveränderte '
+                                'Projektsicherung verwenden oder diese Übersicht korrigieren.') from exc
     from .domain import input_diagnostics
     blocking_codes = {'input', 'date_range', 'period', 'interval', 'size_limit', 'numeric_range'}
     messages = sorted({f'{item.message} [{item.code}]'

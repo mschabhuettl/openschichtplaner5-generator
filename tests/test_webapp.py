@@ -144,6 +144,37 @@ def test_project_check_does_not_change_saved_revision(tmp_path):
         assert c.get('/api/snapshots/' + snapshot['id']).json() == snapshot
 
 
+@pytest.mark.parametrize('report', [
+    {}, [], 'broken',
+    {'newPeople': 'person', 'newServices': [], 'review': [], 'reusedPeople': 0, 'classified': 0},
+    {'newPeople': [], 'newServices': [], 'review': [None], 'reusedPeople': 0, 'classified': 0},
+    {'newPeople': [], 'newServices': [], 'review': [], 'reusedPeople': -1, 'classified': 0},
+])
+def test_invalid_setup_review_is_rejected_before_replacing_a_project(tmp_path, report):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        saved = client.put('/api/snapshots', json=client.get('/api/demo').json()).json()
+        imported = {**saved, 'metadata': {**saved['metadata'], 'setup_review': report}}
+        for method, url in [('post', '/api/snapshots/check'), ('put', '/api/snapshots')]:
+            rejected = getattr(client, method)(url, json=imported)
+            assert rejected.status_code == 422
+            assert 'setup_review' in rejected.json()['detail']
+        assert client.get('/api/snapshots/' + saved['id']).json() == saved
+
+
+def test_valid_setup_review_and_custom_metadata_are_preserved(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        snapshot = client.get('/api/demo').json()
+        snapshot['metadata'].update({
+            'custom_note': {'version': 1},
+            'setup_review': {'newPeople': ['synthetic-person'], 'newServices': [],
+                             'review': ['Synthetic review'], 'reusedPeople': 0,
+                             'classified': 1, 'future_field': {'keep': True}},
+        })
+        checked = client.post('/api/snapshots/check', json=snapshot)
+        assert checked.status_code == 200
+        assert checked.json()['metadata'] == snapshot['metadata']
+
+
 def test_job_history_recovers_exact_input_and_rejects_stale_submission(tmp_path):
     with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
         snapshot = c.put('/api/snapshots', json=c.get('/api/demo').json()).json()
