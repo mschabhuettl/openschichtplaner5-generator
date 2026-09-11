@@ -2894,3 +2894,43 @@ Quellvertrag/Zeitraum prüfen und synthetisch reproduzieren; noch kein UI-Fix.
 
 Keine Originalrepo-/Runtimeänderung und kein Release. Exaktes 0.9.29-Jobpaar,
 atomarer Quellensnapshot und vollständiger Ruhekontext bleiben offen.
+
+### Datum der Zyklus-Ausnahme: wirkungsloser Erfolg synthetisch belegt
+
+`tools/test_cycle_exception_target_audit.py` führt den aus der unveränderten
+OSP5-Datei extrahierten JavaScript-Ausdruck `getAssignmentId` mit Node aus und
+verbindet dessen ID mit der echten Library `expand_cycle_assignments`. Es ist
+kein Browser-/HTTP-Test und führt keinerlei Schreiboperation aus.
+
+Sechs Charakterisierungen belegen:
+
+- Steht eine abgelaufene oder erst künftig gültige Zuordnung vor der am
+  Ausnahmedatum gültigen Zuordnung, adressiert OSP5 die inaktive ID. Der
+  beabsichtigte Dienst bleibt in der Library erhalten. Umkehr der Listenfolge
+  unterdrückt ihn. START/END gelten dabei einschließlich des Grenztags.
+- Bei zwei gleichzeitig gültigen, unterschiedlichen Zuordnungs-IDs unterdrückt
+  eine Ausnahme nur den zuerst adressierten Zyklus; ein Dienst bleibt übrig.
+  Die UI-Bezeichnung „freier Tag“ ist deshalb ohne eindeutigen Zielzyklus keine
+  verlässliche Aussage über den gesamten Tag der Person.
+
+Datenfluss: OSP5 `Schichtmodell.tsx::AddExceptionModal` → API
+`schedule.py::set_cycle_exception` (reicht die ID unverändert durch) → Library
+`database.py::set_cycle_exception` (speichert nach Person/Zuordnungs-ID/Datum,
+ohne dort den Zuordnungszeitraum zu validieren) →
+`calculations.py::expand_cycle_assignments` (Ausnahmen pro Person/Zuordnungs-ID,
+Expansion innerhalb START/END). Der bestehende OSP5-Test
+`AddExceptionModal.test.tsx` hat nur eine Zuordnung ohne Zeitraum und sichert
+das Weglassen von TYPE ab; diese Mehrfachzuordnungsfälle deckt er nicht ab.
+
+Konkrete Korrekturrichtung für den Quellenvertrag: Datum vor Zielauswahl prüfen;
+bei genau einer gültigen Zuordnung diese adressieren; bei keiner nicht
+speichern; bei mehreren Zielzyklus explizit bestimmen, nicht alle unterdrücken
+oder den ersten raten. Serverseitig Person/ID/Datum ebenfalls validieren.
+Das ist hier noch **nicht implementiert**; insbesondere wird die offene
+TYPE-Semantik nicht geändert. Keine neuen Generatorfreigaben oder Tagesverbote.
+
+Relevanz: Ein vermeintlich ausgenommener Ist-Referenzdienst kann bestehen bleiben
+und weiter Stunden/Überlappungen verursachen. Dieser Nachweis betrifft
+synthetische Quelldaten, nicht den fehlenden originalen 0.9.29-600s-Job. Vorrang
+für dessen Reproduktion und harte Generatorgrenzen bleibt bestehen; keine
+produktive UI-Änderung und kein Release aus dieser Quellencharakterisierung.
