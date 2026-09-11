@@ -155,9 +155,9 @@ def test_http_time_slots_match_library_for_demand_and_boundary(transport, slot, 
     assert all(request.get_method() == "GET" for request in calls)
 
 
-@pytest.mark.parametrize("weekday", [8, -1, None, "7"])
-def test_http_invalid_requirement_weekday_is_currently_silently_not_generated(transport, weekday):
-    """Characterize the next SHDEM gap, not permission to discard hard demand."""
+@pytest.mark.parametrize("weekday", [8, -1, None, "7", True, 7.0])
+def test_http_invalid_requirement_weekday_is_explicitly_unresolved(transport, weekday):
+    """Malformed hard demand must not disappear without a setup blocker."""
     responses, _ = transport
     responses["/api/staffing-requirements"]["shift_requirements"][0]["weekday"] = weekday
     day = date(2026, 1, 6)
@@ -165,10 +165,90 @@ def test_http_invalid_requirement_weekday_is_currently_silently_not_generated(tr
                           history_end=day - timedelta(days=1))
     assert not snapshot.shifts
     assert not snapshot.demands
-    assert not any(issue.startswith("SHDEM ") for issue in snapshot.unresolved)
+    assert any("Ungültiger Wochentag" in issue for issue in snapshot.unresolved)
+    assert snapshot.metadata["unresolved_native"]["regular_requirements"][0]["weekday"] == weekday
     assert snapshot.metadata["restriction_shift_scope_counts"] == {
         "unknown_source_shift": 0, "known_shift_not_generated": 1,
     }
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_invalid_requirement_weekday_blocks_full_and_partial_plans(transport, partial):
+    from sp5generator.solver import solve
+    from test_core_rules import case
+
+    responses, _ = transport
+    responses["/api/staffing-requirements"]["shift_requirements"][0]["weekday"] = 8
+    day = date(2026, 1, 6)
+    imported = import_api(day, day, "1", history_start=day - timedelta(days=1),
+                          history_end=day - timedelta(days=1))
+    configured = case(1)
+    assert solve(configured, 3, partial=partial).solver_status == "OPTIMAL"
+    configured.unresolved = [x for x in imported.unresolved if x.startswith("SHDEM ")]
+    assert len(configured.unresolved) == 1
+    result = solve(configured, 3, partial=partial)
+    assert result.solver_status == "MODEL_INVALID"
+    assert not result.assignments
+    assert not result.validation.valid
+
+
+@pytest.mark.parametrize("other_team", [False, True])
+def test_requirement_weekday_validation_respects_scope(transport, other_team):
+    responses, _ = transport
+    row = responses["/api/staffing-requirements"]["shift_requirements"][0]
+    row.update({"group_id": 999, "weekday": 8} if other_team else {"weekday": 0})
+    day = date(2026, 1, 6)  # Holiday, not Monday.
+    snapshot = import_api(day, day, "1", history_start=day - timedelta(days=1),
+                          history_end=day - timedelta(days=1))
+    assert not snapshot.demands
+    assert not any(x.startswith("SHDEM ") for x in snapshot.unresolved)
+
+
+@pytest.mark.parametrize("regular_weekday", [7, 8])
+def test_dated_special_requirement_keeps_precedence_without_weekday(transport, regular_weekday):
+    responses, _ = transport
+    row = responses["/api/staffing-requirements"]["shift_requirements"][0]
+    row["weekday"] = regular_weekday
+    special = {**row, "id": 999, "date": "2026-01-06", "min": 1, "max": 1}
+    del special["weekday"]
+    responses["/api/staffing-requirements/special"] = [special]
+    day = date(2026, 1, 6)
+    snapshot = import_api(day, day, "1", history_start=day - timedelta(days=1),
+                          history_end=day - timedelta(days=1))
+    assert len(snapshot.demands) == 1
+    assert snapshot.demands[0].source == "sp5:SPDEM"
+    assert snapshot.demands[0].maximum == 1
+    # An invalid regular row cannot be proven out of scope by weekday.
+    assert any("Ungültiger Wochentag" in x for x in snapshot.unresolved) == (regular_weekday == 8)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("min", True), ("max", True),
+    ("min", 1.0), ("max", 1.0),
+])
+def test_http_requirement_counts_currently_coerce_non_integer_source_values(
+    transport, field, value
+):
+    """Characterize source type loss before tightening the import contract."""
+    responses, _ = transport
+    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = value
+    day = date(2026, 1, 6)
+    snapshot = import_api(day, day, "1", history_start=day - timedelta(days=1),
+                          history_end=day - timedelta(days=1))
+    assert len(snapshot.demands) == 1
+    demand = snapshot.demands[0]
+    assert getattr(demand, "minimum" if field == "min" else "maximum") == 1
+    assert not any(x.startswith("SHDEM ") for x in snapshot.unresolved)
+
+
+@pytest.mark.parametrize("field", ["min", "max"])
+def test_http_requirement_string_count_currently_aborts_import(transport, field):
+    responses, _ = transport
+    responses["/api/staffing-requirements"]["shift_requirements"][0][field] = "2"
+    day = date(2026, 1, 6)
+    with pytest.raises(APIImportError):
+        import_api(day, day, "1", history_start=day - timedelta(days=1),
+                   history_end=day - timedelta(days=1))
 
 
 def test_incomplete_absence_visibility_blocks(transport):

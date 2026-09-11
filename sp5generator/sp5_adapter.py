@@ -377,6 +377,15 @@ def import_snapshot(
         gid = row.get("group_id")
         if gid not in (*scope, 0, None):
             continue
+        # SHDEM uses 0=Monday .. 7=holiday. Do not silently lose hard
+        # requirements through a failed day comparison. Dated SPDEM rows
+        # have their own validated date and do not carry a weekday.
+        if "_date" not in row and (
+            type(row.get("weekday")) is not int or not 0 <= row["weekday"] <= 7
+        ):
+            unresolved.append(f"SHDEM {row.get('id')}: Ungültiger Wochentag (erwartet 0–7).")
+            metadata["unresolved_native"].setdefault("regular_requirements", []).append(row)
+            continue
         if (
             gid in (0, None)
             or row.get("workplace_id") is None

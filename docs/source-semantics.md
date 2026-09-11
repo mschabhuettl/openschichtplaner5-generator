@@ -3628,3 +3628,42 @@ Nächste Korrektur: ungültige ausgewählte SHDEM-Wochentage explizit blockieren
 fremde Teams und gültige nicht passende Tage nicht global blockieren; danach
 SPDEM-Vorrang und weitere Verwerfungsursachen einbeziehen. Kein Kausalnachweis
 für den weiterhin fehlenden Originaljob 0.9.29.
+
+### SHDEM-Wochentage: expliziter Importblocker statt stiller Bedarfsverlust
+
+2026-09-11: Die oben charakterisierte Lücke ist in
+`sp5_adapter.import_snapshot` korrigiert. Nach dem Teamscope und vor dem
+Tagesvergleich werden reguläre Bedarfszeilen auf einen ganzzahligen Wochentag
+0–7 geprüft. Auch boolesche Werte und Fließkommazahlen werden nicht implizit
+als Tage interpretiert. Ungültige ausgewählte Zeilen bleiben in der vorhandenen
+`unresolved_native.regular_requirements`-Provenienz erhalten und erzeugen einen
+SHDEM-Blocker. Keine Ergänzung oder Lockerung von Bedarf, Freigaben oder Grenzen.
+
+Die bestehende HTTP-Fixture belegt sechs ungültige Werte, gültige Slots 0–7
+einschließlich Feiertag, einen gültigen nicht passenden Tag und ein fremdes
+Team. `test_invalid_requirement_weekday_blocks_full_and_partial_plans` isoliert
+den Importblocker mit ansonsten lösbarer Einrichtung: Voll- und Teilplanung
+liefern `MODEL_INVALID`, keine Einteilungen und keine gültige Validierung.
+`test_dated_special_requirement_keeps_precedence_without_weekday` belegt, dass
+datierte SPDEM-Zeilen keinen Wochentag benötigen und ihren Vorrang behalten.
+Ein ungültiger regulärer Wochentag bleibt dabei ungeklärt: Ohne gültigen Tag
+kann dessen Geltungsbereich nicht zuverlässig als ersetzt nachgewiesen werden.
+
+Quellkette erneut geprüft: `Database.get_staffing_requirements` reicht WEEKDAY
+durch; API `master_data.get_staffing_requirements` filtert nur Teams, während
+`StaffingRequirementSet` beim Schreiben 0–7 vorgibt. OSP5
+`Personalbedarf.tsx:reqMap` übernimmt den Index, seine `WEEKDAYS`-Anzeige umfasst
+acht Slots. Der Generator nutzt diese bestehende Semantik und die vorhandene
+Unresolved-Sperre, keine neue Mappingbibliothek. Dieser synthetisch belegte
+Defekt ist weiterhin kein Nachweis der Ursache des fehlenden Originaljobs 0.9.29.
+
+Nächster belegter Prüfschritt: Vier HTTP-Fälle in
+`test_http_requirement_counts_currently_coerce_non_integer_source_values`
+zeigen, dass SHDEM-MIN/MAX `true` und `1.0` nach numerischem Vergleich vom
+Demand-Modell als Ganzzahl 1 übernommen werden. Zwei Fälle in
+`test_http_requirement_string_count_currently_aborts_import` belegen dagegen
+für Textwerte den allgemeinen APIImportError (Vergleich vor Demand-Erstellung).
+Dies ist zunächst eine Typvertrags-/Diagnose-Inkonsistenz, kein Beleg für eine
+Überschreitung harter Stundenlimits. Vor einer Verschärfung native DBF-Zahltypen
+und SPDEM prüfen; nicht allein aus der HTTP-Darstellung eine fachliche Grenze
+ableiten. Vorhandene MIN/MAX-Sonderwertsemantik unverändert lassen.
