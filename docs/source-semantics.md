@@ -4125,3 +4125,35 @@ Those TypeScript declarations do not validate JSON at runtime. The corrected
 Generator boundary is therefore necessary even with a typed OSP5 consumer;
 it does not repair missing/incorrect source fields already defaulted upstream.
 The separate strict DBF-reader/API candidates remain outstanding.
+
+### Full API middleware contract for staffing candidates (2026-09-11)
+
+`tools/test_upstream_staffing_full_app.py` now imports the complete upstream
+`sp5api.main.app`, with the isolated master-data router/strict-reader candidates.
+It copies **only Python source**, uses a fresh subprocess environment and
+throwaway backend, and never imports upstream test fixtures or `.env` files.
+The existing upstream TestClient/session-injection pattern is reused without
+its potentially real DBF fixture copying.
+
+Evidence across `/api` and `/api/v1`, regular SHDEM and dated SPDEM:
+
+- Real auth middleware rejects absent/invalid/removed synthetic sessions (401).
+- Real version-prefix middleware preserves the candidate's HTTP 500 error
+  category headers and source-free message; only unversioned responses carry
+  the deprecation header.
+- Missing MIN/MAX schema, blank numeric cells and unreadable sources remain
+  errors through Library mapping and the complete HTTP middleware stack.
+- Generator `APIClient.get` rejects these responses without caching them;
+  a subsequent valid source is actually read. Explicit zero, MAX=-1 and empty
+  valid tables remain successful; no invented demand or permission is added.
+
+Run with `SP5_API_SOURCE` (API checkout), `SP5_STAFFING_ROUTER` (candidate file),
+`SP5_STRICT_READER` (candidate file); the combined existing router suite also
+needs `SP5_OSP5_FRONTEND`. Combined result: **161 passed**, two known dependency
+deprecation warnings; Ruff passed.
+
+Scope limits: no lifespan startup/migrations/background schedulers are run;
+no credential login is tested (session injected), and numeric-reader activation
+is explicitly injected on SHDEM/SPDEM, **not yet shipped upstream**. This closes
+the middleware/auth/versioning test gap, not the original 0.9.29 reproduction
+gap or an end-to-end production deployment gate. Runtime remains unchanged.
