@@ -13,11 +13,11 @@
 
 
 -def read_dbf(filepath: str, encoding_hint: str = "utf-16-le") -> list[dict[str, Any]]:
-+def read_dbf(filepath: str, encoding_hint: str = "utf-16-le", *, strict: bool = False, required_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
++def read_dbf(filepath: str, encoding_hint: str = "utf-16-le", *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
      """
      Liest eine .DBF-Datei und liefert die Datensätze als Liste von dicts.
      Zeichenfelder werden als UTF-16 LE dekodiert (wie von Schichtplaner5
-@@ -226,19 +227,117 @@
+@@ -226,19 +227,122 @@
      try:
          with open(filepath, "rb") as f:
              data = f.read()
@@ -34,7 +34,7 @@
 -
 -
 -def read_dbf_buffer(data: bytes) -> list[dict[str, Any]]:
-+    return read_dbf_buffer(data, strict=strict, required_fields=required_fields)
++    return read_dbf_buffer(data, strict=strict, required_fields=required_fields, numeric_fields=numeric_fields)
 +
 +
 +class DBFReadError(ValueError):
@@ -117,23 +117,28 @@
 +                raise DBFValueError("nonfinite_numeric_value")
 +
 +
-+def read_dbf_buffer(data: bytes, *, strict: bool = False, required_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
++def read_dbf_buffer(data: bytes, *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
      """Parst einen bereits eingelesenen .DBF-Bytepuffer (siehe :func:`read_dbf`).
 
      Getrennt vom Dateizugriff, damit Aufrufer die Bytes nur EINMAL lesen müssen
      (z. B. der DBF-Cache, der dieselben Bytes auch für die Inhalts-Prüfung hasht)
      — wichtig bei langsamen Bind-Mounts/Netzpfaden.
      """
-+    if strict or required_fields:
++    if strict or required_fields or numeric_fields:
 +        layout = _validate_dbf_structure(data)
-+        if required_fields:
++        if required_fields or numeric_fields:
 +            names = []
++            types = []
 +            position = 32
 +            while data[position] != 0x0D:
 +                names.append(data[position:position + 11].split(b"\0", 1)[0])
++                types.append(data[position + 11])
 +                position += 32
-+            if any(names.count(name.encode("ascii")) != 1 for name in required_fields):
++            if any(names.count(name.encode("ascii")) != 1 for name in (*required_fields, *numeric_fields)):
 +                raise DBFStructureError("required_column_missing_or_duplicate")
++            if any(types[names.index(name.encode("ascii"))] not in (ord("N"), ord("F"))
++                   for name in numeric_fields):
++                raise DBFStructureError("required_numeric_column_type")
 +        if strict:
 +            _validate_dbf_numbers(data, layout)
      if len(data) < 32:

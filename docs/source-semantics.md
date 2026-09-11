@@ -3985,3 +3985,37 @@ der korrigierte Aufruf ist grün. Für diese Tests immer zusätzlich zu
 `SP5_OSP5_FRONTEND=/home/hilbert/projects/openschichtplaner5/frontend` setzen.
 Keine Runtimeänderung, kein Release und keine Wiederholung der unveränderten
 privaten API-Abnahme.
+
+### Gezielter numerischer DBF-Spaltenvertrag (isolierter Kandidat)
+
+Der Reader-Patch erweitert beide Lesewege um opt-in
+`numeric_fields=("MIN", "MAX")`. Angeforderte Spalten müssen genau einmal
+vorhanden und als numerischer DBF-Typ N oder F deklariert sein. Andere Typen
+werden vor dem Mapping als `required_numeric_column_type` abgewiesen,
+auch bei leeren oder ausschließlich gelöschten Tabellen. Bestehendes
+`required_fields` bleibt ein reiner Präsenzvertrag; ohne Opt-in ändert sich
+nichts. Zusammen mit `strict=True` greift zusätzlich die vorhandene
+Prüfung numerischer Inhalte. Der Typvertrag allein ist noch keine Prüfung
+ganzzahliger, fachlich gültiger Besetzungszahlen.
+
+`test_explicit_numeric_staffing_contract` prüft 80 synthetische
+DBF→Library→isolierte API-Fälle: SHDEM/SPDEM, MIN/MAX, C/L/D/N/F,
+leere/gelöschte Datensätze, echte Null sowie MAX=-1. Falsche Typen ergeben
+die quellfreie HTTP-500-Strukturdiagnose; gültige Null und unbegrenztes
+MAX bleiben unverändert. Die zwölf bisherigen Charakterisierungen ohne
+numerischen Opt-in bleiben erhalten.
+
+Dies ist nur ein isolierter Korrekturkandidat, keine Änderung der produktiven
+Library/API oder Generatorruntime und kein Nachweis der Ursache des
+0.9.29-Teilplans. Offen bleiben die Generatorprüfung vor Zahlenvergleichen,
+der ganzzahlige Wertevertrag sowie die Integration im vollständigen
+API-App-/Auth-/v1-Pfad.
+
+Prüfnachweis: 412 Tests grün (Bedarfsvertrag, strikter Reader, Teilplan- und
+Kalendergrenzen), Ruff, diff-check und Patch-Dry-run grün. Zwei anfängliche
+Harnessfehler wurden korrigiert: pytest als `python -m pytest` starten und
+`SP5_WORK_TIME_ROUTER=/tmp/sp5-worktime-contract/sp5api/routers/work_time_rules.py`
+verwenden; der normale Checkout besitzt keinen `work_time.py`.
+Für diesen Lauf:
+`SP5_STRICT_READER=/tmp/sp5-count-contract/sp5lib/dbf_reader.py`.
+Die unveränderte private API-Abnahme wurde nicht wiederholt.

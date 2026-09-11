@@ -322,3 +322,41 @@ def test_explicit_staffing_column_contract(source, client, monkeypatch, table, u
         else:
             assert rows == []
     assert sanitized == []
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('field_index', [0, 1])
+@pytest.mark.parametrize('field_type', ['C', 'L', 'D', 'N', 'F'])
+@pytest.mark.parametrize('state', ['empty', 'deleted', 'zero', 'unlimited'])
+def test_explicit_numeric_staffing_contract(source, client, monkeypatch, table, url, method,
+                                            field_index, field_type, state):
+    db, reader, path = source
+    marker = b'*' if state == 'deleted' else b' '
+    values = b'0000' + (b'  -1' if state == 'unlimited' else b'0000')
+    records = [] if state == 'empty' else [marker + values]
+    payload = bytearray(staffing_columns(('MIN', 'MAX'), records))
+    payload[32 + 32 * field_index + 11] = ord(field_type)
+    (path / f'5{table}.DBF').write_bytes(payload)
+    original_read = db._read
+
+    def read(name):
+        if name == table:
+            return reader.read_dbf(db._table(name), strict=True,
+                                   numeric_fields=('MIN', 'MAX'))
+        return original_read(name)
+
+    monkeypatch.setattr(db, '_read', read)
+    http, sanitized = client
+    response = http.get(url)
+    if field_type not in ('N', 'F'):
+        assert response.status_code == 500
+        assert_source_error(response, 'structure')
+    else:
+        assert response.status_code == 200
+        rows = response.json()['shift_requirements'] if table == 'SHDEM' else response.json()
+        if state in ('empty', 'deleted'):
+            assert rows == []
+        else:
+            assert rows[0]['min'] == 0
+            assert rows[0]['max'] == (-1 if state == 'unlimited' else 0)
+    assert sanitized == []
