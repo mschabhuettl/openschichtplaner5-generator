@@ -1920,3 +1920,130 @@ Die Quellansichten taugen damit ohne Normalisierung nicht als unabhängiger
 Stundenvalidator. Der fehlende Original-600s-Job bleibt eine getrennte
 Reproduktionslücke; keiner dieser Ansichtsbefunde beweist seine Ursache.
 Keine produktiven Änderungen oder neue Releasefreigabe aus diesem Audit.
+
+### Zusammenhängender isolierter Kandidat: explizite, verlustfreie Quellansicht
+
+Die Charakterisierung ist jetzt in einen **ausführbaren Library/API/OSP5-
+Kandidaten** umgesetzt, nicht nur in weitere Einzelbefunde. Drei Patches
+gegen die am Dokumentanfang genannten Originalrevisionen:
+
+- `tools/upstream-entries-library-candidate.patch`: enthält den bisherigen
+  Ist-Abrechnungs-/Zyklusfilterkandidaten **bereits**; nicht zusätzlich auf
+  `upstream-ist-accounting-candidate.patch` anwenden. `get_schedule` ergänzt
+  auf explizites `source_details=True` Herkunft und direkt gelesene Zeitdetails.
+  `get_schedule_entries(..., plan=..., week=...)` verwendet diese bestehende
+  Monatsfassade für eine verlustfreie Tages-/Wochenstruktur einschließlich
+  Monats-/Jahreswechsel und freier Personentage. Normale ersetzte Ist-Dienste
+  bleiben als `replaced_in_ist=True` nachvollziehbar; Soll wird nicht ersetzt.
+- `tools/upstream-entries-api-candidate.patch`: Tages-/Wochenendpunkte verwenden
+  die neue Struktur **nur mit explizitem `plan=ist|soll|both`**; ungültige
+  Plansicht ergibt 400. Personen-Scope und bestehende Abwesenheitssichtbarkeit
+  werden auf die neue Struktur angewendet. Ohne Planparameter bleibt der alte
+  Vertrag unverändert, einschließlich seiner dokumentierten Informationsverluste.
+- `tools/upstream-entries-osp5-candidate.patch`: `client.ts` gibt die explizite
+  Auswahl weiter; `Wochenansicht.tsx` gruppiert Einträge in Listen statt
+  `Map<employee_id, entry>`, zeigt Plansicht, Sonderdienstzeiten,
+  Ersatzkennzeichen und Teilabwesenheitsfenster. Die Zählung heißt ausdrücklich
+  **Einträge**, nicht Arbeitsstundensumme. Eine alte API ohne den neuen
+  `entry_semantics`-/Plan-Nachweis wird abgelehnt; verspätete Antworten einer
+  vorherigen Plansicht überschreiben die aktuelle Auswahl nicht.
+
+Der Kandidat wurde ausschließlich unter `/tmp/sp5-entries-candidate` ausgeführt.
+Originalcheckouts, Generator-Runtime, produktive API und Benutzerinstallation
+bleiben unverändert. Vorhandene Library-/Monatsfassade, Sichtbarkeitsfunktion,
+OSP5-Komponenten und ISO-Wochenfunktion wurden wiederverwendet; keine neue
+Zeitberechnungsbibliothek oder Frameworkmigration.
+
+**Gezielter zusätzlicher Browserbefund:** In der ursprünglichen
+`Wochenansicht.tsx` konvertiert `toISODate` lokale Mitternacht mit
+`toISOString().slice(0, 10)` nach UTC. Die Auswahl **01.01.2027** sendete im
+Chromium mit `Europe/Vienna` tatsächlich `date=2026-12-27`, statt des lokalen
+ISO-Montags `2026-12-28`. `get_schedule_week` würde den Sonntag der Vorwoche
+zuordnen. Die Kandidatenkorrektur formatiert lokale Datumskomponenten und
+verwendet `utils/isoWeek.ts:getISOWeek` auch für die KW-Beschriftung.
+Browser-Gegenproben prüfen Jahreswechsel und den DST-Wechsel 25./26.10.2026.
+Dies betrifft den OSP5-Vergleichspfad, **nicht nachgewiesenermaßen den
+Generator-Originaljob**.
+
+#### Nachweise und reproduzierbare Prüfungen
+
+Alle Prüfdaten sind synthetisch. Patches mit `git apply --check` gegen alle drei
+Originalcheckouts geprüft, ausschließlich auf isolierte Kopien angewendet.
+
+```sh
+# In einer Kopie der Original-Library (nicht zusätzlich den früheren Patch anwenden):
+git apply /path/to/generator/tools/upstream-entries-library-candidate.patch
+# Entsprechend API- und OSP5-Patch jeweils in deren isolierter Kopie anwenden.
+
+# Im Generatorcheckout mit bestehender Testumgebung:
+SP5_ENTRIES_ROUTER=/tmp/sp5-entries-candidate/schedule.py \
+PYTHONPATH=/tmp/sp5-entries-candidate .venv/bin/python -m pytest \
+  tools/test_upstream_entries_candidate.py -q
+PYTHONPATH=/tmp/sp5-entries-candidate .venv/bin/python -m pytest \
+  /home/hilbert/projects/libopenschichtplaner5/tests -q
+
+# In der isolierten OSP5-Frontendkopie:
+./node_modules/.bin/vitest run src/utils/scheduleEntries.test.ts \
+  src/pages/Wochenansicht.entries.test.tsx
+./node_modules/.bin/tsc -b --pretty false
+```
+
+- **18 neue Python-Vertragstests bestanden**, einschließlich echter
+  FastAPI-Queryvalidierung via lokalem TestClient, beider Endpunkte, leerem
+  Personen-Scope, Gruppenfilter, drei Abwesenheitsmodi, Quellreihenfolge,
+  fehlender Sonderdienstzeit, Zyklus/Soll, alten Antwortverträgen und Jahreswechsel.
+  Routerfunktionen werden unverändert per AST ohne globalen Serverstart geladen;
+  dies ist **keine** vollständige API-Authentifizierungs-/Endpoint-Abnahme.
+- **297 bestehende Librarytests bestanden, 6 übersprungen**.
+- **6 neue OSP5-Tests bestanden**, einschließlich tatsächlichem React-Rendering,
+  Plansichtwechsel, Ablehnung alter API-Antworten, verspäteter alter Antwort
+  sowie korrekter KW 1 für 04.–10.01.2027. TypeScript-Build und gezieltes ESLint
+  der neuen Test-/Hilfsdateien bestanden.
+- `tools/audit_upstream_entries_browser.cjs` prüft die echte Wochenkomponente
+  mit Chromium **1280px und 390px**, `Europe/Vienna`. Eingaben sind aus den
+  obigen lokalen ASGI-Testantworten exportierte synthetische Ist-/Soll-/Both-
+  Fixtures, ausschließlich am Loopback-Vite-Server abgefangen. Es prüft
+  Mehrfacheinträge, Ersatz-/Zeitdetails, Auswahl und Datumsnavigation; kein
+  Login, keine produktiven HTTP-Aufrufe, kein vollständiger OSP5-App-Test.
+
+Browserreproduktion im isolierten Frontend: eine `entries-audit.html` mit
+`<div id="root"></div>` und Moduleinstieg `entries-audit.tsx` anlegen; dieser
+importiert React, `createRoot`, `./src/pages/Wochenansicht` und `./src/index.css`
+und rendert nur die Wochenkomponente. Fixtures können ohne DBF-Zugriff aus
+`tools.test_upstream_entries_candidate` mit `source.__wrapped__()` und
+`client.__wrapped__(source.__wrapped__())` exportiert werden: je Plansicht die
+lokale Antwort von `/week?date=2026-09-07&plan=...` als JSON-Objekt
+`{ist: ..., soll: ..., both: ...}` speichern. Mit Vite auf
+`127.0.0.1:5189 --strictPort` ausführen:
+
+```sh
+node tools/audit_upstream_entries_browser.cjs \
+  /tmp/sp5-entries-candidate/frontend \
+  /tmp/sp5-entries-candidate/synthetic-http-responses.json
+```
+
+#### Bewusst verbleibende Integrationsgrenzen
+
+1. Die neue Struktur ist eine **Quellansicht**, kein unabhängiger Arbeitszeit-
+   validator. `duration` sind Quell-/bezahlte Stunden, `startend` Quellzeiten;
+   nicht pauschal addieren. Zeitfenster und Ersetzungskennzeichen ersetzen keine
+   vollständige Arbeitszeitnormalisierung oder bestätigte Regeln/Freigaben.
+2. `source_table/source_id` gibt vorhandene DBF-Herkunft wieder; fehlende IDs
+   und expandierte Zyklusdienste erhalten ausdrücklich **keine erfundene stabile
+   Datensatzidentität**. Der Kandidat unterstützt keine Schreib-/Undo-Aktionen.
+3. Nur die Wochenansicht ist als OSP5-Aufrufer migriert. Einsatzplan,
+   DienstBoard und Teamübersicht verwenden weiter den alten Vertrag. Keine
+   pauschale Korrektur aller Quellansichten behaupten.
+4. API-Arbeitszeitprüfung bleibt ein separater Pfad: Der ältere Ist-only-
+   Stundenkandidat ist noch kein öffentlich durchgängiger Plansichtvertrag.
+   Nullruhe/Überlappung, reale statt bezahlte Stunden und Randkontext bleiben
+   dort offene fachliche Unterschiede zum Generatorvalidator.
+5. Keine Generator-Runtimeänderung, kein Release und keine neue reale
+   Planungsabnahme. Die unveränderte 0.9.31 wurde nicht redundant gegen die
+   echte API geprüft. Der exakte 0.9.29-600s-Eingang und sein Ergebnis fehlen
+   weiterhin; dieser Kandidat beweist nicht die Ursache dieses Laufs.
+
+Nächster zusammenhängender Schritt: expliziten Ist-/Soll-Vertrag des separaten
+API-Arbeitszeitprüfers mit OSP5 `WorkTimeRules.tsx` und den belegten realen
+Zeit-/Überlappungsgrenzen verbinden. Den Quellansichtskandidaten bis zur
+vollständigen API-/Aufruferabnahme isoliert lassen; keine neue UI-/Release-Serie.

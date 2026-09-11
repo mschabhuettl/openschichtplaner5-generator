@@ -1,0 +1,329 @@
+--- a/frontend/src/api/client.ts
++++ b/frontend/src/api/client.ts
+@@ -850,6 +850,15 @@
+
+ // ─── Typen für neuere Endpunkte ─────────────────────────────
+ export interface DayEntry {
++  schedule_type?: number;
++  source_table?: string;
++  source_id?: number | null;
++  startend?: string | null;
++  duration?: number | null;
++  replaced_in_ist?: boolean;
++  interval?: number;
++  start_time?: number;
++  end_time?: number;
+   employee_id: number;
+   employee_name: string;
+   employee_short: string;
+@@ -991,6 +1000,8 @@
+ }
+
+ export interface WeekSchedule {
++  plan?: 'ist' | 'soll' | 'both';
++  entry_semantics?: string;
+   week_start: string;
+   week_end: string;
+   days: {
+@@ -1305,8 +1316,8 @@
+   getUsers: () => fetchJSON<User[]>('/api/v1/users'),
+
+   // New endpoints
+-  getScheduleDay: (date: string, groupId?: number) =>
+-    fetchJSON<DayEntry[]>(`/api/v1/schedule/day?date=${date}${groupId ? `&group_id=${groupId}` : ''}`),
++  getScheduleDay: (date: string, groupId?: number, plan?: 'ist' | 'soll' | 'both') =>
++    fetchJSON<DayEntry[]>(`/api/v1/schedule/day?date=${date}${groupId ? `&group_id=${groupId}` : ''}${plan ? `&plan=${plan}` : ''}`),
+
+   /** Monatsmodus: getStatistics(year, month, groupId?) —
+    *  freier Auswertungszeitraum: getStatistics({ from, to, group_id? }). */
+@@ -1339,8 +1350,8 @@
+   getEmployeeStatsMonth: (employeeId: number, year: number, month: number) =>
+     fetchJSON<EmployeeYearStats>(`/api/v1/statistics/employee/${employeeId}?year=${year}&month=${month}`),
+
+-  getScheduleWeek: (date: string, groupId?: number) =>
+-    fetchJSON<WeekSchedule>(`/api/v1/schedule/week?date=${date}${groupId ? `&group_id=${groupId}` : ''}`),
++  getScheduleWeek: (date: string, groupId?: number, plan?: 'ist' | 'soll' | 'both') =>
++    fetchJSON<WeekSchedule>(`/api/v1/schedule/week?date=${date}${groupId ? `&group_id=${groupId}` : ''}${plan ? `&plan=${plan}` : ''}`),
+
+   getConflicts: (params: { year: number; month: number; group_id?: number }) => {
+     const p = new URLSearchParams({ year: String(params.year), month: String(params.month) });
+--- a/frontend/src/pages/Wochenansicht.tsx
++++ b/frontend/src/pages/Wochenansicht.tsx
+@@ -1,9 +1,11 @@
+-import { useState, useEffect, useCallback } from 'react';
++import { useState, useEffect, useCallback, useRef } from 'react';
+ import { api } from '../api/client';
+ import type { WeekSchedule, DayEntry } from '../api/client';
+ import type { Group } from '../types/index';
+ import { groupTreeOptions } from '../utils/groupTree';
+ import { shiftCellColorsMemo } from '../utils/shiftColor';
++import { getISOWeek } from '../utils/isoWeek';
++import { indexScheduleEntries, sourceEntryDescription } from '../utils/scheduleEntries';
+
+ // ─── Helpers ──────────────────────────────────────────────
+
+@@ -14,7 +16,7 @@
+ ];
+
+ function toISODate(d: Date): string {
+-  return d.toISOString().slice(0, 10);
++  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+ }
+
+ function addDays(dateStr: string, n: number): string {
+@@ -36,8 +38,7 @@
+   const s = new Date(weekStart + 'T00:00:00');
+   const e = new Date(weekEnd + 'T00:00:00');
+   // ISO week number
+-  const startOfYear = new Date(s.getFullYear(), 0, 1);
+-  const weekNo = Math.ceil(((s.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7);
++  const weekNo = getISOWeek(s.getFullYear(), s.getMonth() + 1, s.getDate());
+   return `KW ${weekNo} — ${s.getDate()}. ${DE_MONTHS[s.getMonth()]} bis ${e.getDate()}. ${DE_MONTHS[e.getMonth()]} ${e.getFullYear()}`;
+ }
+
+@@ -156,6 +157,7 @@
+
+ export default function Wochenansicht() {
+   const [weekDate, setWeekDate] = useState<string>(getMondayOfWeek(new Date()));
++  const [plan, setPlan] = useState<'ist' | 'soll' | 'both'>('ist');
+   const [groupId, setGroupId] = useState<number | null>(null);
+   const [groups, setGroups] = useState<Group[]>([]);
+   const [data, setData] = useState<WeekSchedule | null>(null);
+@@ -170,19 +172,29 @@
+     api.getGroups().then(setGroups).catch(() => {});
+   }, []);
+
++  const loadSequence = useRef(0);
++
+   // Load week data
+   const loadWeek = useCallback(async () => {
++    const sequence = ++loadSequence.current;
+     setLoading(true);
++    setData(null);
+     setError(null);
+     try {
+-      const result = await api.getScheduleWeek(weekDate, groupId ?? undefined);
++      const result = await api.getScheduleWeek(weekDate, groupId ?? undefined, plan);
++      if (sequence !== loadSequence.current) return;
++      if (result.entry_semantics !== 'source_records_not_work_totals' || result.plan !== plan) {
++        throw new Error('API does not support the selected source view');
++      }
+       setData(result);
+     } catch (_e) {
+-      setError('Fehler beim Laden der Wochendaten.');
++      if (sequence !== loadSequence.current) return;
++      setData(null);
++      setError('Wochensicht nicht verfügbar: API muss die gewählte Plansicht mit vollständigen Quelleneinträgen unterstützen.');
+     } finally {
+-      setLoading(false);
++      if (sequence === loadSequence.current) setLoading(false);
+     }
+-  }, [weekDate, groupId]);
++  }, [weekDate, groupId, plan]);
+
+   useEffect(() => { loadWeek(); }, [loadWeek]);
+
+@@ -203,17 +215,7 @@
+     ? employees.filter(e => e.name.toLowerCase().includes(filterText.toLowerCase()) || e.short.toLowerCase().includes(filterText.toLowerCase()))
+     : employees;
+
+-  // Build fast lookup: date -> empId -> entry
+-  const entryMap = new Map<string, Map<number, DayEntry>>();
+-  if (data) {
+-    for (const day of data.days) {
+-      const m = new Map<number, DayEntry>();
+-      for (const entry of day.entries) {
+-        m.set(entry.employee_id, entry);
+-      }
+-      entryMap.set(day.date, m);
+-    }
+-  }
++  const entryMap = data ? indexScheduleEntries(data) : new Map<string, Map<number, DayEntry[]>>();
+
+   const legend = data ? buildLegend(data) : [];
+   const stats = data ? buildStats(data) : new Map();
+@@ -266,6 +268,12 @@
+           className="px-2 py-1.5 rounded-ui border border-kontur bg-ebene dark:bg-ebene-2 text-schrift text-sm"
+         />
+
++        <label className="text-sm text-schrift-2">
++          Plansicht{' '}
++          <select aria-label="Plansicht" value={plan} onChange={e => setPlan(e.target.value as typeof plan)}>
++            <option value="ist">Ist</option><option value="soll">Soll</option><option value="both">Ist und Soll</option>
++          </select>
++        </label>
+         {/* Group filter */}
+         <select
+           value={groupId ?? ''}
+@@ -302,6 +310,7 @@
+         </div>
+       )}
+
++      <p className="text-sm text-schrift-2">Quelleneinträge, keine Arbeitsstundensumme. Ersetzte Ist-Dienste bleiben gekennzeichnet sichtbar; Sonderdienste und Abwesenheiten sind nicht plansichtabhängig.</p>
+       {/* ── Grid ── */}
+       {data && (
+         <div className="overflow-x-auto rounded-panel border border-kontur bg-ebene">
+@@ -329,7 +338,7 @@
+                   </th>
+                 ))}
+                 <th scope="col" className="px-2 py-2 text-center uppercase text-[9px] font-bold tracking-[.08em] text-schrift-3 whitespace-nowrap min-w-[60px] border-l border-kontur">
+-                  Schichten
++                  Einträge
+                 </th>
+               </tr>
+             </thead>
+@@ -372,7 +381,7 @@
+                     </td>
+                     {/* Day cells */}
+                     {data.days.map(day => {
+-                      const entry = entryMap.get(day.date)?.get(emp.id);
++                      const entries = entryMap.get(day.date)?.get(emp.id) ?? [];
+                       const isWe = new Date(day.date + 'T00:00:00').getDay();
+                       return (
+                         <td
+@@ -385,7 +394,12 @@
+                               : ''
+                           }`}
+                         >
+-                          <ShiftCell entry={entry} compact={compact} />
++                          {entries.length === 0 ? <ShiftCell entry={undefined} compact={compact} /> : entries.map((entry, index) => (
++                            <div key={`${entry.source_table ?? 'entry'}:${entry.source_id ?? index}:${index}`} className="space-y-0.5 mb-1">
++                              <ShiftCell entry={entry} compact={compact} />
++                              <div className="text-xs text-schrift-2">{sourceEntryDescription(entry)}</div>
++                            </div>
++                          ))}
+                         </td>
+                       );
+                     })}
+@@ -422,7 +436,7 @@
+           {dayHeaders.map(({ day, date: d, date: dateStr }) => {
+             const dayMap = entryMap.get(dateStr);
+             const withShift = dayMap
+-              ? Array.from(dayMap.values()).filter(e => e.kind === 'shift' || e.kind === 'special_shift').length
++              ? Array.from(dayMap.values()).filter(entries => entries.some(e => e.kind === 'shift' || e.kind === 'special_shift')).length
+               : 0;
+             return withShift > 0 ? (
+               <span key={d} className="bg-wash text-schrift-2 border border-kontur-soft px-2 py-0.5 rounded-cell text-xs font-mono tabular-nums">
+--- /dev/null
++++ b/frontend/src/utils/scheduleEntries.ts
+@@ -0,0 +1,31 @@
++import type { DayEntry, WeekSchedule } from '../api/client';
++
++/** Source rows, not additive working-time or paid-hour totals. */
++export function indexScheduleEntries(data: WeekSchedule) {
++  return new Map(data.days.map(day => {
++    const people = new Map<number, DayEntry[]>();
++    for (const entry of day.entries) {
++      const entries = people.get(entry.employee_id) ?? [];
++      entries.push(entry);
++      people.set(entry.employee_id, entries);
++    }
++    return [day.date, people] as const;
++  }));
++}
++
++export function sourceEntryDescription(entry: DayEntry): string {
++  const details: string[] = [];
++  if (entry.kind === 'shift') details.push(entry.schedule_type === 1 ? 'Soll' : 'Ist');
++  if (entry.kind === 'special_shift') details.push('Sonderdienst');
++  if (entry.replaced_in_ist) details.push('im Ist ersetzt');
++  if (entry.startend) details.push(entry.startend);
++  if (entry.kind === 'absence') {
++    if (entry.interval === 3) {
++      const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
++      details.push(`${clock(entry.start_time ?? 0)}–${clock(entry.end_time ?? 0)}`);
++    } else {
++      details.push(['ganztägig', 'vormittags', 'nachmittags'][entry.interval ?? 0] ?? 'Intervall ungeklärt');
++    }
++  }
++  return details.join(' · ');
++}
+--- /dev/null
++++ b/frontend/src/utils/scheduleEntries.test.ts
+@@ -0,0 +1,28 @@
++import { describe, expect, it } from 'vitest';
++import { indexScheduleEntries, sourceEntryDescription } from './scheduleEntries';
++import type { DayEntry, WeekSchedule } from '../api/client';
++
++const row = (extra: Partial<DayEntry>): DayEntry => ({
++  employee_id: 10, employee_name: 'Synthetic', employee_short: 'S',
++  shift_id: 5, shift_name: 'Duty', shift_short: 'D', color_bk: '#FFFFFF',
++  color_text: '#000000', workplace_id: null, workplace_name: '', kind: 'shift',
++  leave_name: '', display_name: 'D', ...extra,
++});
++
++describe('source entry contract', () => {
++  it('retains every same-person row, including alternative plans and absence', () => {
++    const entries = [row({schedule_type: 0}), row({schedule_type: 0, shift_id: 6}),
++      row({schedule_type: 1}), row({kind: 'absence', interval: 3, start_time: 600, end_time: 660}),
++      row({kind: 'special_shift', source_id: 8}), row({employee_id: 20, kind: null})];
++    const data = {week_start: '2026-09-07', week_end: '2026-09-13', days: [{date: '2026-09-07', entries}]} as WeekSchedule;
++    expect(indexScheduleEntries(data).get('2026-09-07')?.get(10)).toEqual(entries.slice(0, 5));
++    expect(indexScheduleEntries(data).get('2026-09-07')?.get(20)).toHaveLength(1);
++  });
++  it('labels replacement and source times without treating paid duration as work total', () => {
++    expect(sourceEntryDescription(row({schedule_type: 0, replaced_in_ist: true, startend: '08:00-16:00', duration: 6})))
++      .toBe('Ist · im Ist ersetzt · 08:00-16:00');
++    expect(sourceEntryDescription(row({schedule_type: 1}))).toBe('Soll');
++    expect(sourceEntryDescription(row({kind: 'absence', interval: 3, start_time: 600, end_time: 660}))).toBe('10:00–11:00');
++    expect(sourceEntryDescription(row({kind: 'special_shift', spshi_type: 1}))).toBe('Sonderdienst');
++  });
++});
+--- /dev/null
++++ b/frontend/src/pages/Wochenansicht.entries.test.tsx
+@@ -0,0 +1,55 @@
++import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
++import { afterEach, expect, it, vi } from 'vitest';
++import Wochenansicht from './Wochenansicht';
++import { api } from '../api/client';
++
++vi.mock('../api/client', () => ({ api: {getGroups: vi.fn().mockResolvedValue([]), getScheduleWeek: vi.fn()} }));
++afterEach(() => { cleanup(); vi.clearAllMocks(); });
++
++const row = (extra = {}) => ({employee_id: 10, employee_name: 'Synthetic', employee_short: 'S',
++  shift_id: 5, shift_name: 'Duty', shift_short: 'D', color_bk: '#FFFFFF', color_text: '#000000',
++  workplace_id: null, workplace_name: '', kind: 'shift', leave_name: '', display_name: 'D', ...extra});
++const result = (plan: string) => ({week_start: '2026-09-07', week_end: '2026-09-13', plan,
++  entry_semantics: 'source_records_not_work_totals', days: [{date: '2026-09-07', entries: [
++    row({source_id: 1, display_name: 'D1', schedule_type: plan === 'soll' ? 1 : 0}),
++    row({source_id: 2, display_name: 'D2', replaced_in_ist: plan === 'ist'}),
++    row({source_id: 3, kind: 'absence', display_name: 'A1', interval: 3, start_time: 600, end_time: 660}),
++  ]}]});
++
++it('renders every source row and requests the explicit selected plan', async () => {
++  vi.mocked(api.getScheduleWeek).mockImplementation(async (_date, _group, plan) => result(plan!) as never);
++  render(<Wochenansicht />);
++  await screen.findByText('10:00–11:00');
++  expect(screen.getAllByText('D1').length).toBeGreaterThan(0);
++  expect(screen.getAllByText('D2').length).toBeGreaterThan(0);
++  expect(screen.getByText('Ist · im Ist ersetzt')).toBeTruthy();
++  fireEvent.change(screen.getByLabelText('Plansicht'), {target: {value: 'soll'}});
++  await waitFor(() => expect(api.getScheduleWeek).toHaveBeenLastCalledWith(expect.any(String), undefined, 'soll'));
++  await waitFor(() => expect(screen.queryByText('Ist · im Ist ersetzt')).toBeNull());
++});
++
++it('rejects a legacy response instead of silently claiming plan separation', async () => {
++  const legacy = {...result('ist'), entry_semantics: undefined};
++  vi.mocked(api.getScheduleWeek).mockResolvedValue(legacy as never);
++  await act(async () => { render(<Wochenansicht />); });
++  expect(await screen.findByText(/API muss die gewählte Plansicht/)).toBeTruthy();
++  expect(screen.queryByRole('table')).toBeNull();
++});
++
++it('ignores a late response from the previously selected plan', async () => {
++  let finishOld!: (value: never) => void;
++  vi.mocked(api.getScheduleWeek).mockImplementation((_date, _group, plan) =>
++    plan === 'ist' ? new Promise(resolve => { finishOld = resolve; }) : Promise.resolve(result(plan!) as never));
++  render(<Wochenansicht />);
++  fireEvent.change(screen.getByLabelText('Plansicht'), {target: {value: 'soll'}});
++  await screen.findByText('Soll');
++  await act(async () => { finishOld(result('ist') as never); });
++  expect(screen.queryByText('Ist · im Ist ersetzt')).toBeNull();
++  expect(screen.queryByText(/API muss die gewählte Plansicht/)).toBeNull();
++});
++
++it('uses the existing ISO-week utility for the first week after New Year', async () => {
++  vi.mocked(api.getScheduleWeek).mockResolvedValue({...result('ist'), week_start: '2027-01-04', week_end: '2027-01-10'} as never);
++  render(<Wochenansicht />);
++  expect(await screen.findByText('KW 1 — 4. Jan bis 10. Jan 2027')).toBeTruthy();
++});

@@ -1,0 +1,54 @@
+--- a/sp5api/routers/schedule.py
++++ b/sp5api/routers/schedule.py
+@@ -122,6 +122,8 @@
+ def get_schedule_day(
+     date: str = Query(..., description="Date in YYYY-MM-DD format"),
+     group_id: int | None = Query(None),
++    plan: str | None = Query(None, description="Opt-in lossless source view: ist/soll/both"),
++    scope: set[int] | None = Depends(visible_employee_ids),
+     abs_mode: int = Depends(absence_visibility_mode),
+ ):
+     try:
+@@ -133,7 +135,15 @@
+             status_code=400,
+             detail="Invalid date format, please use YYYY-MM-DD",
+         )
+-    db = get_db()
++    if plan is not None and plan not in ("ist", "soll", "both"):
++        raise HTTPException(status_code=400, detail="plan must be ist, soll or both")
++    db = get_db()
++    if plan is not None:
++        result = db.get_schedule_entries(date, group_id=group_id, plan=plan, week=False)
++        for day in result["days"]:
++            if scope is not None:
++                day["entries"] = [e for e in day["entries"] if e["employee_id"] in scope]
++        return db.apply_absence_visibility(result["days"][0]["entries"], abs_mode)
+     return db.apply_absence_visibility(
+         db.get_schedule_day(date, group_id=group_id), abs_mode
+     )
+@@ -144,6 +154,8 @@
+ def get_schedule_week(
+     date: str = Query(..., description="Any date within the target week (YYYY-MM-DD)"),
+     group_id: int | None = Query(None),
++    plan: str | None = Query(None, description="Opt-in lossless source view: ist/soll/both"),
++    scope: set[int] | None = Depends(visible_employee_ids),
+     abs_mode: int = Depends(absence_visibility_mode),
+ ):
+     try:
+@@ -155,7 +167,15 @@
+             status_code=400,
+             detail="Invalid date format, please use YYYY-MM-DD",
+         )
+-    db = get_db()
++    if plan is not None and plan not in ("ist", "soll", "both"):
++        raise HTTPException(status_code=400, detail="plan must be ist, soll or both")
++    db = get_db()
++    if plan is not None:
++        result = db.get_schedule_entries(date, group_id=group_id, plan=plan, week=True)
++        for day in result["days"]:
++            if scope is not None:
++                day["entries"] = [e for e in day["entries"] if e["employee_id"] in scope]
++        return db.apply_absence_visibility(result, abs_mode)
+     return db.apply_absence_visibility(
+         db.get_schedule_week(date, group_id=group_id), abs_mode
+     )

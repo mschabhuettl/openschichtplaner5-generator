@@ -1,0 +1,150 @@
+--- a/sp5lib/database.py
++++ b/sp5lib/database.py
+@@ -270,11 +270,14 @@
+         von: date,
+         bis: date,
+         employee_id: int | None = None,
++        *, ist_only: bool = False,
+     ) -> dict[int, list[dict]]:
+         """Bewegungsdaten (DATE-Spalte) je Mitarbeiter im Zeitraum [von, bis]."""
+         lo, hi = von.isoformat(), bis.isoformat()
+         out: dict[int, list[dict]] = {}
+         for r in self._read(table):
++            if ist_only and table == "MASHI" and int(r.get("TYPE") or 0) == 1:
++                continue
+             d = r.get("DATE") or ""
+             if not lo <= d <= hi:
+                 continue
+@@ -315,6 +318,7 @@
+         mashi_days = {
+             (r.get("EMPLOYEEID"), (r.get("DATE") or "")[:10])
+             for r in self._read("MASHI")
++            if int(r.get("TYPE") or 0) != 1
+         }
+         out: dict[int, list[dict]] = {}
+         for rec in expanded:
+@@ -339,7 +343,9 @@
+             "leave_types_by_id": {
+                 lt["ID"]: lt for lt in self.get_leave_types(include_hidden=True)
+             },
+-            "manual": self._movement_by_employee("MASHI", margin, bis, employee_id),
++            "manual": self._movement_by_employee(
++                "MASHI", margin, bis, employee_id, ist_only=True
++            ),
+             "special": self._movement_by_employee("SPSHI", margin, bis, employee_id),
+             "cycle": self._cycle_shifts_by_employee(margin, bis, employee_id),
+             "absences": self._movement_by_employee("ABSEN", von, bis, employee_id),
+@@ -549,6 +555,7 @@
+         month: int,
+         group_id: int | None = None,
+         plan: str = "ist",
++        *, source_details: bool = False,
+     ) -> list[dict]:
+         """
+         Get schedule entries for a month.
+@@ -589,6 +596,8 @@
+                         "workplace_id": r.get("WORKPLACID"),
+                         "leave_type_id": None,
+                         "schedule_type": int(r.get("TYPE") or 0),
++                        **({"source_table": "MASHI", "source_id": r.get("ID")}
++                           if source_details else {}),
+                     }
+                 )
+
+@@ -615,6 +624,8 @@
+                         "leave_type_id": None,
+                         # Zyklusdienste sind Ist-Plan (geplante tatsächliche Dienste)
+                         "schedule_type": 0,
++                        **({"source_table": "CYASS", "source_id": None}
++                           if source_details else {}),
+                     }
+                 )
+
+@@ -634,6 +645,9 @@
+                         # 3.4.4, UNSICHER) echten Sonderdienst vs. Arbeitszeit-
+                         # abweichung → als spshi_type separat, nicht plan-gefiltert.
+                         "spshi_type": int(r.get("TYPE") or 0),
++                        **({"source_table": "SPSHI", "source_id": r.get("ID"),
++                            "startend": r.get("STARTEND"), "duration": r.get("DURATION")}
++                           if source_details else {}),
+                         "custom_name": r.get("NAME", ""),
+                         "custom_short": r.get("SHORTNAME", ""),
+                         "color_bk": bgr_to_hex(r.get("COLORBK", 16777215))
+@@ -663,6 +677,8 @@
+                         "workplace_id": None,
+                         "leave_type_id": r.get("LEAVETYPID"),
+                         "interval": interval,
++                        **({"source_table": "ABSEN", "source_id": r.get("ID")}
++                           if source_details else {}),
+                         "start_time": int(r.get("START") or 0) if interval == 3 else 0,
+                         "end_time": int(r.get("END") or 0) if interval == 3 else 0,
+                     }
+@@ -716,6 +732,18 @@
+             member_ids = set(self.get_group_members(group_id))
+             entries = [e for e in entries if e["employee_id"] in member_ids]
+
++        if source_details:
++            holidays = calc.holiday_calendar(self._read("HOLID"))
++            for entry in entries:
++                if entry["kind"] == "shift":
++                    shift = shifts_map.get(entry["shift_id"], {})
++                    idx = calc.day_index(date.fromisoformat(entry["date"]), holidays)
++                    entry["startend"] = shift.get(f"STARTEND{idx}")
++                    entry["duration"] = shift.get(f"DURATION{idx}")
++                    entry["replaced_in_ist"] = (
++                        entry.get("schedule_type") != 1
++                        and (entry["employee_id"], entry["date"]) in replaced_by_spshi
++                    )
+         return entries
+
+     # ── Absence visibility / anonymisation (Spec 9.5.2, 9.2 Nr. 3, D-67) ──
+@@ -2676,6 +2704,49 @@
+         return result
+
+     # ── Day schedule ──────────────────────────────────────────
++    def get_schedule_entries(self, date_str: str, group_id: int | None = None,
++                             *, plan: str, week: bool = False) -> dict:
++        """Opt-in source view, NOT an effective-work or paid-hours total.
++
++        Reuse the monthly source contract without person/day last-row-wins.
++        Keep legacy day/week facades unchanged. Cycles have no fabricated DBF
++        row identity; missing source times stay None, not zero-length work.
++        """
++        if plan not in ("ist", "soll", "both"):
++            raise ValueError("plan must be ist, soll or both")
++        first = date.fromisoformat(date_str)
++        if week:
++            first -= timedelta(days=first.weekday())
++        dates = [first + timedelta(days=i) for i in range(7 if week else 1)]
++        employees = self.get_employees(include_hidden=False)
++        if group_id is not None:
++            members = set(self.get_group_members(group_id))
++            employees = [e for e in employees if e["ID"] in members]
++        by_day = {d.isoformat(): {} for d in dates}
++        for year, month in sorted({(d.year, d.month) for d in dates}):
++            for entry in self.get_schedule(year, month, group_id=group_id,
++                                           plan=plan, source_details=True):
++                if entry["date"] in by_day:
++                    by_day[entry["date"]].setdefault(entry["employee_id"], []).append(entry)
++        days = []
++        for day, people in by_day.items():
++            entries = []
++            for employee in employees:
++                base = {
++                    "employee_id": employee["ID"],
++                    "employee_name": f"{employee.get('NAME', '')}, {employee.get('FIRSTNAME', '')}".strip(", "),
++                    "employee_short": employee.get("SHORTNAME", ""),
++                    "date": day, "kind": None, "shift_id": None,
++                    "workplace_id": None, "leave_type_id": None,
++                    "display_name": "", "shift_name": "", "shift_short": "",
++                    "leave_name": "", "workplace_name": "",
++                    "color_bk": "#FFFFFF", "color_text": "#000000",
++                }
++                entries.extend({**base, **entry} for entry in people.get(employee["ID"], [{}]))
++            days.append({"date": day, "entries": entries})
++        return {"week_start": dates[0].isoformat(), "week_end": dates[-1].isoformat(),
++                "plan": plan, "entry_semantics": "source_records_not_work_totals", "days": days}
++
+     def get_schedule_day(
+         self, date_str: str, group_id: int | None = None
+     ) -> list[dict]:
