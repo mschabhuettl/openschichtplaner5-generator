@@ -239,9 +239,17 @@ def import_snapshot(
     }
     source_employees = db.get_employees(include_hidden=True)
     members = {eid for gid in scope for eid in db.get_group_members(gid)}
-    source_employees = list(
-        {e["ID"]: e for e in source_employees if e["ID"] in members}.values()
-    )
+    # Validate the join before scope filtering/deduplication can conceal people
+    # or silently select different employment dates and nominal-hour inputs.
+    employee_index = {}
+    for employee in source_employees:
+        eid = employee["ID"]
+        if eid in employee_index and employee_index[eid] != employee:
+            raise ValueError("Personenquelle widersprüchlich: conflicting_employee.")
+        employee_index[eid] = employee
+    if members - employee_index.keys():
+        raise ValueError("Personenquelle unvollständig: orphan_membership.")
+    source_employees = [e for eid, e in employee_index.items() if eid in members]
     holidays = calc.holiday_calendar(db.get_holidays())
     actual_bookings = {e["ID"]: [] for e in source_employees}
     nominal_bookings = _nominal_bookings(

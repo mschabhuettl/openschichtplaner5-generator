@@ -60,11 +60,8 @@ def test_conflicting_employee_rows_are_last_wins_in_api_and_generator(pipeline):
     assert adapter.client.get('/api/groups/1/members') == [employees[-1]]
     source = SyntheticDatabase()
     source.get_employees = lambda **kw: employees
-    conflicting = import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
-    source.get_employees = lambda **kw: employees[-1:]
-    last_only = import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
-    assert conflicting.model_dump(exclude={'created_at'}) == last_only.model_dump(exclude={'created_at'})
-    assert len(conflicting.employees) == 1
+    with pytest.raises(ValueError, match='conflicting_employee'):
+        import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
 
 
 def test_valid_repeated_membership_does_not_duplicate_generator_person(pipeline):
@@ -77,9 +74,8 @@ def test_valid_repeated_membership_does_not_duplicate_generator_person(pipeline)
     assert len(snapshot.employees) == 1
 
 
-def test_direct_library_import_also_loses_orphan_without_specific_diagnostic():
+def test_direct_library_import_rejects_orphan_with_specific_diagnostic():
     source = SyntheticDatabase()
-    baseline = import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
     source.get_group_members = lambda group: [101, 102]
-    orphan = import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
-    assert orphan.model_dump(exclude={'created_at'}) == baseline.model_dump(exclude={'created_at'})
+    with pytest.raises(ValueError, match='orphan_membership'):
+        import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')

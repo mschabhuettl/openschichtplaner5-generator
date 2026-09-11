@@ -873,3 +873,28 @@ def test_invalid_special_identity_cannot_replace_regular_cell():
     result = solve(snapshot, 1, partial=True)
     assert result.solver_status == "MODEL_INVALID"
     assert not result.assignments
+
+
+@pytest.mark.parametrize("conflict", ["HRSWEEK", "EMPEND"])
+def test_employee_join_rejects_conflicting_source_rows(conflict):
+    db = SyntheticDatabase()
+    row = db.get_employees()[0]
+    db.get_employees = lambda **kw: [row, {**row, conflict: 12 if conflict == "HRSWEEK" else "2026-01-02"}]
+    with pytest.raises(ValueError, match="conflicting_employee"):
+        import_snapshot(db, date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+
+def test_employee_join_rejects_orphan_membership():
+    db = SyntheticDatabase()
+    db.get_group_members = lambda group: [101, 102]
+    with pytest.raises(ValueError, match="orphan_membership"):
+        import_snapshot(db, date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+
+def test_employee_join_preserves_identical_rows_and_repeated_memberships():
+    db = SyntheticDatabase()
+    row = db.get_employees()[0]
+    db.get_employees = lambda **kw: [row, dict(row)]
+    db.get_group_members = lambda group: [101, 101]
+    snapshot = import_snapshot(db, date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.employees) == 1

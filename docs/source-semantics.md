@@ -4728,3 +4728,20 @@ Next: equivalent direct-import guard (still vulnerable), packaged middleware
 and Generator error propagation coverage, then private GET-only acceptance
 before activating changes. The API fix cannot by itself protect direct Library
 imports, nor establish the cause of the unavailable original 0.9.29 plan.
+
+### Direct Generator person-join protection (2026-09-11)
+
+`sp5generator.sp5_adapter.import_snapshot` now validates the employee index
+before membership scope filtering and deduplication. Conflicting master rows
+raise sanitized `ValueError` category `conflicting_employee`; selected memberships
+without a master record raise `orphan_membership`. Identical master rows and
+repeated valid memberships still import once. Like the API candidate, conflicting
+records anywhere in the loaded master list block import. Existing source-error
+handling is reused; no people, dates, approvals or hour limits are inferred.
+
+`tests/test_sp5_adapter.py` covers conflicts in both nominal weekly hours and
+employment end dates, orphan memberships, and valid duplicates.
+`tools/test_upstream_person_flow.py` retains characterization of the unpatched
+API's loss but now asserts rejection at the direct Generator join. This guard
+cannot discover memberships the remote API has already dropped. Malformed ID
+semantics and full-app API candidate propagation remain separate follow-ups.
