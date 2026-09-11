@@ -1,6 +1,7 @@
 'use strict';
 require('./service-groups.cjs');
 require('./profile-groups.cjs');
+require('./setup-assistant.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -87,6 +88,12 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(snapshot.employees.length, 2);
     assert.equal(snapshot.metadata.service_matrix_version,1);
     await navigate('rules');
+    await page.waitForSelector('#setupReview');
+    const readiness=page.waitForResponse(r=>r.url().endsWith('/api/readiness'));
+    await page.getByRole('button',{name:'Planungsbereitschaft prüfen',exact:true}).click();
+    assert.equal((await readiness).status(),200);
+    await page.getByText('Vor der Berechnung noch bearbeiten:',{exact:true}).waitFor();
+
     const patternRow=page.locator('#serviceGroups tbody tr').first();
     await patternRow.locator('select').selectOption('night');
     await patternRow.getByRole('button',{name:'Offene Vorkommen übernehmen'}).click();

@@ -253,6 +253,12 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
             apply_history_approvals(snapshot, data.history_min_days)
         return {'snapshot': check_project_structure(snapshot), 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
 
+    @app.post('/api/readiness')
+    def readiness(snapshot: Snapshot):
+        from .domain import input_diagnostics
+        issues = input_diagnostics(snapshot)
+        return {'ready': not issues, 'diagnostics': issues}
+
     @app.post('/api/snapshots/check')
     def check_snapshot(snapshot: Snapshot):
         """Normalize an imported project without replacing a persisted revision."""

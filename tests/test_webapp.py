@@ -237,3 +237,14 @@ def test_history_automation_requires_explicit_import_option(tmp_path, monkeypatc
         enabled = client.post('/api/remote-import', json={**payload, 'auto_history': True}).json()['snapshot']
         assert enabled['employees'][0]['approvals'][0]['function_id'] == 'synthetic-service'
         assert enabled['metadata']['history_automation']['minimum_days'] == 3
+
+
+def test_readiness_uses_solver_input_checks_without_saving(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        snapshot = client.get('/api/demo').json()
+        snapshot['unresolved'] = ['Synthetic configuration is incomplete']
+        report = client.post('/api/readiness', json=snapshot)
+        assert report.status_code == 200
+        assert report.json()['ready'] is False
+        assert any(d['code'] == 'unresolved' for d in report.json()['diagnostics'])
+        assert client.get('/api/snapshots').json() == []

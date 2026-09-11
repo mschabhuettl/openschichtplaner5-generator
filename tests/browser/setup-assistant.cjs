@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');
+const {prepare}=require('../../sp5generator/static/setup-assistant.js');
+const make=()=>({metadata:{adapter:'sp5-api'},timezone:'UTC',period_start:'2026-02-01',period_end:'2026-02-28',context_start:'2026-01-01',context_end:'2026-03-31',unresolved:[],positions:[{id:'position',function_id:'service'}],demands:[],shifts:[],profiles:[],restrictions:[],wishes:[],employees:[{id:'person',approvals:[],profile_ids:[],allowed_kinds:['day','night'],target_minutes:100}]});
+let old=make();old.employees[0].allowed_kinds=['night'];old.employees[0].target_minutes=900;old.employees[0].approvals=[{function_id:'service',workplace_id:'*',supervised:true,valid_from:'2026-01-01',valid_until:'2026-01-31'}];old.profiles=[{id:'p',confirmed:true,valid_from:'2026-01-01',valid_until:'2026-12-31'}];old.employees[0].profile_ids=['p'];
+const fresh=make(),copy=structuredClone(fresh);fresh.employees[0].approvals=[{function_id:'service',supervised:false}];
+assert.throws(()=>prepare(fresh,old));
+const result=prepare(fresh,old,{sameSource:true});assert.deepEqual(result.employees[0].allowed_kinds,['night']);assert.equal(result.employees[0].target_minutes,100);assert.equal(result.employees[0].approvals[0].supervised,true);assert.equal(result.employees[0].approvals[0].valid_until,'2026-01-31');assert.equal(result.profiles[0].id,'reused:p');assert.ok(result.unresolved.length);assert.equal(fresh.employees[0].approvals[0].supervised,false);
+old.employees[0].approvals=[];assert.deepEqual(prepare(fresh,old,{sameSource:true}).employees[0].approvals,[]);
+old.timezone='Europe/Vienna';assert.throws(()=>prepare(fresh,old,{sameSource:true}));
+assert.equal(prepare(copy,null).metadata.setup_review.newPeople.length,1);
