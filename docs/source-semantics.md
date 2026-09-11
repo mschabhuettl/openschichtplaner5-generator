@@ -4647,3 +4647,60 @@ membership must not be synthesized from historical duties.
 
 Full default regression suite after this correction: **1141 passed**, two
 existing dependency deprecation warnings. Ruff and diff checks pass.
+
+### Missing-person pipeline: reproduced loss, not a solver exclusion (2026-09-11)
+
+`tools/test_upstream_person_flow.py` executes the actual Library method and the
+unmodified API membership GET function/decorator in an isolated FastAPI app,
+then the Generator adapter/import using synthetic records only. Four
+characterization tests establish the current defects (passing is not approval
+of the defective behavior):
+
+1. **GRASG -> Library:** `database.SP5Database.get_group_members` returns both
+   valid and orphan EMPLOYEEID values for the selected GROUPID.
+2. **Library -> API:** `routers/employees.get_group_members` builds an EMPL
+   dictionary and returns only membership IDs found in it. A missing EMPL row
+   disappears with HTTP 200. Conflicting EMPL rows sharing an ID are last-wins;
+   the synthetic conflict changes both employment end and nominal weekly hours.
+3. **API -> Generator:** `_Database.get_group_members` receives only surviving
+   IDs. The `import_from_api` subset check therefore succeeds even when the
+   Library originally reported an orphan. It checks agreement between two
+   already-lossy views, not completeness against GRASG.
+4. **Direct Library -> Generator:** `sp5_adapter.import_snapshot` also silently
+   intersects memberships with EMPL and deduplicates by ID. A synthetic orphan
+   produces exactly the baseline snapshot, including its diagnostics (excluding
+   only the creation timestamp). Conflicting rows produce exactly the same
+   snapshot as the last row alone. Thus employment/target selection depends on
+   row order without an explicit conflict diagnostic.
+5. **API -> OSP5:** `frontend/src/api/client.ts: getGroupMembers` reads the same
+   members resource via the v1 prefix. `pages/Groups.tsx` and
+   `pages/Jahresuebersicht.tsx` use those returned members; the latter builds an
+   ID set. Neither this consumer path nor the Generator can reconstruct orphan
+   membership from a response that already removed it.
+
+Repeated *valid membership* for the same person remains benign: the fourth
+boundary's deduplication correctly yields one Generator employee. It must not
+be confused with conflicting personal master records. Existing hierarchy and
+API nested-membership tests plus the four characterizations: **297 passed**, two
+existing dependency warnings. Test invocation:
+
+```sh
+SP5_API_SOURCE=/path/to/openschichtplaner5-api .venv/bin/python -m pytest -q tools/test_upstream_person_flow.py tests/test_hierarchy.py tests/test_api_adapter.py
+```
+
+Prioritized correction: preserve a sanitized source-integrity failure at the
+API membership join for orphan memberships/conflicting master records; add the
+equivalent direct-import guard before EMPL scope filtering/deduplication. Do not
+invent missing people, memberships, employment dates, approvals or hour values.
+Keep identical repeated membership valid. The Generator-only guard cannot fix
+records already removed upstream. Use existing import/source-error mechanisms,
+not a new identity framework. Verify the candidate through the established
+synthetic packaged-API gate and private GET-only audit before deployment.
+
+This explains a demonstrated class of **persons absent from input**, separate
+from `solver` eligibility diagnostics for **present but unassigned persons**.
+It does not establish that these source defects occurred in the original 0.9.29
+project, nor that they caused its reported 24h/week-limit outcomes. The exact
+600-second input/result is still unavailable. No runtime change or release is
+part of this characterization; the last private audit remains applicable to
+the unchanged runtime and is not presented as a successful real plan.
