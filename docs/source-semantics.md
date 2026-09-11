@@ -5456,3 +5456,17 @@ runs three native-portfolio and three unchanged sequential searches on the
 This extends the known crash regression, but is not a guarantee against native
 failures on other data. Controlled private full-Worker/deadline comparison and
 relevant API gates remain prerequisites for runtime promotion.
+
+### Rejected quality candidate followed by timeout (2026-09-12)
+
+`test_rejected_quality_then_timeout_retains_certified_incumbent` closes a distinct
+fallback gap in the integration evidence: a real quality search improves the
+synthetic hours cost from 960 to zero, but test-local validator fault injection
+rejects that candidate. Subsequent UNKNOWN or shared-deadline exhaustion must
+return exactly the previously certified personnel allocation and its original
+cost, never the rejected improvement. All four combinations of sequential/native
+quality and UNKNOWN/deadline pass, including result JSON round-trip. The search
+trace marks the candidate independently invalid and unaccepted and does not
+publish its quality cost as an accepted result. The injected rejection is not an
+observed native constraint violation. No runtime parameters or rules changed;
+private full-Worker comparison remains required before promotion.

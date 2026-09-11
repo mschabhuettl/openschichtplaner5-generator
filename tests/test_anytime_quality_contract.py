@@ -403,3 +403,76 @@ def test_fixed_coverage_quality_can_add_only_configured_optional_staffing(monkey
     assert {a.employee_id for a in result.assignments} == (
         {'e0', 'e1'} if maximum == 2 else {'e0'}
     )
+
+
+@pytest.mark.parametrize('native_quality', [False, True])
+@pytest.mark.parametrize('termination', ['unknown', 'deadline'])
+def test_rejected_quality_then_timeout_retains_certified_incumbent(
+    monkeypatch, native_quality, termination,
+):
+    snapshot = case(2, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
+    for employee in snapshot.employees:
+        employee.target_minutes = 480
+    snapshot.objectives = Objectives(
+        hours=1, changes=0, nights=0, weekends=0, holidays=0, wishes=0,
+        workday_transitions=0,
+    )
+    snapshot.assignments = [Assignment(employee_id='e0', demand_id=d.id)
+                            for d in snapshot.demands]
+    original_search = cp_model.CpSolver.solve
+    original_validate = solver.validate
+    calls, rejected = [], []
+    elapsed = [0.0]
+    monkeypatch.setattr(solver, 'monotonic', lambda: elapsed[0])
+
+    def search(self, model, *args, **kwargs):
+        calls.append(True)
+        if len(calls) == 4:
+            return cp_model.UNKNOWN
+        if len(calls) == 2:
+            self.parameters.stop_after_first_solution = True
+        if len(calls) == 3:
+            self.parameters.stop_after_first_solution = False
+            self.parameters.interleave_search = native_quality
+            self.parameters.use_lns_only = native_quality
+            assert self.parameters.num_search_workers == 1
+        return original_search(self, model, *args, **kwargs)
+
+    def reject_quality(source, assignments):
+        checked = original_validate(source, assignments)
+        if len(calls) == 3:
+            assert checked.valid
+            assert {a.employee_id for a in assignments} == {'e0', 'e1'}
+            rejected.append(True)
+            if termination == 'deadline':
+                elapsed[0] = 5.0
+            # Fault injection isolates the independent rejection path; this
+            # synthetic candidate is otherwise valid under the actual rules.
+            return Validation(valid=False, complete=False, diagnostics=[
+                Diagnostic(code='night_block', message='Synthetic quality rejection'),
+            ])
+        return checked
+
+    monkeypatch.setattr(cp_model.CpSolver, 'solve', search)
+    monkeypatch.setattr(solver, 'validate', reject_quality)
+    result = solver.solve(snapshot, 5, partial=True)
+    result = Result.model_validate_json(result.model_dump_json())
+    assert rejected == [True]
+    assert len(calls) == (4 if termination == 'unknown' else 3)
+    assert result.solver_status == 'FEASIBLE'
+    assert result.validation.valid and validate(snapshot, result.assignments).valid
+    assert {(a.employee_id, a.demand_id) for a in result.assignments} == {
+        (a.employee_id, a.demand_id) for a in snapshot.assignments
+    }
+    assert result.metrics['objective_phase'] == 'vacancies'
+    assert result.metrics['weighted_objective_contributions']['hours'] == 960
+    trace = result.parameters['search_trace']
+    assert trace[0]['accepted'] and trace[0]['independently_valid']
+    assert trace[1]['phase'] == 'quality'
+    assert trace[1]['native_status'] == 'OPTIMAL'
+    assert trace[1]['independently_valid'] is False and not trace[1]['accepted']
+    assert 'weighted_quality_cost' not in trace[1]
+    if termination == 'unknown':
+        assert trace[2]['native_status'] == 'UNKNOWN' and not trace[2]['accepted']
+    else:
+        assert len(trace) == 2
