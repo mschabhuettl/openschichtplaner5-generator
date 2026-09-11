@@ -3921,3 +3921,34 @@ fehlender Spalte unterscheidbar bleiben, insbesondere weil Generator
 Leere gültige Tabellen dürfen nicht pauschal als defekt gelten; ein globaler
 Pflichtvertrag für alle numerischen Spalten wäre weiterhin unbegründet.
 Keine Aussage, dass die echte 0.9.29-Eingabe diese fehlenden Spalten enthält.
+
+### Opt-in Pflichtspaltenvertrag für Bedarfszahlen
+
+Der isolierte Reader-Kandidat akzeptiert jetzt `required_fields=("MIN", "MAX")`
+bei `read_dbf` und `read_dbf_buffer`. Er prüft die Feldbeschreibungen nach der
+Strukturprüfung, vor dem Library-Mapping: jede angeforderte Spalte muss genau
+einmal vorhanden sein. Fehlende oder doppelte Pflichtspalten führen zu
+`DBFStructureError("required_column_missing_or_duplicate")`, ohne Quellinhalt.
+Der Vertrag gilt auch bei null Datensätzen oder ausschließlich gelöschten
+Datensätzen; eine Prüfung nur der zurückgegebenen Dictionaries wäre unzureichend.
+Ohne `required_fields` bleibt das bisherige Verhalten unverändert. Es wird
+kein globaler Pflichtspaltenvertrag für andere Tabellen behauptet.
+
+`test_explicit_staffing_column_contract` injiziert diesen Vertrag gezielt für
+SHDEM bzw. SPDEM vor die echte Library-Mappingfunktion und die isolierte
+API-Route. 24 neue Fälle prüfen fehlende/doppelte Spalten sowie korrekte leere,
+gelöschte und explizite Null-Datensätze. Die bestehenden vier
+Charakterisierungstests ohne Opt-in bleiben als Nachweis der ursprünglichen
+Lücke erhalten. Der API-Kandidat liefert bei Verletzung die bereits geprüfte
+quellfreie HTTP-500-Strukturdiagnose, niemals erfundenen Nullbedarf.
+
+557 Tests bestanden: Bedarfsvertrag, strikter Reader, ursprüngliche
+Quellintegrität, API-Adapter, Teilplan- und Kalendergrenzen. Der erste lokale
+Testaufruf hatte eine fehlende Test-Umgebungsvariable; der vollständige Aufruf
+mit `SP5_WORK_TIME_ROUTER` ist grün. Produktive Library/API und Generatorruntime
+wurden nicht geändert; keine identische private API-Wiederholung, kein Release.
+Nächster Integrationsschritt: gezielte Aktivierung im isolierten vollständigen
+API-App-/Auth-Pfad statt nur injizierter Routerprüfung. Feldtypen und weitere
+Bedarfs-Identitätsspalten sind damit noch nicht vollständig vertraglich geprüft.
+Originalprojekt, Jobeingabe und Ergebnis 0.9.29 fehlen weiterhin; dieser Befund
+belegt nicht die Ursache der gemeldeten 600-Sekunden-Planung.

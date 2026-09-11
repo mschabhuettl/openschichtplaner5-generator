@@ -242,3 +242,52 @@ def test_missing_count_column_currently_becomes_zero(source, client, table, url,
     assert rows[0][present.lower()] == 1
     assert rows[0][missing.lower()] == 0
     assert sanitized == []
+
+
+def staffing_columns(fields, records=()):
+    """Synthetic descriptors, including empty/deleted-only schema cases."""
+    import struct
+    header = bytearray(32)
+    header[0] = 3
+    struct.pack_into('<IHH', header, 4, len(records), 33 + 32 * len(fields),
+                     1 + 4 * len(fields))
+    descriptors = bytearray()
+    for name in fields:
+        field = bytearray(32)
+        field[:11] = name.encode().ljust(11, b'\0')
+        field[11] = ord('N')
+        field[16] = 4
+        descriptors.extend(field)
+    return bytes(header + descriptors) + b'\r' + b''.join(records)
+
+
+@pytest.mark.parametrize('table,url,method', ROUTES)
+@pytest.mark.parametrize('fields', [('MIN',), ('MAX',), ('MIN', 'MAX', 'MAX'), ('MIN', 'MAX')])
+@pytest.mark.parametrize('state', ['empty', 'deleted', 'zero'])
+def test_explicit_staffing_column_contract(source, client, monkeypatch, table, url, method,
+                                           fields, state):
+    db, reader, path = source
+    marker = b'*' if state == 'deleted' else b' '
+    records = [] if state == 'empty' else [marker + b'0000' * len(fields)]
+    (path / f'5{table}.DBF').write_bytes(staffing_columns(fields, records))
+    original_read = db._read
+
+    def read(name):
+        if name == table:
+            return reader.read_dbf(db._table(name), strict=True, required_fields=('MIN', 'MAX'))
+        return original_read(name)
+
+    monkeypatch.setattr(db, '_read', read)
+    http, sanitized = client
+    response = http.get(url)
+    if fields != ('MIN', 'MAX'):
+        assert response.status_code == 500
+        assert_source_error(response, 'structure')
+    else:
+        assert response.status_code == 200
+        rows = response.json()['shift_requirements'] if table == 'SHDEM' else response.json()
+        if state == 'zero':
+            assert rows[0]['min'] == rows[0]['max'] == 0
+        else:
+            assert rows == []
+    assert sanitized == []
