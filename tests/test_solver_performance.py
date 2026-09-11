@@ -90,19 +90,61 @@ def test_optional_staffing_stays_inside_supported_assignment_limit(monkeypatch):
 
 
 @pytest.mark.parametrize("attempt", range(2))
-def test_certified_quality_search_survives_fresh_process(attempt):
+@pytest.mark.parametrize("native_quality", [False, True])
+def test_certified_quality_search_survives_fresh_process(attempt, native_quality):
     script = """
 from sp5generator.demo import make_demo
 from sp5generator.solver import solve
+from sp5generator.validator import validate
 
-result = solve(make_demo(40, 14), time_limit=5)
+snapshot = make_demo(40, 14)
+result = solve(snapshot, time_limit=5)
 assert result.solver_status in {"FEASIBLE", "OPTIMAL"}, result.model_dump_json()
 assert result.validation.complete
+assert validate(snapshot, result.assignments).complete
 assert result.parameters["workers"] == 1
 assert result.parameters["quality_presolve"] is False
 assert result.parameters["first_feasible_seconds"] < result.runtime_seconds
-assert result.parameters["last_optimization_status"] in {"FEASIBLE", "OPTIMAL"}
+native_status = result.parameters["last_optimization_status"]
+if native_status == "UNKNOWN" and native_quality_enabled:
+    # Native presolve may use the short remaining budget. This must return
+    # exactly the certified plan, not a nonexistent native candidate.
+    assert result.metrics["objective_phase"] == "validated_initial_solution"
+    assert not any(row["accepted"] for row in result.parameters["search_trace"])
+    assert {"assign:" + a.employee_id + ":" + a.demand_id
+            for a in result.assignments} == certified_assignments
+else:
+    assert native_status in {"FEASIBLE", "OPTIMAL"}, native_status
 """
+    if native_quality:
+        script = """
+from ortools.sat.python import cp_model
+original = cp_model.CpSolver.solve
+quality_calls = []
+certificate_calls = []
+certified_assignments = set()
+def candidate(self, model, *args, **kwargs):
+    if self.parameters.fix_variables_to_their_hinted_value:
+        certificate_calls.append(True)
+        assert not self.parameters.interleave_search
+    else:
+        assert self.parameters.num_search_workers == 1
+        self.parameters.interleave_search = True
+        self.parameters.use_lns_only = True
+        self.parameters.cp_model_presolve = True
+        quality_calls.append(True)
+    status = original(self, model, *args, **kwargs)
+    if self.parameters.fix_variables_to_their_hinted_value:
+        assert status in (cp_model.FEASIBLE, cp_model.OPTIMAL)
+        certified_assignments.update(
+            variable.name for i, variable in enumerate(model.proto.variables)
+            if variable.name.startswith('assign:')
+            and self.value(model.get_int_var_from_proto_index(i))
+        )
+    return status
+cp_model.CpSolver.solve = candidate
+""" + script + "\nassert certificate_calls and quality_calls\n"
+    script = f"native_quality_enabled = {native_quality!r}\n" + script
     process = subprocess.run(
         [sys.executable, "-X", "faulthandler", "-c", script],
         cwd=Path(__file__).resolve().parents[1],

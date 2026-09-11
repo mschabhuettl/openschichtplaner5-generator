@@ -5470,3 +5470,33 @@ trace marks the candidate independently invalid and unaccepted and does not
 publish its quality cost as an accepted result. The injected rejection is not an
 observed native constraint violation. No runtime parameters or rules changed;
 private full-Worker comparison remains required before promotion.
+
+### Partial-plan quality portfolio (2026-09-12)
+
+The production phase loop now enables one-worker interleaved native LNS only
+for `partial=True` after coverage search has produced an independently accepted
+incumbent. `solver.solve` still clones the original model, fixes the achieved
+vacancy count, caps the original full weighted objective at the incumbent cost,
+and supplies its complete hint. The existing shared deadline and independent
+validation/fallback paths are unchanged. No application-level neighbourhood,
+staffing obligation or additional paid/elapsed time limit is introduced.
+
+`test_production_native_quality_keeps_certificate_and_coverage_sequential`
+records actual CP-SAT parameters across all three calls. Hint certification and
+coverage remain sequential; only conditional quality uses `interleave_search`,
+`use_lns_only` and presolve. The two-person synthetic case improves hours cost
+960 to zero while retaining its one unfillable demand. Overall status remains
+FEASIBLE because coverage was not proven. Result metadata explicitly identifies
+the quality strategy and presolve setting.
+
+Non-partial search deliberately retains its previous configuration. The expanded
+`test_certified_quality_search_survives_fresh_process` tests the candidate there
+only through local injection on a 40-person, 14-day synthetic demo. At a short
+five-second budget, native search can return UNKNOWN after certification. The
+initial test expectation of a new native FEASIBLE/OPTIMAL candidate was therefore
+too strong: the required contract is preservation of exactly the certified
+assignment set, independently complete validation and an unaccepted UNKNOWN
+search trace. The regression checks that contract explicitly, rather than
+calling UNKNOWN a new solution or a native crash. This short-budget observation
+does not establish a universal presolve threshold or justify changing unrelated
+search phases.

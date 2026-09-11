@@ -998,6 +998,16 @@ def solve(snapshot, time_limit=30, partial=False):
             )
         if phase == "vacancies":
             remaining = min(remaining, max(0.001, coverage_deadline - monotonic()))
+        elif partial and phase == "quality":
+            # Improve the certified fixed-coverage incumbent with OR-Tools'
+            # native portfolio, retaining the single-worker crash workaround.
+            # Do not change coverage, certification, or non-partial search.
+            # The original deadline, objective cap and validator remain active.
+            solver.parameters.interleave_search = True
+            solver.parameters.use_lns_only = True
+            solver.parameters.cp_model_presolve = True
+            parameters["quality_search"] = "single_worker_interleaved_lns"
+            parameters["quality_presolve"] = True
         solver.parameters.max_time_in_seconds = remaining
         search_started = monotonic()
         status = solver.solve(model)

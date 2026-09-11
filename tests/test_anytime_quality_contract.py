@@ -12,6 +12,54 @@ from sp5generator.validator import validate
 from test_core_rules import case, shift
 
 
+def test_production_native_quality_keeps_certificate_and_coverage_sequential(monkeypatch):
+    snapshot = case(2, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
+    for employee in snapshot.employees:
+        employee.target_minutes = 480
+    snapshot.objectives = Objectives(
+        hours=1, changes=0, nights=0, weekends=0, holidays=0, wishes=0,
+        workday_transitions=0,
+    )
+    snapshot.assignments = [Assignment(employee_id='e0', demand_id=d.id)
+                            for d in snapshot.demands]
+    snapshot.positions.append(snapshot.positions[0].model_copy(
+        update={'id': 'unapproved', 'function_id': 'unapproved'}))
+    snapshot.demands.append(snapshot.demands[0].model_copy(
+        update={'id': 'unfillable', 'position_id': 'unapproved'}))
+    original = cp_model.CpSolver.solve
+    phases = []
+
+    def search(self, model, *args, **kwargs):
+        phases.append((self.parameters.fix_variables_to_their_hinted_value,
+                       self.parameters.interleave_search,
+                       self.parameters.use_lns_only,
+                       self.parameters.cp_model_presolve))
+        assert self.parameters.num_search_workers == 1
+        if len(phases) == 2:
+            self.parameters.stop_after_first_solution = True
+        elif len(phases) == 3:
+            self.parameters.stop_after_first_solution = False
+        status = original(self, model, *args, **kwargs)
+        # Exercise conditional quality without claiming a coverage proof.
+        return cp_model.FEASIBLE if len(phases) == 2 else status
+
+    monkeypatch.setattr(cp_model.CpSolver, 'solve', search)
+    result = solver.solve(snapshot, 5, partial=True)
+    result = Result.model_validate_json(result.model_dump_json())
+    assert phases == [(True, False, False, True),
+                      (False, False, False, False),
+                      (False, True, True, True)]
+    assert result.parameters['quality_search'] == 'single_worker_interleaved_lns'
+    assert result.parameters['quality_presolve'] is True
+    assert result.solver_status == 'FEASIBLE'
+    assert not result.parameters['coverage_proven']
+    assert validate(snapshot, result.assignments).valid
+    coverage, quality = result.parameters['search_trace']
+    assert coverage['weighted_quality_cost'] == 960
+    assert quality['weighted_quality_cost'] == 0
+    assert coverage['vacancy_count'] == quality['vacancy_count'] == 1
+
+
 def coverage_model(monkeypatch, snapshot=None):
     if snapshot is None:
         snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
