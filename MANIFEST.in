@@ -11,3 +11,5 @@ include compose.portainer-dev.yaml
 
 include tests/browser/check.cjs tests/browser/product-flows.cjs tests/browser/package.json tests/browser/package-lock.json
 prune tests/browser/node_modules
+
+include tools/release_source.cjs tests/release_source.test.cjs

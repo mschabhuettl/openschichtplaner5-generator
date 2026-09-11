@@ -86,10 +86,14 @@ docker run --rm -p 127.0.0.1:8080:8080 -v generator-state:/state openschichtplan
 
 Der Workflow **Container** baut auf GitHub, prüft Berechnung und unabhängige Validierung ohne Netzwerk und startet die Weboberfläche. Erst danach veröffentlicht er auf `main` die geprüften Tags in GHCR. Featurebranches werden geprüft, veröffentlichen aber kein `latest`. Der Workflow verwendet die integrierte GitHub-Anmeldung mit Paket-Schreibrecht; ein zusätzliches Registry-Passwort ist nicht erforderlich.
 
+Nach erfolgreichem Workflow **Verified release assets** liegt das geprüfte Dockerarchiv mit einer gemeinsamen `SHA256SUMS`-Datei dauerhaft bei den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases). Es wird ohne Neubau aus der vollständig erfolgreichen `main`-CI des exakten Release-Commits übernommen.
+
 Zusätzlich stellt jeder erfolgreiche Build ein Artefakt `openschichtplaner5-generator-linux-amd64` bereit. Es enthält das tatsächliche Image und eine SHA-256-Prüfsumme; die Aufbewahrung beträgt 30 Tage. Nach Download und Entpacken:
 
 ```sh
-sha256sum -c SHA256SUMS
+# Beim Release-Download alle drei Dateien für die gemeinsame Prüfsumme laden.
+# Wird nur das Dockerarchiv benötigt, prüft --ignore-missing nur vorhandene Dateien.
+sha256sum -c --ignore-missing SHA256SUMS
 gunzip -c openschichtplaner5-generator-linux-amd64.tar.gz | docker load
 docker run --rm -p 127.0.0.1:8080:8080 -v generator-state:/state openschichtplaner5-generator:local
 ```

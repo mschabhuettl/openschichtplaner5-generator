@@ -244,3 +244,36 @@ benötigen ebenfalls Zeit.
   regulären Anmeldeablaufs gegen Originaldaten.
 
 Siehe [Release 0.8.0](release-0.8.0.md) für Lieferumfang und Aktualisierung.
+
+
+## Dauerhafte Release-Dateien
+
+Der Workflow **Verified release assets** übernimmt die bereits geprüften Dateien
+unverändert; er baut weder Wheel noch Container neu. Er läuft bei veröffentlichten
+Releases oder manuell mit einem vorhandenen Tag. Die manuelle Ausführung prüft
+standardmäßig nur; `publish=true` aktiviert die Veröffentlichung.
+
+Die Herkunft wird über die GitHub-API aufgelöst: existierender veröffentlichter
+Release, dessen exakter Git-Commit und ein vollständig erfolgreicher Push-Lauf
+von `container.yml` auf `main` im eigenen Repository. Fehlende oder abgelaufene
+Artefakte führen zum Abbruch; es gibt keinen Rückfall auf `latest`, einen anderen
+Commit oder einen Neubau. Die Quell-CI wird im Workflow-Bericht verlinkt.
+
+GitHubs [Download-Action](https://github.com/actions/download-artifact/tree/v4)
+lädt die beiden benannten Artefakte dieses Laufs. Vor dem Upload prüft
+`tools/prepare_release_assets.py` die exakte Dateiliste, zur Tagversion passende
+Paketnamen und alle SHA-256-Prüfsummen. Zusätzliche Dateien, symbolische Links,
+unvollständige oder widersprüchliche Manifeste werden abgewiesen. Erst danach
+werden Wheel, Quellarchiv, Dockerarchiv und eine gemeinsame `SHA256SUMS` bereitgestellt.
+
+Der Upload verwendet [GitHub CLI](https://cli.github.com/manual/gh_release_upload)
+ohne `--clobber`: Bereits vorhandene Release-Dateien werden nicht gelöscht oder
+ersetzt. Bei einem bereits teilweise erfolgten Upload ist eine gezielte Prüfung
+nötig; ein Wiederholungslauf überschreibt die vorhandenen Dateien nicht. Nach dem
+Upload lädt der Workflow die veröffentlichten Dateien erneut und prüft das
+Manifest gegen die lokale Fassung sowie alle Dateiprüfsummen. Ein Erfolg darf
+erst nach diesem Rücklesen gemeldet werden.
+
+Die Herkunftsauswahl wird mit `node --test tests/release_source.test.cjs` geprüft;
+die Dateigrenzen mit `pytest tests/test_release_assets.py`. Diese synthetischen
+Tests ersetzen nicht den echten Download-/Upload-/Rückprüfungsablauf in GitHub.
