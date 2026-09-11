@@ -1,4 +1,5 @@
 'use strict';
+require('./service-groups.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -84,6 +85,12 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.deepEqual(snapshot.metadata.selected_group_ids, [1,2]);
     assert.equal(snapshot.employees.length, 2);
     assert.equal(snapshot.metadata.service_matrix_version,1);
+    await navigate('rules');
+    const patternRow=page.locator('#serviceGroups tbody tr').first();
+    await patternRow.locator('select').selectOption('night');
+    await patternRow.getByRole('button',{name:'Offene Vorkommen übernehmen'}).click();
+    await navigate('team');
+
     assert(!snapshot.employees.some(e => e.id==='sp5:employee:102'));
     await page.waitForSelector('.matrix-cell');
     assert.equal(await page.locator('#matrix tbody tr').count(), 2);

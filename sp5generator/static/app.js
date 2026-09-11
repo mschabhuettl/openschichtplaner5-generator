@@ -242,7 +242,19 @@ function renderDemands(){
  const view=collection($('demands'),'demands',snapshot.demands,{label:'Bedarfe',size:40,search:d=>demandLabel(d)+' '+d.id,redraw:renderDemands});
  const body=table(view.content,['Bedarf','Schicht / Position','Minimum','Maximum','Herkunft']);view.items.forEach(d=>{const tr=el('tr',undefined,body);el('td',d.id,tr);el('td',demandLabel(d),tr);const min=field(el('td',undefined,tr),'Min',d.minimum,v=>d.minimum=v,'number');min.min='0';min.step='1';const maxInput=field(el('td',undefined,tr),'Max (leer = unbegrenzt)',d.maximum,v=>d.maximum=v,'number');maxInput.min='0';maxInput.step='1';maxInput.placeholder='Unbegrenzt';el('td',d.source,tr);});
 }
+function renderServiceGroups(){
+ let box=$('serviceGroups');if(!box){box=el('section');box.id='serviceGroups';box.className='surface padded';$('profiles').before(box);}box.replaceChildren();
+ el('h3','Wiederkehrende Dienste gesammelt einstellen',box);
+ el('p','Je Dienst und Zeitmuster einmal Tag oder Nacht wählen. Übernommen werden nur noch offene Vorkommen, einschließlich Randzeitraum. Bereits eingestellte Dienstarten, Freigaben, Bedarfe und Ruheprofile bleiben unverändert.',box);
+ const rows=ServiceGroups.groups(snapshot).filter(g=>g.pending);
+ if(!rows.length){el('p','Keine offenen zuordenbaren Dienstmuster.',box);return;}
+ const list=el('div',undefined,box);list.className='scroll';
+ const view=collection(list,'serviceGroups',rows,{label:'Dienstmuster',size:20,search:g=>g.name,redraw:renderServiceGroups});
+ const body=table(view.content,['Dienst','Zeitmuster','Offene Vorkommen','Dienstart','Übernehmen']);
+ view.items.forEach(g=>{const tr=el('tr',undefined,body);el('td',g.name,tr);el('td',g.times.map(t=>`${t[1]}–${t[3]}${t[2]!==t[0]?' (Folgetag)':''}`).join(' / '),tr);el('td',String(g.pending),tr);let kind='';select(el('td',undefined,tr),'Dienstart für dieses Zeitmuster','',[['','Bitte wählen'],['day','Tag'],['night','Nacht']],v=>kind=v);button(el('td',undefined,tr),'Offene Vorkommen übernehmen',()=>{if(!kind){notice('Zuerst Tag oder Nacht auswählen.',true);return;}const count=ServiceGroups.apply(snapshot,g.key,kind);invalidateResult();renderRules();notice(`${count} offene Dienstvorkommen eingestellt.`);});});
+}
 function renderRules(){
+ renderServiceGroups();
  if(detailsVisible('shifts'))renderShifts();if(detailsVisible('positions'))renderPositions();if(detailsVisible('demands'))renderDemands();
  renderProfiles();renderContext();$('unresolved').replaceChildren();snapshot.unresolved.forEach((u,i)=>{const row=el('div',undefined,$('unresolved'));row.className='card';el('span',u,row);button(row,'Nach fachlicher Korrektur als geklärt markieren',()=>{snapshot.unresolved.splice(i,1);invalidateResult();renderRules();});});
  if(!snapshot.unresolved.length)el('p','Keine offenen Importangaben.',$('unresolved'));$('weights').replaceChildren();Object.entries(snapshot.objectives).forEach(([k,v])=>field($('weights'),({hours:'Stunden',nights:'Nächte',weekends:'Wochenenden',holidays:'Feiertage',wishes:'Wünsche',changes:'Änderungen'})[k],v,n=>snapshot.objectives[k]=n,'number'));
