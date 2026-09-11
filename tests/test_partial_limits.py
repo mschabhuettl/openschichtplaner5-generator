@@ -82,6 +82,19 @@ def test_24_hour_duties_are_not_forbidden_by_11_36_rest_alone(maximum, expected)
     assert result.metrics["employees"]["e0"]["paid_minutes"] == expected * 480
 
 
+@pytest.mark.parametrize("daily_limit,accepted", [(719, False), (720, True)])
+def test_daily_limit_is_not_a_single_duty_length_limit(daily_limit, accepted):
+    snapshot = case(1, [shift("noon_to_noon", 5, 12, 24)])
+    snapshot.profiles[0].min_rest_minutes = 660
+    snapshot.profiles[0].weekly_rest_minutes = 2160
+    snapshot.profiles[0].max_daily_minutes = daily_limit
+    # Noon to noon is 12h on each local calendar day, not 24h on one day.
+    assert validate(snapshot, plan(snapshot)).valid is accepted
+    result = solver.solve(snapshot, 3, partial=True)
+    assert len(result.assignments) == int(accepted)
+    assert result.validation.valid
+
+
 @pytest.mark.parametrize("kind", ["overlap", "rest", "same_shift"])
 def test_partial_never_keeps_conflicting_assignments(kind):
     snapshot = case(1, [shift("a", 5, 8, 8), shift("b", 5, 16, 8)])
@@ -198,6 +211,35 @@ def test_no_rule_requires_every_eligible_employee_to_receive_a_duty():
         "assigned", "not_selected_with_candidates", "not_selected_with_candidates"
     ]
     assert all(d["eligible_demands"] == 1 for d in diagnostics["employees"].values())
+
+
+def test_linear_hours_target_can_tie_while_block_goal_concentrates_work():
+    from sp5generator.models import Objectives
+
+    snapshot = case(3, [shift("a", 5, 8, 8), shift("b", 6, 8, 8), shift("c", 7, 8, 8)])
+    for employee in snapshot.employees:
+        employee.target_minutes = 40 * 60
+    snapshot.profiles[0].min_rest_minutes = 660
+    snapshot.profiles[0].weekly_rest_minutes = 2160
+    snapshot.objectives = Objectives(
+        hours=1, changes=0, nights=0, weekends=0, holidays=0, wishes=0,
+        workday_transitions=100,
+    )
+    distributed = [
+        Assignment(employee_id=f"e{i}", demand_id=d.id)
+        for i, d in enumerate(snapshot.demands)
+    ]
+    assert validate(snapshot, distributed).complete
+    result = solver.solve(snapshot, 3, partial=True)
+    assert result.solver_status == "OPTIMAL" and result.validation.complete
+    assert len({a.employee_id for a in result.assignments}) == 1
+    costs = result.metrics["objective_contributions"]
+    # All people remain below target: total L1 shortfall is identical.
+    assert costs["hours"] == 3 * (2400 - 480) == 5760
+    # One three-day block has two transitions; three one-day blocks have six.
+    assert costs["workday_transitions"] == 2
+    assert result.objective_value == 5760 + 2 * 100
+    assert sum(d["reason"] == "not_selected_with_candidates" for d in result.metrics["planning_diagnostics"]["employees"].values()) == 2
 
 
 @pytest.mark.parametrize("excluded,code", [

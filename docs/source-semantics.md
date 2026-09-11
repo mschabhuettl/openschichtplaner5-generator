@@ -253,6 +253,11 @@ Sie belegt nicht, welche Grenze im gemeldeten Nutzerprojekt konfiguriert war.
   Ohne Wochenmaximum sind sie zulässig; mit ausdrücklich gesetzten 40h wird
   im synthetischen Beispiel nur einer gewählt. Es wird kein allgemeines
   Verbot von 24h-Diensten oder ein Nutzer-Wochenmaximum behauptet.
+- Das bestehende Tagesmaximum ist eine **Kalendertagssumme**, keine
+  Einzel-Dienstlängengrenze. 12:00–12:00 am Folgetag erfüllt ein konfiguriertes
+  12h-Tagesmaximum mit je 720 Minuten auf beiden Tagen; 719 Minuten lehnt
+  denselben Dienst ab. Ein zusätzliches Maximum je Dienst existiert im
+  derzeitigen `RuleProfile` nicht und wurde nicht erfunden.
 - Überschneidung, fehlende 11h-Ruhe und zwei Positionen im selben Dienst
   bleiben auch im Teilmodus ausgeschlossen. Strengere zugeordnete Profile
   werden nicht durch weniger strenge Profile überstimmt.
@@ -297,6 +302,30 @@ Die Diagnose liegt im strukturierten Ergebnis/JSON; keine neue UI, keine
 automatische Profilbestätigung, keine Freigabenübernahme und keine Veröffentlichung
 realer Planungsdaten. Priorisiert offen bleiben die genaue private Reproduktion,
 Sollbuchungen und die Trennung von Vergleichsreferenzen und Planungsblockern.
+
+### Zusätzliche belegte Zielwirkung: lineares Sollziel garantiert keine Verteilung
+
+`test_linear_hours_target_can_tie_while_block_goal_concentrates_work`
+reproduziert eine bislang nicht ausdrücklich belegte Konstellation: drei
+geeignete Personen mit jeweils 40h Soll, drei aufeinanderfolgende 8h-Dienste,
+11/36-Ruhe, höchstens eine Person je Dienst. Sowohl Verteilung auf alle drei
+als auch Konzentration auf eine Person sind vollständig gültig.
+
+`solver.solve` bewertet Stunden mit `add_abs_equality`: Solange alle Personen
+unter Soll bleiben, ist die Summe der absoluten Abweichungen in beiden
+Varianten **5760 Minuten**. Ein höheres Gewicht dieses unveränderten linearen
+Stundenziels allein löst diesen Gleichstand nicht. Das Blockziel bevorzugt
+bei Gewicht 100 zwei statt sechs Arbeits-/Freizeitwechsel. Die synthetische
+OPTIMAL-Lösung plant deshalb nur eine Person ein (Wertung 5760 + 200).
+Andere Zielgewichte sind im Minimalfall explizit null, um den Effekt isoliert
+nachzuweisen. Keine Aussage über die unbekannten Gewichte des Nutzerprojekts.
+
+Das ist eine bewiesene Wirkung der bestehenden Zielfunktion, **kein Beleg
+einer Verletzung harter Regeln**. Eine automatische Mindestzahl von Diensten
+pro Person wäre keine korrekte Reparatur. Ein künftiges weiches Verteilungsziel
+müsste Unterdeckung, individuelle Sollwerte und zulässige Einsatzmöglichkeiten
+berücksichtigen und seinen Zielkonflikt mit möglichst langen Freizeitblöcken
+offenlegen. In diesem Schritt bleiben alle Gewichte und Regeln unverändert.
 
 ## Sollstunden: Einheit folgt der Berechnungsbasis
 
