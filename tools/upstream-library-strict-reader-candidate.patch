@@ -1,10 +1,42 @@
 --- a/sp5lib/dbf_reader.py
 +++ b/sp5lib/dbf_reader.py
-@@ -232,13 +232,54 @@
-     return read_dbf_buffer(data)
+@@ -211,7 +211,7 @@
+     return _parse_record_specs(raw, _compile_field_specs(fields, names))
  
  
+-def read_dbf(filepath: str, encoding_hint: str = "utf-16-le") -> list[dict[str, Any]]:
++def read_dbf(filepath: str, encoding_hint: str = "utf-16-le", *, strict: bool = False) -> list[dict[str, Any]]:
+     """
+     Liest eine .DBF-Datei und liefert die Datensätze als Liste von dicts.
+     Zeichenfelder werden als UTF-16 LE dekodiert (wie von Schichtplaner5
+@@ -226,19 +226,74 @@
+     try:
+         with open(filepath, "rb") as f:
+             data = f.read()
++    except FileNotFoundError:
++        if strict:
++            raise DBFReadError("file_missing") from None
++        return []
+     except OSError:
++        if strict:
++            raise DBFReadError("file_unreadable") from None
+         # Datei fehlt, keine Rechte, oder zwischen Existenz-Check und open gelöscht
+         return []
+-    return read_dbf_buffer(data)
+-
+-
 -def read_dbf_buffer(data: bytes) -> list[dict[str, Any]]:
++    return read_dbf_buffer(data, strict=strict)
++
++
++class DBFReadError(ValueError):
++    """Source-free file error category for strict diagnostics."""
++
++    def __init__(self, code: str):
++        self.code = code
++        super().__init__(code)
++
++
 +class DBFStructureError(ValueError):
 +    """Machine-readable structural failure without source data in the message."""
 +

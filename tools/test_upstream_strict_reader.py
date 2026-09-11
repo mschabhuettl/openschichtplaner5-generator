@@ -66,3 +66,40 @@ def test_header_padding_and_optional_eof(reader):
 def test_legacy_default_unchanged(reader):
     assert reader.read_dbf_buffer(b'') == []
     assert reader.read_dbf_buffer(synthetic_dbf([b' 0010'], declared=2)) == [{'ID': 10}]
+
+
+def test_strict_file_distinguishes_missing_empty_and_truncated(reader, tmp_path):
+    path = tmp_path / 'synthetic.dbf'
+    with pytest.raises(reader.DBFReadError) as error:
+        reader.read_dbf(str(path), strict=True)
+    assert error.value.code == 'file_missing'
+    assert str(error.value) == 'file_missing'
+    assert reader.read_dbf(str(path)) == []
+    path.write_bytes(synthetic_dbf([]))
+    assert reader.read_dbf(str(path), strict=True) == []
+    path.write_bytes(synthetic_dbf([b' 0010'], declared=2))
+    with pytest.raises(reader.DBFStructureError, match='truncated_records'):
+        reader.read_dbf(str(path), strict=True)
+
+
+@pytest.mark.parametrize('failure', [PermissionError, IsADirectoryError, OSError])
+def test_unreadable_file_has_source_free_error(reader, monkeypatch, failure):
+    def fail(*args, **kwargs):
+        raise failure('private source detail must not escape')
+    monkeypatch.setattr(reader, 'open', fail, raising=False)
+    with pytest.raises(reader.DBFReadError) as error:
+        reader.read_dbf('synthetic.dbf', strict=True)
+    assert error.value.code == 'file_unreadable'
+    assert str(error.value) == 'file_unreadable'
+    assert error.value.__suppress_context__
+    assert reader.read_dbf('synthetic.dbf') == []
+
+
+def test_strict_file_rereads_same_size_and_mtime(reader, tmp_path):
+    path = tmp_path / 'synthetic.dbf'
+    path.write_bytes(synthetic_dbf([b' 0010']))
+    before = path.stat()
+    assert reader.read_dbf(str(path), strict=True) == [{'ID': 10}]
+    path.write_bytes(synthetic_dbf([b' 0020']))
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert reader.read_dbf(str(path), strict=True) == [{'ID': 20}]

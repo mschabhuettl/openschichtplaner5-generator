@@ -2768,3 +2768,22 @@ nächsten Integrationsschritt vor dem Parser explizit gemeldet werden; Diagnose
 muss dabei den mtime/size-Schnellcache umgehen und die Fehlerkategorien bis zur
 API transportieren. Originalrepos und produktive API sind unverändert. Kein
 Release und kein Ursachenbeweis für das weiterhin fehlende 0.9.29-Originaljobpaar.
+
+### Strikter Dateilesepfad im isolierten Library-Kandidaten
+
+Der gleiche Patch erweitert jetzt auch `dbf_reader.read_dbf(..., strict=True)`:
+fehlend wird `DBFReadError.code=file_missing`, sonstiger Dateilesefehler
+`file_unreadable`, strukturelle Fehler bleiben `DBFStructureError`. Die
+Fehlermeldung enthält weder Pfad noch Inhalte; verkettete Betriebssystemfehler
+werden in der normalen Traceback-Ausgabe unterdrückt. Legacyaufrufe behalten
+`[]` bei Dateilesefehlern. Gültig leere Dateien bleiben erfolgreich leer.
+
+Fünf zusätzliche synthetische Tests prüfen fehlend/leer/abgeschnitten,
+PermissionError/IsADirectoryError/OSError und erneutes Lesen trotz identischer
+Dateigröße/mtime. **27 Tests bestanden**, Ruff und Diffcheck grün. Der direkte
+Lesepfad nutzt keinen Tabellen-Schnellcache. Er garantiert aber weder atomare
+Dateilesung noch einen konsistenten tabellenübergreifenden Snapshot. Insbesondere
+nutzt `SP5Database._read` ihn noch nicht: die API-Diagnoseanbindung bleibt der
+nächste Integrationsschritt. Keine Änderung an Originalrepos, produktiver API,
+Generatorlaufzeit oder Installation; kein Release. Kein neuer Ursachenbeweis für
+den fehlenden Originaljob 0.9.29 und keine erneute unveränderte private Abnahme.
