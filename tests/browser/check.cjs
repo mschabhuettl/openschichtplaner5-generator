@@ -88,6 +88,30 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.deepEqual(snapshot.metadata.selected_group_ids, [1,2]);
     assert.equal(snapshot.employees.length, 2);
     assert.equal(snapshot.metadata.service_matrix_version,1);
+    // Failed solver outcomes never replace existing input assignments with an empty result.
+    for(const outcome of ['MODEL_INVALID','UNKNOWN','INFEASIBLE',null]){
+      const retained=structuredClone(snapshot);retained.id+=':outcome-'+String(outcome);
+      retained.assignments=[{employee_id:retained.employees[0].id,demand_id:retained.demands[0].id,fixed:false,segments:[]}];
+      await uploadProject({name:'synthetic-outcome.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(retained))});
+      const routePattern=/\/api\/jobs\/[^/]+$/;
+      await page.route(routePattern,async route=>{const response=await route.fetch(),data=await response.json();if(data.state==='succeeded'&&data.result){if(outcome===null)data.result=null;else data.result.solver_status=outcome;}await route.fulfill({response,json:data});});
+      await navigate('calculate');
+      const submitted=page.waitForResponse(r=>r.url().endsWith('/api/jobs')&&r.request().method()==='POST');
+      await page.click('#solve');const submittedJob=await(await submitted).json();
+      await page.waitForFunction(()=>jobId===null&&!solving&&document.querySelector('#result').childNodes.length>0);
+      assert.deepEqual(await page.evaluate(()=>currentSnapshot().assignments),retained.assignments,'Unsuccessful computation preserves input assignments');
+      assert.equal(await page.evaluate(()=>dirty),false,'No plan was taken over after the input was saved');
+      assert.match(await page.locator('#result').innerText(),outcome===null?/Kein Planergebnis vorhanden/:new RegExp(outcome));
+      assert.match(await page.locator('#result').innerText(),/Bisherige Einteilungen bleiben unverändert/);
+      if(outcome==='UNKNOWN')assert.match(await page.locator('#result').innerText(),/beweist keine Unlösbarkeit/);
+      assert.doesNotMatch(await page.locator('#result').innerText(),/Vergleich:/,'No removed-assignment comparison is fabricated for an unsuccessful result');
+      if(outcome==='MODEL_INVALID')for(const width of [1440,390]){await page.setViewportSize({width,height:1000});if(process.env.WEB_TEST_SCREENSHOT_DIR)await page.locator('#result').screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`invalid-result-${width}.png`)});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
+      await page.unroute(routePattern);await navigate('projects');await page.click('#refreshJobs');
+      const row=page.locator(`[data-job-id="${submittedJob.id}"]`);await row.waitFor();
+      assert.equal(await row.locator('.job-badge').innerText(),'Beendet · Ergebnis prüfen');
+      assert.equal(await row.locator('.job-badge.succeeded').count(),0,'A process-success badge never claims plan success');
+    }
+    await uploadProject({name:'synthetic-outcome-original.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(snapshot))});
     await page.waitForFunction(()=>document.querySelector('#import').dataset.busy!=='true');
     await reveal('#prepareNextPeriod');
     const followingBefore=await page.evaluate(()=>({snapshot:JSON.stringify(currentSnapshot()),version:changeVersion,dirty,teams:[...checkedTeams],options:['referencePlan','historyPlan','existingPlanMode','sourceType'].map(id=>document.getElementById(id).value),flags:['reuseSetup','autoHistory','autoKind'].map(id=>document.getElementById(id).checked)}));

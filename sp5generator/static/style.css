@@ -21,3 +21,4 @@ body[data-active-panel=plan] .workspace-metrics{display:none}body[data-active-pa
 #followPeriodPreparation>label{max-width:420px;margin-bottom:12px}
 #followPeriodPreview{font-weight:600;color:var(--ink)}
 #followPeriodPreparation>.helper-text{margin:12px 0 0;max-width:760px}
+.job-badge.finished{color:var(--ink);background:#eef1f0}

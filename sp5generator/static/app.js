@@ -534,13 +534,19 @@ async function poll(){
   jobId=null;updateJobButtons();
   if(j.error)notice(j.error,true);
   if(j.result){
-   assignments=structuredClone(j.result.assignments);markChanged();$('result').replaceChildren();
    const valid=j.result.validation.valid,complete=j.result.validation.complete;
-   const summary=el('p',`${valid?(complete?'Vollständig und geprüft':'Geprüfter Teilplan'):'Prüfung fehlgeschlagen'} · Berechnet in ${j.result.runtime_seconds.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})} s`,$('result'));summary.className=valid&&complete?'good':'bad';
+   const accepted=valid&&['OPTIMAL','FEASIBLE'].includes(j.result.solver_status);
+   if(accepted){assignments=structuredClone(j.result.assignments);markChanged();}$('result').replaceChildren();
+   const outcome={MODEL_INVALID:'Keine Planung: Eingaben oder Modell ungültig (MODEL_INVALID)',UNKNOWN:'Keine Lösung gefunden (UNKNOWN)',INFEASIBLE:'Unter den verbindlichen Vorgaben nicht lösbar (INFEASIBLE)'}[j.result.solver_status];
+   const summary=el('p',`${outcome??(accepted?(complete?'Vollständig und geprüft':'Geprüfter Teilplan'):'Prüfung fehlgeschlagen')} · Berechnet in ${j.result.runtime_seconds.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})} s`,$('result'));summary.className=accepted&&complete?'good':'bad';
+   if(!accepted)el('p','Bisherige Einteilungen bleiben unverändert. Kein neuer Plan wurde übernommen.',$('result'));
+   if(j.result.solver_status==='UNKNOWN')el('p','Eine Suche ohne Lösung beweist keine Unlösbarkeit. Prüfhinweise beachten; bei einem Zeitlimit mit mehr Suchzeit erneut berechnen.',$('result'));
    const evaluation=el('details',undefined,$('result'));el('summary','Technische Auswertung',evaluation);evaluation.ontoggle=()=>{if(evaluation.open&&!evaluation.querySelector('pre'))el('pre',JSON.stringify({solver_status:j.result.solver_status,offene_Stellen:j.result.vacancies,auswertung:j.result.metrics},null,2),evaluation);};
    renderValidation(j.result.validation);$('validationDetails').open=!valid||!complete;
-   if(previous.length){const old=new Set(previous.map(a=>a.employee_id+'|'+a.demand_id)),next=new Set(assignments.map(a=>a.employee_id+'|'+a.demand_id));el('p',`Vergleich: ${[...next].filter(x=>!old.has(x)).length} hinzugefügt, ${[...old].filter(x=>!next.has(x)).length} entfernt.`,$('result'));}
-   navigate('plan');renderPlan();syncJson();publishState();notice(valid&&complete?'Berechnung abgeschlossen. Entwurf prüfen und dauerhaft speichern.':'Berechnung abgeschlossen. Prüfbericht und offene Stellen beachten.',!valid);
+   if(accepted&&previous.length){const old=new Set(previous.map(a=>a.employee_id+'|'+a.demand_id)),next=new Set(assignments.map(a=>a.employee_id+'|'+a.demand_id));el('p',`Vergleich: ${[...next].filter(x=>!old.has(x)).length} hinzugefügt, ${[...old].filter(x=>!next.has(x)).length} entfernt.`,$('result'));}
+   navigate('plan');renderPlan();syncJson();publishState();notice(!accepted?'Kein neuer Plan übernommen. Bisherige Einteilungen und Prüfbericht beachten.':complete?'Berechnung abgeschlossen. Entwurf prüfen und dauerhaft speichern.':'Berechnung abgeschlossen. Prüfbericht und offene Stellen beachten.',!accepted);
+  }else if(j.state==='succeeded'){
+   $('result').replaceChildren();el('p','Kein Planergebnis vorhanden. Bisherige Einteilungen bleiben unverändert.',$('result')).className='bad';$('validationSummary')?.remove();$('validation').textContent='Kein neues Ergebnis für eine Planprüfung vorhanden.';navigate('plan');notice('Berechnung technisch beendet, aber ohne Planergebnis. Kein neuer Plan übernommen.',true);
   }
   await savedJobs();
  }catch(e){

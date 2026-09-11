@@ -2,7 +2,7 @@
 (() => {
   const byId = id => document.getElementById(id);
   const names = {projects:'Projekte',team:'Team & Freigaben',rules:'Regeln & Bedarf',calculate:'Berechnen',plan:'Dienstplan'};
-  const states = {queued:'In Warteschlange',running:'Wird berechnet',succeeded:'Berechnung beendet',failed:'Fehlgeschlagen',cancelled:'Abgebrochen'};
+  const states = {queued:'In Warteschlange',running:'Wird berechnet',succeeded:'Beendet · Ergebnis prüfen',failed:'Fehlgeschlagen',cancelled:'Abgebrochen'};
   let activePanel = 'projects';
   let current = {snapshot:null,assignments:[],dirty:false,jsonDirty:false,jobId:null,solving:false};
   let projects = [], jobs = [], searchableProjects = [];
@@ -108,7 +108,7 @@
       const info=node('span');info.append(node('span',job.project_name||(project?projectName(project):'Dienstplan-Berechnung'),'job-row-name'));
       const created=typeof job.created_at==='number'?new Date(job.created_at*1000):new Date(job.created_at);
       info.append(node('span',Number.isNaN(+created)?'Gespeicherte Berechnung':created.toLocaleString('de-DE',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}),'job-row-date'));
-      row.append(info,node('span',states[job.state]||job.state,'job-badge '+(['queued','running','succeeded','failed','cancelled'].includes(job.state)?job.state:'')));
+      row.append(info,node('span',states[job.state]||job.state,'job-badge '+(job.state==='succeeded'?'finished':['queued','running','failed','cancelled'].includes(job.state)?job.state:'')));
       const elapsed=job.finished_at&&job.started_at?Math.max(0,Math.round(job.finished_at-job.started_at)):null;
       row.append(node('span',elapsed===null?'':`${number(elapsed)} Sekunden`,'job-row-duration'),icon('arrow'));
       row.setAttribute('aria-label',`${project?projectName(project):'Berechnung'}: ${states[job.state]||job.state} öffnen`);
