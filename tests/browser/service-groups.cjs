@@ -16,3 +16,14 @@ snapshot.positions.push({id:'q',function_id:'service-b'});snapshot.demands.push(
  assert.equal(suggest(pattern([[0,'18:00',0,'06:00']])),null);
  assert.throws(()=>suggest(pattern([]),'22:00','22:00'));
 }
+{
+ const {preview}=require('../../sp5generator/static/service-groups.js');
+ const example={timezone:'UTC',positions:[{id:'p',function_id:'service-a'}],shifts:[shift('s1','01'),shift('s2','02','day'),shift('s3','03'),shift('orphan','04')],demands:[1,2,3].map(i=>({shift_id:'s'+i,position_id:'p'}))};
+ const before=structuredClone(example),rule={start:'22:00',end:'06:00',minimum:180};
+ assert.deepEqual(Object.fromEntries(Object.entries(preview(example,rule)).filter(([key])=>key!=='rows')),{pending:3,day:0,night:2,skipped:1});
+ assert.deepEqual(example,before,'Preview never confirms shifts');
+ assert.equal(preview(example,{...rule,start:'08:00',end:'16:00'}).day,2);
+ assert.throws(()=>preview({...example,shifts:[]},{...rule,minimum:null}),'Invalid settings fail even with no pending rows');
+ example.shifts[0].segments[0].end='2026-01-01T20:00:00Z';
+ assert.equal(preview(example,rule).skipped,2);
+}

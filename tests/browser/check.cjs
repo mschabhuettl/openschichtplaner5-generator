@@ -275,6 +275,52 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     }
     await uploadProject(originalPath);await navigate('rules');await page.setViewportSize({width:1440,height:1000});
+    // Preview the existing recurring time rule before explicitly adopting classifications.
+    const timeRuleFixture=structuredClone(snapshot);
+    timeRuleFixture.metadata.night_classification={start:'22:00',end:'06:00',minimum:180};
+    for(const shift of timeRuleFixture.shifts)shift.kind='day';
+    const timeRuleIds=[...new Set(timeRuleFixture.demands.map(d=>d.shift_id))].slice(0,2);
+    const nightShift=timeRuleFixture.shifts.find(s=>s.id===timeRuleIds[0]),dayShift=timeRuleFixture.shifts.find(s=>s.id===timeRuleIds[1]);
+    Object.assign(nightShift,{kind:'unconfirmed',segments:[{start:'2026-02-02T21:00:00Z',end:'2026-02-03T05:00:00Z'}]});
+    Object.assign(dayShift,{kind:'unconfirmed',segments:[{start:'2026-02-03T07:00:00Z',end:'2026-02-03T15:00:00Z'}]});
+    timeRuleFixture.shifts.push({...structuredClone(nightShift),id:'synthetic-orphan-time-rule'});
+    const timeRulePath=path.join(state,'time-rule-preview.json');fs.writeFileSync(timeRulePath,JSON.stringify(timeRuleFixture));
+    await uploadProject(timeRulePath);await navigate('rules');
+    const timeRuleBox=page.locator('#serviceGroups'),timePreview=page.locator('#serviceRulePreview');
+    const timeRuleState=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())}));
+    await timeRuleBox.getByLabel('Mindestens Minuten im Nachtfenster',{exact:true}).fill('240');
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      await timeRuleBox.getByRole('button',{name:'Zeitregel-Vorschau anzeigen',exact:true}).click();
+      assert.match(await timePreview.innerText(),/3 offene Dienstvorkommen: 1 Tag · 1 Nacht · 1 ohne Vorschlag/);
+      assert.match(await timePreview.innerText(),/480/);
+      assert(await timeRuleBox.locator('fieldset').first().evaluate(e=>{const a=e.getBoundingClientRect(),b=e.parentElement.getBoundingClientRect();return a.width<=b.width&&a.left>=b.left&&a.right<=b.right;}),'The full rule fieldset fits its card, not merely the document scroll width');
+      if(process.env.WEB_TEST_SCREENSHOT_DIR)await timeRuleBox.locator('fieldset').first().screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`time-rule-preview-${width}.png`)});
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    }
+    assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())})),timeRuleState,'Preview and draft rule editing do not change saved settings or confirmations');
+    await timeRuleBox.getByLabel('Nacht bis',{exact:true}).fill('22:00');
+    assert.equal(await timePreview.getByRole('button').count(),0,'Changing a rule removes its obsolete apply action');
+    await timeRuleBox.getByRole('button',{name:'Zeitregel-Vorschau anzeigen',exact:true}).click();
+    assert.match(await page.locator('#notice').innerText(),/Nachtfenster und Mindestdauer prüfen/);
+    await timeRuleBox.getByLabel('Nacht bis',{exact:true}).fill('06:00');
+    await timeRuleBox.getByRole('button',{name:'Zeitregel-Vorschau anzeigen',exact:true}).click();
+    await reveal('#weights');await page.locator('#weights input').first().fill('12');await page.locator('#weights input').first().blur();
+    const beforeTimeApply=await page.evaluate(()=>structuredClone(currentSnapshot()));
+    await timePreview.getByRole('button',{name:'Geprüfte Zeitregel-Vorschläge übernehmen',exact:true}).click();
+    assert.match(await page.locator('#notice').innerText(),/Projekt seit der Vorschau geändert/);
+    assert.deepEqual(await page.evaluate(()=>currentSnapshot()),beforeTimeApply,'Stale preview cannot classify shifts');
+    await timeRuleBox.getByRole('button',{name:'Zeitregel-Vorschau anzeigen',exact:true}).click();
+    await timePreview.getByRole('button',{name:'Geprüfte Zeitregel-Vorschläge übernehmen',exact:true}).click();
+    const expectedTimeApply=structuredClone(beforeTimeApply);
+    expectedTimeApply.shifts.find(s=>s.id===timeRuleIds[0]).kind='night';
+    expectedTimeApply.shifts.find(s=>s.id===timeRuleIds[1]).kind='day';
+    expectedTimeApply.metadata.night_classification.minimum=240;
+    assert.deepEqual(await page.evaluate(()=>currentSnapshot()),expectedTimeApply,'Only previewed open kinds and the adopted rule change');
+    await timeRuleBox.getByRole('button',{name:'Zeitregel-Vorschau anzeigen',exact:true}).click();
+    assert.match(await timePreview.innerText(),/1 offene Dienstvorkommen: 0 Tag · 0 Nacht · 1 ohne Vorschlag/);
+    assert.equal(await timePreview.getByRole('button').count(),0,'Nothing classifiable means no apply action');
+    await uploadProject(originalPath);await navigate('rules');await page.setViewportSize({width:1440,height:1000});
     // Existing-duty warnings offer names and focused review without rewriting imported evidence.
     const namedIssues=structuredClone(snapshot);
     namedIssues.unresolved=[

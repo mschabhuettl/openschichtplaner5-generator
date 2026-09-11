@@ -273,12 +273,29 @@ function renderServiceGroups(){
  let box=$('serviceGroups');if(!box){box=el('section');box.id='serviceGroups';box.className='surface padded';$('profiles').before(box);}box.replaceChildren();
  el('h3','Wiederkehrende Dienste gesammelt einstellen',box);
  el('p','Je Dienst und Zeitmuster einmal Tag oder Nacht wählen. Übernommen werden nur noch offene Vorkommen, einschließlich Randzeitraum. Bereits eingestellte Dienstarten, Freigaben, Bedarfe und Ruheprofile bleiben unverändert.',box);
- const settings=snapshot.metadata.night_classification??{start:'22:00',end:'06:00',minimum:180};
+ const settings={...(snapshot.metadata.night_classification??{start:'22:00',end:'06:00',minimum:180})};
  const automatic=el('fieldset',undefined,box);el('legend','Tag/Nacht aus Uhrzeiten erkennen',automatic);
  el('p','Vorschlagsregel, keine gesetzliche Vorgabe: Nacht bei mindestens der eingestellten Minutenzahl im Nachtfenster, sonst Tag. Geteilte Dienste zählen nur ihre Arbeitsblöcke. Bereits festgelegte Dienstarten bleiben erhalten.',automatic);
- field(automatic,'Nacht ab',settings.start,v=>settings.start=v,'time');field(automatic,'Nacht bis',settings.end,v=>settings.end=v,'time');
- const threshold=field(automatic,'Mindestens Minuten im Nachtfenster',settings.minimum,v=>settings.minimum=v,'number');threshold.min='1';threshold.max='1440';
- button(automatic,'Zeitregel auf offene Dienste anwenden',()=>{const candidates=ServiceGroups.groups(snapshot).filter(g=>g.pending).map(g=>({g,proposal:ServiceGroups.suggest(g,settings.start,settings.end,settings.minimum)}));let count=0;for(const {g,proposal} of candidates)if(proposal)count+=ServiceGroups.apply(snapshot,g.key,proposal.kind);snapshot.metadata.night_classification={...settings};invalidateResult();renderRules();notice(`${count} offene Dienstvorkommen nach Zeitregel eingestellt. Projekt speichern.`);});
+ const previewBox=el('div');previewBox.id='serviceRulePreview';previewBox.setAttribute('aria-live','polite');
+ const editRule=(label,key,type)=>{const input=field(automatic,label,settings[key],()=>{},type);input.oninput=()=>{settings[key]=type==='number'?(input.value===''?null:Number(input.value)):input.value;previewBox.replaceChildren();};input.onchange=input.oninput;return input;};
+ editRule('Nacht ab','start','time');editRule('Nacht bis','end','time');
+ const threshold=editRule('Mindestens Minuten im Nachtfenster','minimum','number');threshold.min='1';threshold.max='1440';threshold.step='1';
+ el('p','Zuerst Vorschau prüfen. Eingaben und Vorschau ändern noch keine Dienstart und speichern keine Zeitregel.',automatic).className='helper-text';
+ button(automatic,'Zeitregel-Vorschau anzeigen',()=>{
+  previewBox.replaceChildren();const version=changeVersion,report=ServiceGroups.preview(snapshot,settings);
+  el('strong',`${report.pending} offene Dienstvorkommen: ${report.day} Tag · ${report.night} Nacht · ${report.skipped} ohne Vorschlag`,previewBox);
+  if(report.skipped)el('p','Ohne Vorschlag: Dienst-/Bedarfszuordnung oder Zeitmuster ist nicht eindeutig auswertbar. Diese Vorkommen bleiben offen und müssen einzeln geprüft werden.',previewBox);
+  const list=el('div',undefined,previewBox);list.className='scroll';
+  const draw=()=>{const view=collection(list,'serviceRulePreview',report.rows,{label:'Zeitregel-Vorschläge',size:10,search:r=>r.group.name,redraw:draw});
+   const body=table(view.content,['Dienst und Zeitmuster','Offene Vorkommen','Minuten im Nachtfenster','Vorschlag']);
+   for(const {group,proposal} of view.items){const tr=el('tr',undefined,body);el('td',`${group.name} · ${group.times.map(t=>`${t[1]}–${t[3]}${t[2]!==t[0]?' (Folgetag)':''}`).join(' / ')}`,tr);el('td',String(group.pending),tr);el('td',proposal?String(proposal.nightMinutes):'Nicht auswertbar',tr);el('td',proposal?(proposal.kind==='night'?'Nacht':'Tag'):'Kein Vorschlag',tr);}
+  };draw();
+  if(report.day+report.night)button(previewBox,'Geprüfte Zeitregel-Vorschläge übernehmen',()=>{
+   if(version!==changeVersion){previewBox.replaceChildren();throw Error('Projekt seit der Vorschau geändert. Zeitregel-Vorschau erneut anzeigen.');}
+   let count=0;for(const {group,proposal} of report.rows)if(proposal)count+=ServiceGroups.apply(snapshot,group.key,proposal.kind);
+   snapshot.metadata.night_classification={...settings};invalidateResult();renderRules();notice(`${count} offene Dienstvorkommen nach Zeitregel eingestellt. Projekt speichern.`);
+  });
+ });automatic.append(previewBox);
  const rows=ServiceGroups.groups(snapshot).filter(g=>g.pending);
  if(!rows.length){el('p','Keine offenen zuordenbaren Dienstmuster.',box);return;}
  const list=el('div',undefined,box);list.className='scroll';

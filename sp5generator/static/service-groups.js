@@ -39,5 +39,13 @@
   }
   return total?{kind:night>=minimum?'night':'day',nightMinutes:night}:null;
  }
- const api={groups,apply,suggest};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ServiceGroups=api;
+ function preview(snapshot,rule){
+  suggest({times:[]},rule.start,rule.end,rule.minimum);
+  const rows=groups(snapshot).filter(g=>g.pending).map(group=>({group,proposal:suggest(group,rule.start,rule.end,rule.minimum)}));
+  const pending=snapshot.shifts.filter(s=>s.kind==='unconfirmed').length;
+  let day=0,night=0;
+  for(const {group,proposal} of rows)if(proposal?.kind==='day')day+=group.pending;else if(proposal?.kind==='night')night+=group.pending;
+  return {rows,pending,day,night,skipped:pending-day-night};
+ }
+ const api={groups,apply,suggest,preview};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ServiceGroups=api;
 })(globalThis);
