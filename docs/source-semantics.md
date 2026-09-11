@@ -5307,3 +5307,32 @@ notice as a missing source row or as a hard-time-limit violation. Future issue
 lifecycle work should distinguish the already-existing confirmation requirement
 from a concrete unresolved mapping, without inferring either one is satisfied
 from successful import, elapsed search time or a profile checkbox alone.
+
+
+### Controlled quality-gain counterexample (2026-09-12)
+
+`tests/test_anytime_quality_contract.py::test_certified_hint_allows_real_fixed_coverage_quality_gain`
+now exercises the production `solver.solve` certificate → coverage → conditional
+quality path with **real CP-SAT statuses and solutions**, not a mocked improving
+result. Two approved employees each target eight hours; the saved, mutable plan
+assigns both eight-hour duties to one employee. The only active soft objective is
+absolute target deviation. The test stops coverage at its first incumbent, then
+allows actual quality optimization at exactly that coverage. A second variant
+adds an unfillable demand whose function neither employee is approved for.
+
+All four combinations (zero/one unavoidable vacancy × quality presolve off/on)
+reduce weighted hours deviation from 960 to zero while retaining exactly the same
+vacancy count. The independent validator accepts both phase results. The final
+plan has eight paid hours per employee. The test checks that quality receives a
+complete hint and does **not** fix variables to their hinted values. The saved
+assignments stay mutable; no approval, staffing or time rule is relaxed.
+
+This disproves a universal claim that complete certified hints, or disabled
+presolve alone, prevent the quality phase from changing assignments. It does not
+explain the zero improvement observed in the large private 108-second quality
+phase, establish that enabling presolve improves that instance, or validate the
+80/20 split as a generally better policy. That requires a controlled same-input,
+same-incumbent fixed-coverage comparison with native search statistics. Production
+parameters remain unchanged; this is a synthetic search-regression addition, not
+a new runtime or release. The existing zero-gain private trace remains the latest
+large-instance evidence.

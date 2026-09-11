@@ -1,6 +1,6 @@
 """Counterexamples for bounded quality search, using the production CP model.
 
-These tests assess phase isolation; they do not enable an anytime strategy.
+These tests assess phase isolation and controlled real-search quality gains.
 """
 
 import pytest
@@ -233,3 +233,55 @@ def test_conditional_quality_shares_original_deadline(monkeypatch):
     assert second['native_status'] == 'OPTIMAL'
     assert first['vacancy_count'] == second['vacancy_count'] == 1
     assert first['weighted_quality_cost'] >= second['weighted_quality_cost']
+
+
+@pytest.mark.parametrize('quality_presolve', [False, True])
+@pytest.mark.parametrize('unfillable', [False, True])
+def test_certified_hint_allows_real_fixed_coverage_quality_gain(
+    monkeypatch, quality_presolve, unfillable,
+):
+    """Real CP-SAT search must move a fully hinted, imbalanced saved plan."""
+    snapshot = case(2, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
+    for employee in snapshot.employees:
+        employee.target_minutes = 480
+    snapshot.objectives = Objectives(
+        hours=1, changes=0, nights=0, weekends=0, holidays=0, wishes=0,
+        workday_transitions=0,
+    )
+    snapshot.assignments = [Assignment(employee_id='e0', demand_id=d.id)
+                            for d in snapshot.demands]
+    if unfillable:
+        snapshot.positions.append(snapshot.positions[0].model_copy(
+            update={'id': 'unapproved', 'function_id': 'unapproved'}))
+        snapshot.demands.append(snapshot.demands[0].model_copy(
+            update={'id': 'unfillable', 'position_id': 'unapproved'}))
+    assert validate(snapshot, snapshot.assignments).valid
+    original = cp_model.CpSolver.solve
+    calls = []
+
+    def controlled_search(self, model, *args, **kwargs):
+        calls.append(model.clone())
+        if len(calls) == 2:
+            # Accept the certified incumbent in coverage, without giving that
+            # phase an opportunity to accidentally balance hours first.
+            self.parameters.stop_after_first_solution = True
+        elif len(calls) == 3:
+            self.parameters.stop_after_first_solution = False
+            self.parameters.cp_model_presolve = quality_presolve
+            assert not self.parameters.fix_variables_to_their_hinted_value
+            assert len(model.proto.solution_hint.vars) == len(model.proto.variables)
+        return original(self, model, *args, **kwargs)
+
+    monkeypatch.setattr(cp_model.CpSolver, 'solve', controlled_search)
+    result = solver.solve(snapshot, 5, partial=True)
+    assert len(calls) == 3  # certificate, coverage, conditional quality
+    coverage, quality = result.parameters['search_trace']
+    assert coverage['weighted_quality_cost'] == 960
+    assert quality['weighted_quality_cost'] == 0
+    assert coverage['vacancy_count'] == quality['vacancy_count'] == int(unfillable)
+    assert quality['native_status'] == 'OPTIMAL'
+    assert coverage['independently_valid'] and quality['independently_valid']
+    assert validate(snapshot, result.assignments).valid
+    assert {a.employee_id for a in result.assignments} == {'e0', 'e1'}
+    assert sorted(m['paid_minutes'] for m in result.metrics['employees'].values()) == [480, 480]
+    assert all(not a.fixed for a in snapshot.assignments)
