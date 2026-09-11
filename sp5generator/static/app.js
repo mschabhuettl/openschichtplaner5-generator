@@ -5,6 +5,7 @@ let dirty=false, jsonDirty=false, changeVersion=0, activePanel='projects', proje
 let indexVersion=-1, indexes=null, matrixCache=null, stateFrame=null, jsonVersion=-1;
 const renderedPanels=new Map(), collections=new Map();
 let savedRequest=0,jobsRequest=0;
+let readinessVersion=-1,readinessPending=-1,readinessRequest=0;
 const fold=value=>String(value??'').toLocaleLowerCase('de-DE');
 function dataIndex(){
  if(indexVersion===changeVersion&&indexes)return indexes;
@@ -15,7 +16,7 @@ function dataIndex(){
 function plannerState(){return {snapshot,assignments,dirty,jsonDirty,jobId,solving,projectBusy};}
 function publishState(){
  if(stateFrame!==null)return;
- stateFrame=requestAnimationFrame(()=>{stateFrame=null;window.dispatchEvent(new CustomEvent('planner:state',{detail:plannerState()}));});
+ stateFrame=requestAnimationFrame(()=>{stateFrame=null;window.dispatchEvent(new CustomEvent('planner:state',{detail:plannerState()}));refreshAutomaticReadiness();});
 }
 function navigate(panel){
  if(window.PlannerUI?.navigate){window.PlannerUI.refresh?.(plannerState());window.PlannerUI.navigate(panel);}
@@ -383,6 +384,33 @@ function diagnosticMessage(d){
  if(d.message.startsWith('Unvereinbare Dienste'))return d.code==='rest'?'Zwischen dieser Einteilung und einem anderen Dienst bleibt zu wenig Ruhezeit.':'Diese Einteilung ist zeitlich nicht mit einem anderen Dienst der Person vereinbar.';
  return d.message;
 }
+function refreshAutomaticReadiness(force=false){
+ if(!snapshot||activePanel!=='calculate')return;
+ const status=$('automaticReadinessStatus'),details=$('automaticReadinessDetails'),retry=$('retryReadiness');
+ const display=(state,message)=>{status.dataset.state=state;status.textContent=message;};
+ if(jsonDirty||personDraft){
+  readinessRequest++;readinessPending=-1;readinessVersion=-1;details.replaceChildren();retry.hidden=true;
+  display('draft','Offene JSON- oder Abwesenheitsbearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Vorprüfung.');return;
+ }
+ if(!force&&(readinessVersion===changeVersion||readinessPending===changeVersion))return;
+ const version=changeVersion,request=++readinessRequest;readinessVersion=-1;readinessPending=version;retry.hidden=true;details.replaceChildren();
+ display('pending','Aktuelle Eingaben werden geprüft …');
+ const current=()=>request===readinessRequest&&version===changeVersion&&!jsonDirty&&!personDraft;
+ api('/api/readiness','POST',currentSnapshot()).then(result=>{
+  if(!current())return;
+  if(typeof result?.ready!=='boolean'||!Array.isArray(result.diagnostics)||result.diagnostics.some(d=>!d||typeof d.message!=='string'||typeof d.code!=='string')||result.ready!==(result.diagnostics.length===0))throw Error('Unvollständige Antwort der Vorprüfung.');
+  readinessVersion=version;readinessPending=-1;
+  display(result.ready?'ready':'issues',result.ready?'Keine offenen Eingabefehler gefunden. Die Berechnung und anschließende Ergebnisprüfung stehen noch aus.':`${result.diagnostics.length.toLocaleString('de-DE')} Hinweise vor der Berechnung prüfen.`);
+  if(result.diagnostics.length){
+   const disclosure=el('details',undefined,details);disclosure.open=true;el('summary','Konkrete Prüfhinweise',disclosure);
+   const list=el('div',undefined,disclosure);const draw=()=>{const view=collection(list,'automaticReadiness',result.diagnostics,{label:'Hinweise',size:10,redraw:draw});for(const d of view.items)el('p',diagnosticMessage(d),view.content);};draw();
+  }
+ }).catch(error=>{
+  if(!current())return;
+  readinessVersion=version;readinessPending=-1;details.replaceChildren();retry.hidden=false;
+  display('error','Vorprüfung nicht abgeschlossen. '+error.message);
+ }).finally(()=>{if(request===readinessRequest)readinessPending=-1;});
+}
 function renderValidation(report){
  $('validation').textContent=JSON.stringify(report,null,2);$('validationSummary')?.remove();
  let raw=$('validationRaw');if(!raw){raw=el('details');raw.id='validationRaw';el('summary','Technischer Prüfbericht (JSON)',raw);$('validation').before(raw);raw.append($('validation'));}
@@ -454,6 +482,7 @@ async function openJob(id){
 action('restore',()=>openSavedProject($('saved').value));action('refreshJobs',savedJobs);action('restoreJob',()=>openJob($('savedJobs').value));
 action('solve',solve);
 action('cancel',async()=>{await api('/api/jobs/'+encodeURIComponent(jobId)+'/cancel','POST');await poll();});
+action('retryReadiness',()=>refreshAutomaticReadiness(true));
 action('validate',async()=>{
  const version=changeVersion;$('validationDetails').open=true;const report=await api('/api/validate','POST',{snapshot,assignments});
  if(version!==changeVersion){notice('Daten während der Prüfung geändert. Aktuellen Entwurf erneut prüfen.');return;}
@@ -605,7 +634,7 @@ window.PlannerApp={
  openSavedProject,openJob,
  refreshProjects:saved,refreshJobs:savedJobs
 };
-window.addEventListener('planner:navigate',event=>{const panel=event.detail?.panel;if(!['projects','team','rules','calculate','plan'].includes(panel))return;activePanel=panel;renderActivePanel();});
+window.addEventListener('planner:navigate',event=>{const panel=event.detail?.panel;if(!['projects','team','rules','calculate','plan'].includes(panel))return;activePanel=panel;renderActivePanel();refreshAutomaticReadiness();});
 window.addEventListener('planner:open-project',event=>openSavedProject(event.detail?.id).catch(error=>notice(error.message,true)));
 window.addEventListener('planner:open-job',event=>openJob(event.detail?.id).catch(error=>notice(error.message,true)));
 window.addEventListener('planner:rename',event=>{

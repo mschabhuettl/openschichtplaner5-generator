@@ -93,6 +93,59 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.getByRole('button',{name:'Planungsbereitschaft prüfen',exact:true}).click();
     assert.equal((await readiness).status(),200);
     await page.getByText('Vor der Berechnung noch bearbeiten:',{exact:true}).waitFor();
+    // Opening Calculate runs the existing read-only check, never saves or starts jobs.
+    const writes=[];
+    const observeWrites=request=>{if(['POST','PUT'].includes(request.method())&&/\/api\/(snapshots|jobs)$/.test(new URL(request.url()).pathname))writes.push(request.url());};
+    page.on('request',observeWrites);
+    const automaticResponse=page.waitForResponse(r=>r.url().endsWith('/api/readiness'));
+    await navigate('calculate');await automaticResponse;
+    await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state==='issues');
+    assert(await page.locator('#automaticReadinessDetails').innerText());
+    assert.deepEqual(writes,[]);page.off('request',observeWrites);
+    await screenshot('automatic-preflight.png');
+    // A delayed old success must not replace a newer failed check after an edit.
+    let releaseOld,oldSeenResolve;const oldSeen=new Promise(resolve=>oldSeenResolve=resolve);
+    await page.route('**/api/readiness',async route=>{oldSeenResolve();await new Promise(resolve=>releaseOld=resolve);await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ready:true,diagnostics:[]})});},{times:1});
+    await page.fill('#projectName','Vorprüfung alt');await page.locator('#projectName').blur();await oldSeen;
+    await page.route('**/api/readiness',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Synthetische Prüfunterbrechung'})}),{times:1});
+    await page.fill('#projectName','Vorprüfung aktuell');await page.locator('#projectName').blur();
+    await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state==='error');
+    const oldResponse=page.waitForResponse(r=>r.url().endsWith('/api/readiness')&&r.status()===200);releaseOld();await oldResponse;
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    assert.equal(await page.locator('#automaticReadinessStatus').getAttribute('data-state'),'error');
+    assert(await page.locator('#retryReadiness').isVisible());
+    await page.click('#retryReadiness');
+    await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state==='issues');
+    assert(await page.locator('#retryReadiness').isHidden());
+    let repeatedChecks=0;const countChecks=request=>{if(request.url().endsWith('/api/readiness'))repeatedChecks++;};
+    page.on('request',countChecks);await navigate('team');await navigate('calculate');
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    assert.equal(repeatedChecks,0,'Unchanged project reuses the current check');page.off('request',countChecks);
+    await reveal('#json');await page.fill('#json',(await page.locator('#json').inputValue())+' ');
+    await navigate('calculate');
+    await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state==='draft');
+    assert.equal(await page.locator('#automaticReadinessDetails').innerText(),'');
+    await reveal('#refreshJson');await page.click('#refreshJson');await navigate('calculate');
+    await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state==='issues');
+    // Ignore an in-flight reply during hidden JSON editing, then allow a fresh check.
+    await page.route('**/api/readiness',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Synthetischer Fehler vor Wiederholung'})}),{times:1});
+    await page.fill('#projectName','Prüfung während JSON-Bearbeitung');await page.locator('#projectName').blur();
+    await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state==='error');
+    let releaseHidden,hiddenSeenResolve;const hiddenSeen=new Promise(resolve=>hiddenSeenResolve=resolve);
+    await page.route('**/api/readiness',async route=>{hiddenSeenResolve();await new Promise(resolve=>releaseHidden=resolve);await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ready:true,diagnostics:[]})});},{times:1});
+    await page.click('#retryReadiness');await hiddenSeen;
+    await reveal('#json');await page.fill('#json',(await page.locator('#json').inputValue())+' ');
+    const hiddenResponse=page.waitForResponse(r=>r.url().endsWith('/api/readiness'));releaseHidden();await hiddenResponse;
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    await reveal('#refreshJson');await page.click('#refreshJson');await navigate('calculate');
+    await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state==='issues',null,{timeout:5000});
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});await screenshot(`automatic-preflight-${width}.png`);
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    }
+    await page.setViewportSize({width:1440,height:1000});
+    await navigate('rules');
+
 
     const patternRow=page.locator('#serviceGroups tbody tr').first();
     await patternRow.locator('select').selectOption('night');

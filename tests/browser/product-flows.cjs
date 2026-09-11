@@ -123,6 +123,7 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   assert.equal(await contextConfirmation.isChecked(),false);
   await contextConfirmation.check();
   await navigate('calculate');
+  await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state==='ready');
   await page.fill('#limit','5');
   const jobResponse=page.waitForResponse(response=>response.url().endsWith('/api/jobs')&&response.request().method()==='POST');
   await page.click('#solve');
