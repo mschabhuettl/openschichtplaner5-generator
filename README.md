@@ -110,3 +110,5 @@ Der Container-Workflow prüft Python, Browser, saubere Paketinstallationen, den 
 - [Jobs und Datenhaltung](docs/operations.md)
 
 Die optionale Integration in das Schwesterprojekt hat einen eigenen Abnahmeumfang und ist für diese eigenständige Anwendung nicht erforderlich. Aktivierung und synthetischer Integrationsbetrieb sind in der [Betriebsdokumentation](docs/operations.md) beschrieben.
+
+Beim SP5-Import sind zusätzliche Qualifikationsnachweise standardmäßig deaktiviert; persönliche Dienstfreigaben bleiben erforderlich. Bei Bedarf können zusätzliche Qualifikationsanforderungen pro Position aktiviert werden. Bestehende Projektsicherungen werden nicht automatisch verändert.

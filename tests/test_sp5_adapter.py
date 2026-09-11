@@ -486,3 +486,27 @@ def test_history_distinct_days_and_deviations_do_not_inflate_evidence():
     evidence = history[0]['suggested_approvals'][0]
     assert evidence['evidence_count'] == 2
     assert evidence['evidence_days'] == 1
+
+
+def test_import_uses_personal_approval_without_implicit_qualification_gate():
+    from sp5generator.domain import eligibility
+    from sp5generator.models import Approval
+
+    class Source(SyntheticDatabase):
+        def get_restrictions(self):
+            return []
+
+        def get_schedule(self, *args, **kwargs):
+            return []
+
+    s = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    employee, demand = s.employees[0], s.demands[0]
+    s.shifts[0].kind = "day"
+    assert "approval" in eligibility(s, employee, demand)
+    employee.approvals.append(Approval(
+        function_id=s.positions[0].function_id, workplace_id="*",
+        valid_from=s.period_start, valid_until=s.period_end,
+    ))
+    assert eligibility(s, employee, demand) == []
+    s.positions[0].qualifications_required = True
+    assert "qualification" in eligibility(s, employee, demand)

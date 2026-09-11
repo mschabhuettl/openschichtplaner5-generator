@@ -129,7 +129,7 @@ def import_snapshot(
         period_end + timedelta(days=31),
     )
     unresolved = [
-        "Regelprofile, Dienstarten, Freigaben und Qualifikationsanforderungen ausdrücklich bestätigen.",
+        "Regelprofile, Dienstarten und Freigaben ausdrücklich bestätigen. Zusätzliche Qualifikationsanforderungen bei Bedarf hinterlegen.",
         "Konsistenz des Imports gegen gleichzeitige Quelländerungen lokal bestätigen.",
         "Randkontext und Ausgleichszeiträume nach Auswahl der wirksamen Regeln bestätigen.",
     ]
@@ -281,7 +281,7 @@ def import_snapshot(
             name=native_shifts[sid].get("NAME", ""),
             function_id=f"sp5:service:{sid}",
             workplace_id=f"sp5:workplace:{wid}",
-            qualifications_required=True,
+            qualifications_required=False,
         )
         d = period_start
         while d <= period_end:
@@ -482,7 +482,7 @@ def import_snapshot(
                         name=native.get("NAME", ""),
                         function_id=f"sp5:service:{row['shift_id']}",
                         workplace_id=f"sp5:workplace:{workplace}",
-                        qualifications_required=True,
+                        qualifications_required=False,
                     )
                     member_teams = [
                         g
@@ -744,7 +744,7 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
                     name=shifts[sid].get("NAME", ""),
                     function_id=f"sp5:service:{sid}",
                     workplace_id=f"sp5:workplace:{workplace}",
-                    qualifications_required=True,
+                    qualifications_required=False,
                 ))
                 position_ids.add(pid)
                 snapshot.metadata.setdefault("historical_only_position_ids", []).append(pid)
