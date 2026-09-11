@@ -1,0 +1,26 @@
+--- a/sp5api/routers/work_time_rules.py
++++ b/sp5api/routers/work_time_rules.py
+@@ -261,7 +261,22 @@
+                 model_ctx, mon, mon + timedelta(days=6), holidays=model_holidays
+             )
+             if week_limit <= 0:
+-                continue  # kein Wochenmodell hinterlegt → keine relative Grenze
++                # Missing/zero nominal hours cannot certify a weekly limit.
++                # Do not invent a fixed fallback or label this an excess.
++                violations.append({
++                    "type": "weekly_model_unresolved",
++                    "date": mon.isoformat(),
++                    "employee_id": employee_id,
++                    "description": (
++                        "Weekly model check incomplete: calculated nominal limit "
++                        "is not positive; review CALCBASE, daily/weekly/monthly "
++                        "hours and employment dates. No fallback limit was applied."
++                    ),
++                    "severity": "warning",
++                    "value": week_limit,
++                    "limit": 0.0,
++                })
++                continue
+             desc = (
+                 f"Worked {hrs:.1f}h in week {yr}-W{wk:02d} "
+                 f"(max {week_limit:.1f}h = weekly model x {week_factor:g})"

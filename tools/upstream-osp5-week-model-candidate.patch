@@ -1,0 +1,10 @@
+--- a/frontend/src/pages/WorkTimeRules.tsx
++++ b/frontend/src/pages/WorkTimeRules.tsx
+@@ -50,6 +50,7 @@
+ const VIOLATION_LABELS: Record<string, string> = {
+   max_hours_per_day:             'Tägliche Höchstarbeitszeit überschritten',
+   max_hours_per_week:            'Wöchentliche Höchstarbeitszeit überschritten',
++  weekly_model_unresolved:       'Wochenprüfung unvollständig: Sollmodell prüfen',
+   min_rest_hours_between_shifts: 'Mindestruhezeit zwischen Schichten unterschritten',
+   max_consecutive_days:          'Maximale Anzahl aufeinanderfolgender Arbeitstage überschritten',
+ };

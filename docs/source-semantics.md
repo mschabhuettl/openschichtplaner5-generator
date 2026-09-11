@@ -2152,3 +2152,61 @@ Abrechnung, (3) Kalender-/Zeitzonenaufteilung und ausreichenden Randkontext,
 alle Quellfenster addieren: Sonderersatz und Abwesenheiten bleiben zu beachten.
 Diese Gegenproben grenzen die API als unabhängige Prüfinstanz ein; sie beweisen
 weiterhin nicht die Ursache des fehlenden Original-0.9.29-Projekts/Jobs/Ergebnisses.
+
+### Wochenmodell: Sollwert ersetzt API-Festgrenze, fehlendes Soll überspringt Prüfung
+
+Sechs weitere synthetische Fälle in `tools/test_upstream_week_model.py` verfolgen
+den Vertrag vom Library-Modell bis zum API-Prüfer. Die OSP5-Auswahl
+`WorkTimeRules.tsx` setzt `week_limit_mode=model` und `week_limit_factor`; ihre
+Beschriftung „Vertrags-Wochenstunden“ ist zu eng: Die API ruft tatsächlich
+`calc.get_nominal_hours` für Montag bis Sonntag auf, nicht einfach `HRSWEEK`.
+
+* `CALCBASE=1`, `HRSWEEK=40`: acht Stunden sind im Modellmodus zulässig, auch
+  wenn `max_hours_per_week=6` gesetzt ist. Im Festmodus werden dieselben acht
+  Stunden beanstandet. Das sind alternative Prüfmodi, **keine kombinierten Caps**.
+* `CALCBASE=2`, `HRSMONTH=160`, `HRSDAY=1`, fünf Arbeitstage: Für die vollständige
+  Woche 05.–11.01.2026 liefert `_nominal_month` fünf Sollstunden, nicht 40 aus
+  `HRSWEEK`, nicht 160 und nicht eine pauschale Monatsdivision. Acht Stunden
+  überschreiten deshalb die im API-Modellmodus berechnete Fünfstundengrenze.
+* Leerer Mitarbeiterdatensatz, Monatsmodell mit `HRSDAY=0` oder Gesamtmodell
+  ohne geschlossenen Beschäftigungszeitraum: Das berechnete Soll ist null.
+  `_check_employee` überspringt die Wochenprüfung mit `continue`; die Original-API
+  meldet trotz acht Stunden und gesetztem Festwert sechs keine Auffälligkeit.
+  Bei leerem Datensatz sind dabei fehlende Angaben, nicht tatsächliche Nullstunden
+  belegt. Auch ein fachlich beabsichtigtes Null-Soll ist keine Prüffreigabe.
+
+**Begrenzte Korrektur implementiert:**
+`tools/upstream-api-week-model-candidate.patch` ersetzt ausschließlich dieses
+stille Überspringen durch `weekly_model_unresolved` (Warnung, keine behauptete
+Arbeitszeitverletzung). `value` enthält den berechneten nichtpositiven Grenzwert,
+`limit=0` beschreibt die fehlende positive Prüfvoraussetzung; beide sind hier
+**keine gemessenen Arbeitsstunden**. Es wird weder die Festgrenze als Fallback
+eingeführt noch eine neue Wochenhöchstgrenze erfunden. Der passende isolierte
+OSP5-Patch benennt die Kategorie „Wochenprüfung unvollständig: Sollmodell prüfen“.
+Damit ist die Warnung im bestehenden Ergebnisvertrag darstellbar. Kein umfassender
+Vollständigkeitsvertrag: Wochen ohne erfasste Tagesdaten, fehlende Quellzeiten,
+Plansichtvermischung und Randkontext bleiben durch diesen kleinen Kandidaten
+ausdrücklich ungelöst. Keine vollständige HTTP-/Browserabnahme dieses Kandidaten.
+
+**Abgrenzung Generator:** `api_adapter.py` nutzt `sp5_adapter.import_snapshot`.
+Dieser übernimmt Sollwerte über `get_nominal_hours` als Planungsziel, erzeugt aber
+ein unbestätigtes Regelprofil mit den autorisierten 660/2160 Minuten Ruhe, ohne
+aus Sollstunden ein Wochenmaximum zu erfinden. `RuleProfile.max_weekly_minutes`
+ist standardmäßig `None`; konfigurierte Werte prüft der Generator unabhängig.
+Die separate API-Modusauswahl ist kein importierter persönlicher Grenzwert.
+Ob der Original-600s-Job ein Wochenmaximum hatte, bleibt ohne seine Eingabe offen.
+
+**Reproduktion und Nachweis:**
+
+```sh
+# Originalverhalten charakterisieren: sechs bestanden.
+PYTHONPATH=/home/hilbert/projects/libopenschichtplaner5:tests SP5_WORK_TIME_ROUTER=/home/hilbert/projects/openschichtplaner5-api/sp5api/routers/work_time_rules.py .venv/bin/python -m pytest -q tools/test_upstream_week_model.py
+# An einer isolierten API-Kopie den API-Wochenmodellpatch anwenden; danach:
+PYTHONPATH=/home/hilbert/projects/libopenschichtplaner5:tests SP5_WORK_TIME_ROUTER=/tmp/sp5-week-model-candidate/work_time_rules.py SP5_WEEK_MODEL_CANDIDATE=1 .venv/bin/python -m pytest -q tools/test_upstream_week_model.py tools/test_upstream_work_time_boundaries.py tests/test_partial_limits.py tests/test_calendar_limits.py
+```
+
+Korrekturvertrag gegen Original: gezielt **3 fehlgeschlagen, 3 bestanden**;
+gegen Kandidat einschließlich Kalender-/Teilplanregressionen **128 bestanden**.
+Ruff und Patchanwendbarkeit gegen beide Originalrepos bestanden. Keine Änderung
+an Originalcheckouts, Generatorruntime oder Installation; kein neues Release und
+kein redundanter Realdatentest der unveränderten 0.9.31.
