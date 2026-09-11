@@ -2466,3 +2466,38 @@ Dienstsegmente gegeneinander auf Überlappung und Ruhe prüfen, ohne gesplittete
 Dienste zu verschmelzen; fehlenden Randkontext weiterhin explizit ausweisen.
 Kein Release, keine neue private Abnahme unveränderter 0.9.31 und weiterhin kein
 Reproduktionsnachweis des fehlenden Original-0.9.29-600s-Jobs.
+
+### Dienstübergreifende Segment- und Ruhediagnose
+
+`tools/duty_conflicts_candidate.py:diagnose_pairs` setzt auf den gemessenen
+`SelectedDuty`-Zeilen auf. Vorhandene Generatorhelfer `timeutils.segments`,
+`bounds` und `overlap` liefern UTC-Minuten und halboffene Intervalle. Wie
+`domain.pair_conflict` trennt der Kandidat tatsächliche Segmentüberschneidung
+von ineinandergeschobenen Diensthüllen (`interleaving`). Die Pause innerhalb
+eines einzelnen geteilten Dienstes wird nicht als Ruhe zwischen zwei Diensten
+geprüft. Es wird keine Intervallunion oder neue Arbeitszeitsemantik eingeführt.
+
+Alle Dienstpaare werden betrachtet, nicht nur zeitlich benachbarte: ein langer
+Dienst kann mehrere kürzere enthalten. Null Minuten Abstand sind kein Overlap,
+verletzen aber ein explizites positives Ruheminimum. Tageswechsel und DST werden
+in verstrichenen Minuten gerechnet. 11 Stunden Wandzeit über den Frühjahrssprung
+ergeben im Test 10 Stunden Ruhe; 10 Stunden Wandzeit über den Herbstwechsel
+ergeben 11 Stunden. Ein einzelner 24h-Dienst wird ohne passende Längenregel nicht
+verboten, und genau 660 Minuten Ruhe erfüllen die entsprechende Schwelle.
+
+`tools/test_selected_work_segments_candidate.py` verfolgt doppelte synthetische
+MASHI-Zeilen durch den echten gepatchten API-Selektor bis zum Overlap-Befund mit
+getrennten anfragelokalen Identitäten. Ersetzte Zeilen bleiben inaktiv, fehlende
+Messungen und Abwesenheitskonflikte bleiben im Bericht ungelöst.
+
+**Grenzen:** Der Aufrufer liefert das Ruheminimum ausdrücklich; das ist kein
+Import persönlicher Profile. Nachtregeln, Wochenruhe, Wochenmaxima, vollständige
+Quellendeckung und Randkontext werden hier nicht geprüft. Deshalb bleibt auch
+bei null Befunden `complete=false`. Die Laufzeit von Generator/API/OSP5 bleibt
+unverändert. Keine Original-600s-Reproduktion und kein neues Release.
+
+Nachweis: obiger Testaufruf, zusätzlich
+`tools/test_duty_conflicts_candidate.py`: **175 passed** (13 neue Tests), danach
+16 Integrationstests erneut erfolgreich; Ruff und `git diff --check` grün.
+Nächster Integrationsschritt: Profile und vollständige Randkontextanforderungen
+für Tages-/ISO-Wochensummen verbinden, ohne Sollstunden zu Höchstgrenzen zu machen.

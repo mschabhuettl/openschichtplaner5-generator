@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from tools.audit_upstream_work_time_plan import load_helpers
+from tools.duty_conflicts_candidate import diagnose_pairs
 from tools.selected_work_segments_candidate import measure_selected
 
 DAY = date(2026, 1, 5)
@@ -86,6 +87,10 @@ def test_duplicate_duties_kept_separate_for_later_conflict_check(collect):
     assert len(result) == 2
     assert result[0].source_id != result[1].source_id
     assert all(row.status == 'measured' for row in result)
+    report = diagnose_pairs(result, 660)
+    assert [(f.left, f.right, f.code) for f in report.findings] == [
+        ('MASHI:0', 'MASHI:1', 'overlap')]
+    assert report.complete is False
 
 
 def test_mixed_plan_rejected(collect):
