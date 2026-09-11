@@ -11,7 +11,7 @@
 @@ -211,7 +212,7 @@
      return _parse_record_specs(raw, _compile_field_specs(fields, names))
 
- 
+
 -def read_dbf(filepath: str, encoding_hint: str = "utf-16-le") -> list[dict[str, Any]]:
 +def read_dbf(filepath: str, encoding_hint: str = "utf-16-le", *, strict: bool = False, required_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
      """
