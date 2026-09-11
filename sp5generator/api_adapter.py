@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 from datetime import timedelta
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -93,7 +94,7 @@ class APIClient:
         except APIImportError:
             raise
         except HTTPError as exc:
-            # Only the fixed staffing-source contract is interpreted. Never
+            # Only fixed source-error contracts are interpreted. Never
             # display the upstream body, reason, or arbitrary header values.
             if (
                 exc.code == 500
@@ -115,6 +116,21 @@ class APIClient:
                 if message:
                     raise APIImportError(
                         f"{message} Import abgebrochen (HTTP 500); Bedarfsquelle in SP5 prüfen."
+                    ) from None
+            if (
+                exc.code == 500
+                and re.fullmatch(r"/api/(?:v1/)?groups/-?[0-9]+/members", urlsplit(path).path)
+                and exc.headers is not None
+                and exc.headers.get("X-SP5-Error-Code") == "employee_source_unresolved"
+            ):
+                message = {
+                    "orphan_membership": "Teamzuordnung verweist auf fehlende Personalstammsätze.",
+                    "conflicting_employee": "Personalquelle enthält widersprüchliche Stammsätze.",
+                    "invalid_person_identity": "Personalquelle enthält ungültige Identitäten.",
+                }.get(exc.headers.get("X-SP5-Error-Category"))
+                if message:
+                    raise APIImportError(
+                        f"{message} Import abgebrochen (HTTP 500); Personalquelle in SP5 prüfen."
                     ) from None
             raise APIImportError(
                 f"API-Anfrage abgelehnt (HTTP {exc.code}); Zugriff und API-Version prüfen."

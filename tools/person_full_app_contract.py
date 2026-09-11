@@ -59,6 +59,7 @@ def check_person_join(http, headers, prefix):
                 assert '101' not in response.text and '102' not in response.text
                 with pytest.raises(APIImportError, match='HTTP 500') as caught:
                     api.get(url)
+                assert 'Personalquelle in SP5 prüfen' in str(caught.value)
                 assert 'PRIVATE_SENTINEL' not in str(caught.value)
                 assert api.cache == {}
     finally:

@@ -1063,3 +1063,48 @@ def test_unrecognized_staffing_error_contract_stays_generic(transport, status, p
         f'API-Anfrage abgelehnt (HTTP {status}); Zugriff und API-Version prüfen.'
     )
     assert api.cache == {}
+
+
+@pytest.mark.parametrize('path', ['/api/groups/1/members', '/api/v1/groups/12/members?x=1'])
+@pytest.mark.parametrize('category,message', [
+    ('orphan_membership', 'fehlende Personalstammsätze'),
+    ('conflicting_employee', 'widersprüchliche Stammsätze'),
+    ('invalid_person_identity', 'ungültige Identitäten'),
+])
+def test_employee_source_contract_is_sanitized_and_retryable(transport, path, category, message):
+    from email.message import Message
+    api = APIClient()
+    headers = Message()
+    headers['x-sp5-error-code'] = 'employee_source_unresolved'
+    headers['x-sp5-error-category'] = category
+    calls = []
+
+    class Broken:
+        def open(self, request, **kwargs):
+            calls.append(request.full_url)
+            raise HTTPError(request.full_url, 500, 'PRIVATE_REASON', headers,
+                            BytesIO(b'PRIVATE_BODY'))
+
+    api.opener = Broken()
+    for _ in range(2):
+        with pytest.raises(APIImportError) as caught:
+            api.get(path)
+        assert message in str(caught.value)
+        assert 'Personalquelle in SP5 prüfen' in str(caught.value)
+        assert 'PRIVATE' not in str(caught.value)
+        assert api.cache == {}
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize('status,path,code,category', [
+    (401, '/api/groups/1/members', 'employee_source_unresolved', 'orphan_membership'),
+    (500, '/api/groups', 'employee_source_unresolved', 'orphan_membership'),
+    (500, '/api/employees', 'employee_source_unresolved', 'orphan_membership'),
+    (500, '/api/groups/1/members/extra', 'employee_source_unresolved', 'orphan_membership'),
+    (500, '/api/v1/groups/PRIVATE/members', 'employee_source_unresolved', 'orphan_membership'),
+    (500, '/api/groups/1/members', 'PRIVATE_CODE', 'orphan_membership'),
+    (500, '/api/groups/1/members', 'employee_source_unresolved', 'PRIVATE_CATEGORY'),
+    (500, '/api/groups/1/members', None, None),
+])
+def test_unknown_employee_source_contract_stays_generic(transport, status, path, code, category):
+    test_unrecognized_staffing_error_contract_stays_generic(transport, status, path, code, category)

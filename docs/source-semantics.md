@@ -4857,3 +4857,71 @@ Router tests cover malformed member/employee identities and valid float IDs;
 the packaged real middleware contract checks sanitized error headers,
 Generator APIImportError and an empty error cache under both API prefixes.
 The API candidate remains undeployed.
+
+
+### Sanitized employee-source errors through Generator transport (2026-09-11)
+
+`APIClient._read` now recognizes the staged employees router's three fixed
+`employee_source_unresolved` categories: `orphan_membership`,
+`conflicting_employee`, and `invalid_person_identity`. Interpretation requires
+HTTP 500 and an exact numeric `/api[/v1]/groups/{id}/members` path. Only local
+German messages are displayed; upstream bodies/reasons/unknown header values
+remain excluded. Other statuses, paths and categories retain the generic error.
+Failures are not cached, so a corrected source can be retried.
+
+This completes the prepared chain GRASG/EMPL -> Library readers -> API
+`employees.get_group_members` -> Generator `_Database.get_group_members` /
+`APIClient._read`. OSP5's `frontend/src/api/client.ts:getGroupMembers` uses the
+same versioned membership endpoint; its UI is unchanged. The API candidate
+remains **undeployed**, and native Library read exceptions still reach the
+middleware as generic failures. A successful transport check is not proof of
+a valid plan or of the original 0.9.29 missing-person cause.
+
+Evidence: 14 additional synthetic transport cases in `tests/test_api_adapter.py`
+cover allowlisting, rejection, privacy and repeat requests. The rebuilt-package
+`tools/person_full_app_contract.py:check_person_join` now requires the precise
+local diagnostic after the real API middleware under both prefixes.
+
+### Distinct upstream cycle-generation weekly-hours policy: follow-up
+
+A separate source path must not be conflated with Generator hard profiles:
+Library `database.py:generate_schedule_from_cycle` reads EMPL.HRSWEEK directly
+into `emp_weekly_hours` (around line 1986), uses weekday `SHIFT.DURATION*`
+as hours and rejects a candidate when tracked ISO-week hours plus that duration
+exceed HRSWEEK (around line 2216). API `routers/schedule.py:generate_schedule`
+exposes this via POST `/api/schedule/generate`, returning `skipped_hours_limit`.
+This is **not** Generator's read-only import / CP-SAT planning path and does not
+authorize importing nominal hours as a hard weekly cap.
+
+Existing Library `tests/test_cycle_day_unit.py` exercises cycle dates using an
+optional golden database, not synthetic weekly-limit/paid-vs-elapsed contracts.
+Next bounded analysis: characterize this separate path with synthetic fixtures,
+including CALCBASE month/hour targets and month-boundary context, then trace the
+OSP5 caller. No productive generation endpoint was called; this source finding
+is not yet a reproduced bug or an explanation of the user's 600-second result.
+
+
+Synthetic follow-through: `tools/test_upstream_cycle_hours.py` executes the
+actual Library method with a synthetic table facade, isolated optional sidecar
+paths and a write trap (`dry_run=True`). Six passing cases prove:
+
+* CALCBASE=2 / HRSMONTH=160 does not affect this branch: HRSWEEK=7 rejects an
+  eight-hour candidate, HRSWEEK=8 accepts it, HRSWEEK=0 disables that check.
+* For a September 2, 2026 candidate, an eight-hour September 1 duty exhausts
+  the eight-hour week cap; an identical August 31 duty is ignored, although
+  all three dates belong to ISO week 36. The existing-duty map filters to the
+  requested month before initializing the tracker. This is a reproduced
+  **month-boundary omission in this upstream cycle-generation path**.
+* DURATION=8 with STARTEND=00:00-24:00 consumes eight, not 24 tracker hours.
+  This proves the accounting basis, not that every 24-hour duty is forbidden.
+
+OSP5 `frontend/src/pages/Schedule.tsx` invokes
+`api.generateSchedule` in both preview and generation handlers (around lines
+3001 and 3024); `frontend/src/api/client.ts:generateSchedule` calls the versioned
+API endpoint. Thus this upstream policy is user-visible, but is not the
+Generator CP-SAT path. No frontend save was exercised and no API POST occurred.
+Next: stage a synthetic-tested upstream month-boundary correction preserving
+its existing paid-duration/HRSWEEK policy, and explicitly keep that policy
+separate from Generator configured elapsed-time caps. Do not silently promote
+HRSWEEK to a new Generator hard rule or attribute this finding to the unavailable
+0.9.29 job.
