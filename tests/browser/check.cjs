@@ -34,7 +34,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     async function screenshot(name){
       if(!process.env.WEB_TEST_SCREENSHOT_DIR)return;
       await page.evaluate(()=>{window.scrollTo(0,0);return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
-      await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,name),fullPage:true});
+      await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,name),fullPage:!name.startsWith('reference-overview-')});
     }
     async function navigate(panel){
       await page.locator(`.main-nav [data-navigate="${panel}"]`).click();
@@ -89,6 +89,43 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(snapshot.metadata.service_matrix_version,1);
     await navigate('rules');
     await page.waitForSelector('#setupReview');
+    assert.equal(snapshot.metadata.reference_plan,'ist');
+    assert.match(await page.locator('#referenceImport').innerText(),/Istplan/);
+    assert.match(await page.locator('#referenceImport').innerText(),/0 Vergleichsdienste/);
+    const referenceFixture=structuredClone(snapshot);
+    referenceFixture.metadata.reference_schedule=Array.from({length:13},(_,i)=>({employee_id:101,date:'2026-02-02',shift_id:201,...(i===0?{demand_id:snapshot.demands[0].id}:i===1?{resolution:'ambiguous'}:{resolution:'unmatched'})}));
+    const referencePath=path.join(state,'reference-overview.json');
+    const originalPath=path.join(state,'reference-original.json');
+    fs.writeFileSync(referencePath,JSON.stringify(referenceFixture));fs.writeFileSync(originalPath,JSON.stringify(snapshot));
+    await uploadProject(referencePath);await navigate('rules');
+    const referenceBox=page.locator('#referenceImport');
+    assert.match(await referenceBox.innerText(),/Eindeutig zugeordnet: 1/);
+    assert.match(await referenceBox.innerText(),/Ohne Zuordnung: 11/);
+    assert.match(await referenceBox.innerText(),/Mehrdeutig: 1/);
+    assert.match(await referenceBox.innerText(),/keine aktuelle Planprüfung/);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});await screenshot(`reference-overview-${width}.png`);
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    }
+    await referenceBox.locator('summary').click();
+    await referenceBox.locator('.card').first().waitFor();
+    assert.equal(await referenceBox.locator('.card').count(),10);
+    assert.match(await referenceBox.locator('.card').first().innerText(),/Testperson 001.*Dienst A/);
+    await referenceBox.getByRole('button',{name:'Vergleichsdienste: nächste Seite',exact:true}).click();
+    assert.equal(await referenceBox.locator('.card').count(),3);
+    const untouched=await page.evaluate(()=>JSON.stringify(currentSnapshot()));
+    await referenceBox.getByRole('button',{name:'Team & Freigaben prüfen',exact:true}).click();
+    assert.equal(await page.locator('#teamTitle').evaluate(e=>document.activeElement===e),true);
+    await navigate('rules');await referenceBox.getByRole('button',{name:'Bedarf prüfen',exact:true}).click();
+    assert.equal(await page.locator('#demands').evaluate(e=>document.activeElement===e&&e.closest('details').open),true);
+    assert.equal(await page.evaluate(()=>JSON.stringify(currentSnapshot())),untouched,'Overview and navigation never change rules, approvals or assignments');
+    delete referenceFixture.metadata.reference_plan;
+    fs.writeFileSync(referencePath,JSON.stringify(referenceFixture));
+    await uploadProject(referencePath);await navigate('rules');
+    assert.match(await referenceBox.innerText(),/Plansicht nicht dokumentiert/);
+    await uploadProject(originalPath);await navigate('rules');
+    await page.setViewportSize({width:1440,height:1000});
+
     const readiness=page.waitForResponse(r=>r.url().endsWith('/api/readiness'));
     await page.getByRole('button',{name:'Planungsbereitschaft prüfen',exact:true}).click();
     assert.equal((await readiness).status(),200);

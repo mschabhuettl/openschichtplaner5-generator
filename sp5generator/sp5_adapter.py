@@ -140,6 +140,7 @@ def import_snapshot(
         "context_schedule": [],
         "existing_plan_mode": existing_plan_mode,
         "reference_schedule": [],
+        "reference_plan": "ist",
         "service_matrix_version": 1,
         "selected_team_id": str(native_team),
         "selected_group_ids": scope,
@@ -363,7 +364,7 @@ def import_snapshot(
     month = context_start.replace(day=1)
     seen_schedule = set()
     while month <= context_end:
-        for row in _scope_schedule(db, scope, month.year, month.month):
+        for row in _scope_schedule(db, scope, month.year, month.month, plan="ist"):
             d = calc.to_date(row.get("date"))
             eid = f"sp5:employee:{row.get('employee_id')}"
             if (

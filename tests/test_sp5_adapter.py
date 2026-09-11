@@ -231,6 +231,7 @@ def test_existing_plan_maps_actual_demand_without_duplicate_staffing(mode, fixed
 
 def test_default_existing_plan_is_nonfixed_reference():
     snapshot = import_snapshot(ExistingPlanDatabase(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert snapshot.metadata["reference_plan"] == "ist"
     assert not snapshot.assignments[0].fixed
     with pytest.raises(ValueError, match="reference"):
         import_snapshot(ExistingPlanDatabase(), date(2026, 1, 6), date(2026, 1, 6),
@@ -540,3 +541,16 @@ def test_nominal_hours_respect_source_basis_and_selected_period(basis, start, en
         "target_minutes": expected_hours * 60, "bookings_included": False,
     }
     assert any("Sollbuchungen" in item for item in snapshot.unresolved)
+
+
+def test_reference_source_is_explicit_ist_independent_of_library_default():
+    class Source(ExistingPlanDatabase):
+        def get_schedule(self, year, month, *, plan, **kw):
+            assert plan == "ist"
+            return super().get_schedule(year, month, **kw)
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert snapshot.metadata["reference_plan"] == "ist"
+    assert len(snapshot.assignments) == 1
+    assert not snapshot.employees[0].approvals
+    assert snapshot.unresolved

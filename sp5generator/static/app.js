@@ -284,8 +284,37 @@ function renderSetupReview(){
  const output=el('div',undefined,box);
  button(box,'Planungsbereitschaft prüfen',async()=>{const version=changeVersion,result=await api('/api/readiness','POST',currentSnapshot());if(version!==changeVersion){notice('Projekt geändert. Prüfung erneut starten.');return;}output.replaceChildren();el('strong',result.ready?'Eingaben geprüft – Berechnung kann gestartet werden.':'Vor der Berechnung noch bearbeiten:',output);const counts=new Map();for(const d of result.diagnostics)counts.set(d.code,(counts.get(d.code)??0)+1);for(const [code,n] of counts)el('p',`${diagnosticTitles[code]??code}: ${n}`,output);const details=el('details',undefined,output);el('summary','Konkrete Hinweise',details);const list=el('div',undefined,details);const draw=()=>{const view=collection(list,'setupReadiness',result.diagnostics,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items)el('p',diagnosticMessage(d),view.content);};draw();});
 }
+function renderReferenceImport(){
+ const box=$('referenceImport'),rows=snapshot.metadata.reference_schedule;
+ box.replaceChildren();box.hidden=!Array.isArray(rows);if(box.hidden)return;
+ el('h3','Importierte Vergleichsdienste',box).id='referenceImportTitle';
+ const basis={ist:'Istplan',soll:'Sollplan'}[snapshot.metadata.reference_plan]||'Plansicht nicht dokumentiert';
+ el('p',`${basis} · ${snapshot.period_start} bis ${snapshot.period_end} · ${rows.length} Vergleichsdienste im Import`,box);
+ el('p','Importstand, keine aktuelle Planprüfung: Die historische Planbasis betrifft frühere Einsätze und ändert diese Referenz nicht. Nur eindeutig zugeordnete Dienste wurden als Einteilungen übernommen.',box).className='helper-text';
+ const status=row=>row&&typeof row==='object'?(typeof row.demand_id==='string'&&row.demand_id?'matched':row.resolution==='unmatched'?'unmatched':row.resolution==='ambiguous'?'ambiguous':'unknown'):'unknown';
+ const labels={matched:'Eindeutig zugeordnet',unmatched:'Ohne Zuordnung',ambiguous:'Mehrdeutig',unknown:'Zuordnung nicht dokumentiert'};
+ const counts={matched:0,unmatched:0,ambiguous:0,unknown:0};for(const row of rows)counts[status(row)]++;
+ const list=el('ul',undefined,box);for(const [key,count] of Object.entries(counts))if(key!=='unknown'||count)el('li',`${labels[key]}: ${count}`,list);
+ el('p','Keine Zuordnung: Datum, Dienst und Bedarf prüfen; zusätzlich Team, Arbeitsplatz und Maximum 0 beachten. Mehrdeutig: mehrere passende Bedarfsgruppen fachlich unterscheiden. Es wird kein Bedarf ergänzt und keine Freigabe erteilt.',box);
+ const actions=el('div',undefined,box);actions.className='actions';
+ button(actions,'Bedarf prüfen',()=>{const target=$('demands');target.closest('details').open=true;renderDemands();target.tabIndex=-1;target.focus();target.scrollIntoView({block:'start'});});
+ button(actions,'Team & Freigaben prüfen',()=>window.PlannerUI.navigate('team',{focus:true,scroll:true}));
+ el('p','Danach Regelprofile und offene Importangaben fachlich bearbeiten. Unter Berechnen zeigt die automatische Vorprüfung den aktuellen Eingabestand; erst die Berechnung und Ergebnisprüfung belegen einen gültigen Plan.',box).className='helper-text';
+ if(!rows.length)return;
+ const details=el('details',undefined,box);el('summary','Vergleichsdienste einzeln ansehen',details);
+ const content=el('div',undefined,details);content.className='details-content';
+ const render=()=>{const view=collection(content,'referenceImport',rows,{size:10,label:'Vergleichsdienste',redraw:render});
+  for(const row of view.items){const item=el('div',undefined,view.content);item.className='card';
+   const person=dataIndex().employees.get(`sp5:employee:${row?.employee_id}`);
+   const service=(snapshot.metadata.services??[]).find(service=>service.function_id===`sp5:service:${row?.shift_id}`);
+   el('strong',`${row?.date??'Datum unbekannt'} · ${person?.name??'Person nicht zugeordnet'} · ${service?.name??'Dienst nicht zugeordnet'}`,item);
+   el('p',labels[status(row)],item);
+  }
+ };
+ details.addEventListener('toggle',()=>{if(details.open)render();});
+}
 function renderRules(){
- renderSetupReview();renderServiceGroups();
+ renderReferenceImport();renderSetupReview();renderServiceGroups();
  if(detailsVisible('shifts'))renderShifts();if(detailsVisible('positions'))renderPositions();if(detailsVisible('demands'))renderDemands();
  renderProfiles();renderContext();$('unresolved').replaceChildren();snapshot.unresolved.forEach((u,i)=>{const row=el('div',undefined,$('unresolved'));row.className='card';el('span',u,row);button(row,'Nach fachlicher Korrektur als geklärt markieren',()=>{snapshot.unresolved.splice(i,1);invalidateResult();renderRules();});});
  if(!snapshot.unresolved.length)el('p','Keine offenen Importangaben.',$('unresolved'));$('weights').replaceChildren();Object.entries(snapshot.objectives).forEach(([k,v])=>field($('weights'),({hours:'Stunden',nights:'Nächte',weekends:'Wochenenden',holidays:'Feiertage',wishes:'Wünsche',changes:'Änderungen'})[k],v,n=>snapshot.objectives[k]=n,'number'));

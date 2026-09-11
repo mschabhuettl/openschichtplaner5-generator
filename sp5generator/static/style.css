@@ -11,3 +11,6 @@ body[data-active-panel=plan] .workspace-metrics{display:none}body[data-active-pa
 
 /* Keep the planning period and review actions readable at mobile widths. */
 .planning-facts dd{overflow-wrap:anywhere;min-width:0}.readiness-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.readiness-actions button{flex:1 1 180px;min-height:44px;text-align:left;justify-content:flex-start}
+
+/* Keep import-review actions reachable on touch screens. */
+#referenceImport .actions button{min-height:44px}
