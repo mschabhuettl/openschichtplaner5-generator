@@ -36,7 +36,7 @@ def _unique_rows(rows):
     return result
 
 
-def _nominal_bookings(db, employees, start, end):
+def _nominal_bookings(db, employees, start, end, *, actual_bookings=None):
     """Normalize the public BOOK facade, without mistaking missing access for zero."""
     if not hasattr(db, "get_bookings"):
         return None
@@ -79,12 +79,20 @@ def _nominal_bookings(db, employees, start, end):
             kind = row["type"]
             if type(kind) is not int:
                 raise ValueError("Ungültiger Buchungstyp")
-            if kind != 1:
+            if kind not in (0, 1):
                 continue
             value = row["value"]
             if value is None or value == "" or isinstance(value, bool):
                 raise ValueError("Ungültiger Buchungswert")
             _minutes(value)  # Reject non-finite/malformed values, retain hours.
+            if kind == 0:
+                if actual_bookings is not None:
+                    actual_bookings[row["employee_id"]].append({
+                        "date": day.isoformat(), "type": 0,
+                        "value_hours": float(value),
+                        "source_id": row.get("id"),
+                    })
+                continue
             result[row["employee_id"]].append(
                 {"DATE": day.isoformat(), "TYPE": 1, "VALUE": value}
             )
@@ -234,7 +242,10 @@ def import_snapshot(
         {e["ID"]: e for e in source_employees if e["ID"] in members}.values()
     )
     holidays = calc.holiday_calendar(db.get_holidays())
-    nominal_bookings = _nominal_bookings(db, source_employees, period_start, period_end)
+    actual_bookings = {e["ID"]: [] for e in source_employees}
+    nominal_bookings = _nominal_bookings(
+        db, source_employees, period_start, period_end, actual_bookings=actual_bookings,
+    )
     native_shifts = {s["ID"]: s for s in db.get_shifts(include_hidden=True)}
     metadata["services"] = [
         {"function_id": f"sp5:service:{sid}", "name": service.get("NAME", "")}
@@ -340,6 +351,13 @@ def import_snapshot(
             },
         }
         if nominal_bookings is not None:
+            # Evidence for explicit setup only: TYPE 0 includes signed manual
+            # corrections and carry-in, not a confirmed replanning credit.
+            metadata["provenance"][eid]["actual_bookings"] = {
+                "table": "BOOK", "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(), "applied": False,
+                "classification": "unresolved", "rows": actual_bookings[e["ID"]],
+            }
             metadata["provenance"][eid]["nominal_hours"].update({
                 "source_target_minutes": _minutes(target),
                 "nominal_booking_count": len(nominal_bookings[e["ID"]]),

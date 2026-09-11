@@ -1210,7 +1210,7 @@ Die anschließende Quellanalyse verfolgt den noch offenen Stundenbestandteil
 | OSP5 | `frontend/src/pages/Zeitkonto.tsx` | Lädt `getZeitkonto(year, groupId)` und Jahreszusammenfassung; zeigt Monats-Ist, Jahres-Ist und Saldo. Anzeige eines Istwerts bestätigt keine Gutschrift für einen neu erzeugten Plan. |
 | Generator | `sp5_adapter._nominal_bookings`, `import_snapshot`; `solver.solve` | Importiert bisher nur TYPE 1 ins Periodensoll; Gutschriften/Anfangssalden bleiben ausdrücklich ungeklärt. Weiches Stundenziel ist `abs(geplante bezahlte Minuten + balance_minutes + credit_minutes - target_minutes)`. |
 
-**Konkrete Mappinglücke:** Datumsscharfe TYPE-0-Korrekturen und
+**Konkrete Mappinglücke (automatische Anrechnung weiterhin offen):** Datumsscharfe TYPE-0-Korrekturen und
 Abwesenheitsanrechnungen fließen derzeit nicht automatisch in dieses weiche
 Stundenziel ein. Das kann bei sonst identischen Eingaben die Verteilung
 verändern. Es beweist weder die Ursache der gemeldeten Nichteinplanung noch
@@ -1245,3 +1245,30 @@ trennen; bereits manuell gepflegte Werte dürfen nicht zusätzlich gezählt
 werden. Die Quelle belegt die Kontenrechnung, nicht den gewünschten
 Saldoausgleich des Nutzers. Keine automatische Regelbestätigung und keine
 Änderung harter Arbeitszeitgrenzen folgen aus dieser Analyse.
+
+### Datumsscharfe Istbuchungen: Herkunft erhalten, nicht automatisch anrechnen
+
+Der Import erhält jetzt `metadata.provenance[employee_id].actual_bookings`:
+BOOK-Quell-ID, Datum, TYPE 0 und signierter Stundenwert, beschränkt auf die
+gewählten Personen und den exakten Zeitraum. `applied: false` und
+`classification: unresolved` kennzeichnen die noch ausstehende fachliche
+Einordnung. Notiztexte werden dafür nicht kopiert. Fehlende Buchungsquelle
+bleibt von einer erfolgreich gelesenen leeren Liste unterscheidbar.
+
+Datenfluss: `SP5Database.get_bookings` (5BOOK) → API
+`sp5api/routers/reports.py:get_bookings` → Generator
+`api_adapter._Database.get_bookings` → `sp5_adapter._nominal_bookings`.
+Der bestehende Monatsabruf liefert beide Buchungsarten; kein zweiter Abruf
+und keine neue Kontoberechnung sind nötig. Die OSP5-Kontoanzeige
+`frontend/src/pages/Zeitkonto.tsx` bleibt eine aggregierte Kontosicht, keine
+Freigabe zur Übernahme ihres Istgesamtwertes als Generator-Gutschrift.
+
+`tests/test_nominal_bookings.py` prüft negative und gleiche getrennte
+Buchungen, Quell-IDs, Zeitraum/Personenfilter, Buchungen vor Beschäftigungsbeginn,
+JSON-Erhaltung, fehlerhafte Werte und fehlend versus leer. Zielstunden,
+Gutschrift, Anfangssaldo und harte Grenzen werden dadurch nicht verändert.
+TYPE 0 allein unterscheidet keine manuelle Korrektur von einem Jahresübertrag;
+das bleibt vor einer expliziten Übernahme zu klären. Abwesenheitsanrechnung
+bleibt separat: `calculations.absence_hours`, `charge_factor`, `absence_sums`
+bewerten Arbeitstage/Feiertage, INTERVAL, CHARGETYP/CHARGEHRS und DEDUCTACT.
+Ein bloßes Generator-Abwesenheitsintervall enthält diese Bewertung nicht.

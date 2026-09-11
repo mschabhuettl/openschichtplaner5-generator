@@ -58,6 +58,34 @@ def test_bookings_count_before_employment_clamp():
     assert snapshot.employees[0].target_minutes == 120
 
 
+def test_actual_booking_evidence_preserves_signed_dates_without_applying():
+    snapshot, calls = imported([
+        booking(-2, type=0, id=41, note="not needed for provenance"),
+        booking(3, type=0, id=42), booking(3, type=0, id=43),
+        booking(100, type=0, employee_id=999),
+        booking(100, type=0, date="2026-01-01"), booking(100, type=2),
+    ], EMPSTART="2026-01-07")
+    person = snapshot.employees[0]
+    evidence = snapshot.metadata["provenance"][person.id]["actual_bookings"]
+    assert evidence == {
+        "table": "BOOK", "period_start": "2026-01-06", "period_end": "2026-01-06",
+        "applied": False, "classification": "unresolved", "rows": [
+            {"date": "2026-01-06", "type": 0, "value_hours": -2.0, "source_id": 41},
+            {"date": "2026-01-06", "type": 0, "value_hours": 3.0, "source_id": 42},
+            {"date": "2026-01-06", "type": 0, "value_hours": 3.0, "source_id": 43},
+        ],
+    }
+    assert person.credit_minutes == person.balance_minutes == person.target_minutes == 0
+    assert calls == [{"year": 2026, "month": 1}]
+    assert snapshot.model_validate_json(snapshot.model_dump_json()).metadata == snapshot.metadata
+
+
+@pytest.mark.parametrize("value", [None, "", True, "nan", "inf", "invalid"])
+def test_invalid_actual_booking_evidence_is_not_silently_lost(value):
+    with pytest.raises(ValueError):
+        imported([booking(value, type=0)])
+
+
 @pytest.mark.parametrize("adjustment", [-10, -2, 2, 10])
 def test_actual_account_is_not_a_replanning_credit(adjustment):
     """Source actual totals include work; importing the total would count it twice."""
@@ -130,6 +158,10 @@ def test_known_empty_and_unavailable_sources_remain_distinct():
     missing = import_snapshot(SyntheticDatabase(), date(2026, 1, 6), date(2026, 1, 6), team_id="1")
     assert origin(empty)["bookings_included"] is True
     assert origin(missing)["bookings_included"] is False
+    empty_provenance = empty.metadata["provenance"][empty.employees[0].id]
+    missing_provenance = missing.metadata["provenance"][missing.employees[0].id]
+    assert empty_provenance["actual_bookings"]["rows"] == []
+    assert "actual_bookings" not in missing_provenance
     assert any("Sollbuchungen nicht verfügbar" in s for s in missing.unresolved)
 
 
@@ -210,9 +242,12 @@ def test_malformed_source_is_not_a_confirmed_empty_list(rows):
 
 def test_api_bookings_use_get_and_participate_in_consistency_check(booking_transport):  # noqa: F811
     responses, calls = booking_transport
-    responses["/api/bookings"] = [booking()]
+    responses["/api/bookings"] = [booking(), booking(-3, type=0, id=42)]
     snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1")
     assert snapshot.employees[0].target_minutes == 120
+    assert snapshot.metadata["provenance"][snapshot.employees[0].id]["actual_bookings"]["rows"] == [
+        {"date": "2026-01-06", "type": 0, "value_hours": -3.0, "source_id": 42},
+    ]
     paths = [r.full_url for r in calls if "/api/bookings" in r.full_url]
     assert len(paths) == 2  # cached import + independent repeat comparison
     assert all("year=2026&month=1" in path for path in paths)
