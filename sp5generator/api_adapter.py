@@ -152,6 +152,9 @@ class _Database:
     def get_holidays(self):
         return self.rows("/api/holidays")
 
+    def get_bookings(self, **params):
+        return self.rows("/api/bookings", **params)
+
     def get_shifts(self, **kw):
         return self.rows("/api/shifts", include_hidden="true")
 

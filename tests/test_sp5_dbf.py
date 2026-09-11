@@ -121,10 +121,11 @@ def test_library_reads_new_dbf_need_and_holiday_variant(tmp_path):
         "CYCLE",
         "CYENT",
         "CYEXC",
-        "BOOK",
         "WOPAS",
     ]:
         write(name, ident, [])
+    write("BOOK", ident + [("EMPLOYEEID", "N", 8), ("DATE", "D", 8),
+                            ("TYPE", "N", 8), ("VALUE", "N", 8)], [])
     snapshot = import_snapshot(
         SP5Database(str(tmp_path)), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC"
     )

@@ -35,6 +35,64 @@ def _unique_rows(rows):
     return result
 
 
+def _nominal_bookings(db, employees, start, end):
+    """Normalize the public BOOK facade, without mistaking missing access for zero."""
+    if not hasattr(db, "get_bookings"):
+        return None
+    from sp5lib.database import SP5Database
+    from sp5lib.dbf_reader import get_table_fields
+
+    if isinstance(db, SP5Database):
+        # The library maps missing/unreadable files and short headers to [].
+        # Use its schema reader, but verify access separately so those states
+        # cannot be mistaken for a successfully read empty BOOK table.
+        path = db._table("BOOK")
+        try:
+            with open(path, "rb") as source:
+                source.read(1)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            raise ValueError("Buchungsquelle ist nicht lesbar.") from None
+        fields = {field["name"] for field in get_table_fields(path)}
+        if not {"EMPLOYEEID", "DATE", "TYPE", "VALUE"} <= fields:
+            raise ValueError("Buchungsquelle enthält keine vollständigen Pflichtfelder.")
+    result = {e["ID"]: [] for e in employees}
+    month = start.replace(day=1)
+    while month <= end:
+        rows = db.get_bookings(year=month.year, month=month.month)
+        if not isinstance(rows, list):
+            raise ValueError("Unvollständige Buchungsquelle")
+        for row in rows:
+            if not isinstance(row, dict) or type(row.get("employee_id")) is not int:
+                raise ValueError("Unvollständige Buchungszuordnung")
+            if row["employee_id"] not in result:
+                continue
+            # Validate dates before period filtering; a missing date is not an
+            # out-of-period row. The facade contract uses ISO calendar dates.
+            day = date.fromisoformat(row["date"])
+            if (day.year, day.month) != (month.year, month.month):
+                continue
+            if not start <= day <= end:
+                continue
+            kind = row["type"]
+            if type(kind) is not int:
+                raise ValueError("Ungültiger Buchungstyp")
+            if kind != 1:
+                continue
+            value = row["value"]
+            if value is None or value == "" or isinstance(value, bool):
+                raise ValueError("Ungültiger Buchungswert")
+            _minutes(value)  # Reject non-finite/malformed values, retain hours.
+            result[row["employee_id"]].append(
+                {"DATE": day.isoformat(), "TYPE": 1, "VALUE": value}
+            )
+        if month.year == end.year and month.month == end.month:
+            break
+        month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return result
+
+
 def _scope_schedule(db, scope, year, month, **kwargs):
     rows = _unique_rows(
         row
@@ -175,6 +233,7 @@ def import_snapshot(
         {e["ID"]: e for e in source_employees if e["ID"] in members}.values()
     )
     holidays = calc.holiday_calendar(db.get_holidays())
+    nominal_bookings = _nominal_bookings(db, source_employees, period_start, period_end)
     native_shifts = {s["ID"]: s for s in db.get_shifts(include_hidden=True)}
     metadata["services"] = [
         {"function_id": f"sp5:service:{sid}", "name": service.get("NAME", "")}
@@ -241,8 +300,13 @@ def import_snapshot(
                 unresolved.append(message)
         ctx = calc.EmployeeContext.from_record(e)
         target = calc.get_nominal_hours(
-            ctx, period_start, period_end, holidays=holidays
+            ctx, period_start, period_end, holidays=holidays,
+            bookings=nominal_bookings[e["ID"]] if nominal_bookings is not None else (),
         )
+        if _minutes(target) < 0:
+            unresolved.append(
+                f"Negatives Quell-Soll für {eid}: Der nichtnegative Zielstundenvertrag kann diesen Wert nicht abbilden; lokal klären."
+            )
         employees.append(
             Employee(
                 id=eid,
@@ -259,7 +323,9 @@ def import_snapshot(
         metadata["provenance"][eid] = {
             "table": "EMPL",
             "id": e["ID"],
-            "target": "sp5lib.calculations.get_nominal_hours; bookings not included",
+            "target": "sp5lib.calculations.get_nominal_hours; " + (
+                "TYPE-1 bookings included" if nominal_bookings is not None else "bookings not included"
+            ),
             "nominal_hours": {
                 "calcbase": ctx.calcbase,
                 "hours_day": ctx.hrs_day,
@@ -269,11 +335,20 @@ def import_snapshot(
                 "period_start": period_start.isoformat(),
                 "period_end": period_end.isoformat(),
                 "target_minutes": employees[-1].target_minutes,
-                "bookings_included": False,
+                "bookings_included": nominal_bookings is not None,
             },
         }
+        if nominal_bookings is not None:
+            metadata["provenance"][eid]["nominal_hours"].update({
+                "source_target_minutes": _minutes(target),
+                "nominal_booking_count": len(nominal_bookings[e["ID"]]),
+                "nominal_booking_minutes": _minutes(calc.booking_sum(
+                    nominal_bookings[e["ID"]], 1, period_start, period_end
+                )),
+            })
     unresolved.append(
-        "Sollbuchungen, Zeitgutschriften und Anfangssalden für den gewählten Zeitraum ergänzen."
+        ("Sollbuchungen nicht verfügbar; " if nominal_bookings is None else "")
+        + "Zeitgutschriften und Anfangssalden für den gewählten Zeitraum ergänzen."
     )
     employee_map = {e.id: e for e in employees}
     shifts, positions, demands, restrictions, assignments = {}, {}, [], [], []
@@ -874,6 +949,7 @@ def import_directory(
         "before-after-file-fingerprint; no cross-file transaction"
     )
     expected = {
+        "5BOOK.DBF",
         "5SHDEM.DBF",
         "5SPDEM.DBF",
         "5DADEM.DBF",

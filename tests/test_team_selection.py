@@ -93,6 +93,7 @@ def test_api_exact_selection_does_not_query_excluded_subtree(monkeypatch):
                 "/api/shifts": source.get_shifts(),
                 "/api/workplaces": source.get_workplaces(),
                 "/api/holidays": source.get_holidays(),
+                "/api/bookings": [],
                 "/api/staffing-requirements": source.get_staffing_requirements(),
                 "/api/staffing-requirements/special": [],
                 "/api/restrictions": [],

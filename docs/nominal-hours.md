@@ -16,8 +16,14 @@ wirken in der Quellenformel mit. Kein pauschaler Faktor 4 oder 4,33.
 
 Der Generator ruft diese Berechnung für den gewählten Planungszeitraum auf
 und wandelt das Ergebnis in Minuten um. API- und Verzeichnisimport verwenden
-denselben Adapter. Sollbuchungen werden derzeit nicht übergeben; der Import
-fordert deren gesonderte Prüfung sowie die von Zeitgutschriften und Salden.
+denselben Adapter. Verfügbare Sollbuchungen (Typ 1) werden mit Vorzeichen
+und exaktem Personen-/Zeitraumbezug über die vorhandene Library addiert.
+Fehlende Buchungsquellen bleiben ausdrücklich ungeklärt; Zugriffs- oder
+Formatfehler werden nicht als leere Quelle behandelt. Zeitgutschriften
+und Anfangssalden bleiben separat zu prüfen. Negative Gesamt-Sollwerte
+werden als Quellwert erhalten und wegen des nichtnegativen Zielstunden-
+vertrags ausdrücklich zur Klärung markiert. Bestehende Projekte werden
+nicht automatisch neu berechnet.
 
 ## In der Oberfläche
 
@@ -42,4 +48,5 @@ Bei Tagessoll 7, Wochensoll 36 und Monatssoll 156:
 
 Die Importtests prüfen diese Fälle mit künstlichen Quellwerten.
 Sie belegen die Adapterverwendung, keine Vollständigkeit unbekannter
-Originalbestände oder fehlender Sollbuchungen.
+Originalbestände. Zusätzliche Buchungstests prüfen Typtrennung,
+Vorzeichen, Beschäftigungsränder und Jahreswechsel.

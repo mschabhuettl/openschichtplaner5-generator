@@ -26,7 +26,7 @@ nicht mehr diesen Stand.
 | Tagesbedarf | `SPDEM.DATE` plus Gruppe/Dienst/Arbeitsplatz/MIN/MAX → `Database.get_special_staffing` (`database.py:6376`) | `/api/staffing-requirements/special` | ersetzt Regelbedarf in der Gruppe/Datum/Dienst-Zelle; mehrere Tageszeilen werden nicht automatisch addiert oder ausgewählt |
 | Tagesgesamtbedarf | `DADEM` → **unveränderte Großbuchstabenfelder** in `daily_requirements` | API reicht sie durch | fachliche Relation zu Schichtbedarf ungeklärt; zusätzlich nachgewiesener Feldnamenfehler im Teamfilter, siehe unten |
 | Referenzdienste | `MASHI.TYPE` → `Database.get_schedule`, reguläre Ist-/Solldienste; `CYASS`-Expansion und `SPSHI`-Abweichungen separat | `schedule.get_schedule` validiert Sicht, filtert Sichtbarkeit → `Schedule.tsx` | `_reference_schedule` wählt Referenzsicht; Abwesenheiten, Sonderdetails und Randkontext bleiben Ist. Bedarf wird nicht aus Einteilungen erzeugt. |
-| Sollstunden | `EMPL.CALCBASE` und Stundenfelder, zusätzlich `BOOK.TYPE=1` → `calculations.get_nominal_hours` | `reports.get_bookings` → `Kontobuchungen.tsx:289–303` lädt Buchungen und trennt Typ 0/1 | CALCBASE bereits genutzt, Buchungen fehlen; `bookings_included=False` ist eine Einschränkung, kein Vollständigkeitsnachweis |
+| Sollstunden | `EMPL.CALCBASE` und Stundenfelder, zusätzlich `BOOK.TYPE=1` → `calculations.get_nominal_hours` | `reports.get_bookings` → `Kontobuchungen.tsx:289–303` lädt Buchungen und trennt Typ 0/1 | CALCBASE und verfügbare Typ-1-Buchungen genutzt; `bookings_included` beschreibt Quellenabruf, keine globale Vollständigkeitsbestätigung |
 | Ruhe/Regelkontext | API-Prüfung `routers/work_time_rules.py`, kein importiertes bestätigtes Generatorprofil | Warn-/Prüffunktion, nicht identischer Planungsvertrag | 660/2160 Minuten aus Nutzerauftrag; ±31 Tage geladener Ist-Kontext, aber `context_complete=False`; wirksame Profile und benötigte Randabdeckung gesondert prüfen |
 
 ### Warum MODEL_INVALID hier kein OR-Tools-Modellfehler beweist
@@ -99,9 +99,9 @@ belegt insbesondere SPDEM-Vorrang und „kein Bedarf“ als eigene Kategorie.
    Werte erhalten, fremde Teams ausschließen; kein DADEM-Soll erfinden.
    Bestehender Test `test_special_and_zero_preserved_not_summed` deckt nur
    das Erhalten einer ausgewählten Zeile ab, nicht den Fremdteamfall.
-2. **Nachgewiesene Lücke: Sollbuchungen.** `get_bookings` liefert
+2. **Nachgewiesene und inzwischen korrigierte Lücke: Sollbuchungen.** `get_bookings` liefert
    `employee_id/date/type/value`; `booking_sum` erwartet `DATE/TYPE/VALUE`.
-   Ein bloßes Durchreichen wäre wirkungslos. Der Generator ruft aktuell
+   Ein bloßes Durchreichen wäre wirkungslos. Der Generator rief im untersuchten Stand
    keine Buchungsquelle auf. Synthetisch: Tagesbasis am arbeitsfreien Feiertag
    plus +2 Stunden Typ 1 ergibt Library-Soll 120 Minuten, Generator 0 Minuten.
    Korrektur: explizite Personen-/Periodenfilterung und Feldnormalisierung,
@@ -110,6 +110,9 @@ belegt insbesondere SPDEM-Vorrang und „kein Bedarf“ als eigene Kategorie.
    Buchungen vor Beschäftigungsbegrenzung; vorhandener Test
    `test_nominal_bookings_count_before_clamping` belegt das. Nicht pauschal
    alle offenen Gutschrift-/Saldofragen damit als gelöst markieren.
+   Umsetzung: `_nominal_bookings` normalisiert die vorhandene Facade,
+   `_Database.get_bookings` liest GET `/api/bookings`;
+   `tests/test_nominal_bookings.py` prüft die unten beschriebenen Grenzen.
 3. **Vertragsentscheidung vorbereiten: Vergleich versus Pflichtdaten.**
    Nicht fixierte, nicht zuordenbare Referenzen als Diagnose von echten
    Planungsblockern trennen. Vor Änderung Regressionen für `reference` und
@@ -354,15 +357,50 @@ offenlegen. In diesem Schritt bleiben alle Gewichte und Regeln unverändert.
    genau diese vier Berechnungsbasen an.
 5. Der Generator ruft in `sp5_adapter.import_snapshot` die Library auf und
    speichert Quellenwerte, Zeitraum und Ergebnis in `provenance.nominal_hours`.
-   Er importiert dort **noch keine Sollbuchungen**; `bookings_included=false`
-   und ein offener Einrichtungshinweis kennzeichnen diese Grenze.
+   Verfügbare Sollbuchungen werden über `_nominal_bookings` nach Person,
+   angefragtem Monat und exaktem Zeitraum gefiltert und von
+   `date/type/value` auf `DATE/TYPE/VALUE` normalisiert.
+   `bookings_included=false` bleibt bei fehlender Facade erhalten;
+   Fehler einer vorhandenen Quelle brechen den Import ab.
 
 Die vorhandene Library-Regression `test_nominal_month_base_full_months`
 prüft zwei volle Monate gegen zweimal das Monatsbudget. Die Generator-
 Regressionen prüfen CALCBASE und die Quellenprovenienz synthetisch.
 Eine pauschale Umstellung aller Personen auf Monats- oder Wochenstunden
-wäre mit diesem Codefluss nicht vereinbar. Buchungen/Gutschriften bleiben
-als nächster eigenständiger Mapping-Prüfpunkt offen.
+wäre mit diesem Codefluss nicht vereinbar. Zeitgutschriften und
+Anfangssalden bleiben ein eigenständiger offener Mapping-Prüfpunkt.
+
+### Sollbuchungs-Korrektur und Grenzen
+
+- Vorhandene API/Library werden verwendet, keine zusätzliche Stundenformel.
+- Typ 1 wird vor der Beschäftigungsbegrenzung addiert; signierte Werte
+  bleiben erhalten. Typ 0 wird weder als Soll noch automatisch als
+  Zeitgutschrift oder Anfangssaldo übernommen.
+- Mehrere identische Buchungswerte können legitime getrennte Buchungen
+  sein: keine wertbasierte Deduplizierung. Monatsfilter verhindert ein
+  erneutes Zählen derselben Monatszeilen bei Jahreswechsel.
+- Herkunft enthält Anzahl und Summe der Sollbuchungen sowie das
+  ungekappte `source_target_minutes`. Negative Gesamtwerte passen nicht
+  in den bestehenden nichtnegativen Zielstundenvertrag; der Import
+  behält den Quellwert und einen ausdrücklichen Planungsblocker.
+- Lokale DBF-Quellen: `SP5Database._read` liefert bei Dateifehlern und
+  `read_dbf_buffer` bei zu kurzem Header ebenfalls eine leere Liste.
+  Deshalb werden Dateizugriff und BOOK-Pflichtfelder vor dem Abruf
+  geprüft. Fehlende Tabelle bleibt unbekannt; abgeschnittene Header,
+  fehlende Pflichtfelder oder fehlender Zugriff brechen den Import ab.
+  Die API kann dagegen eine serverseitig fehlende Datei hinter `[]`
+  verbergen: `bookings_included=true` bestätigt nur den Abruf, nicht
+  die Existenz/Vollständigkeit der entfernten Datenbank.
+- HTTP 403/404, fehlerhafte Listen und unvollständige relevante Buchungen
+  werden nicht als bestätigte Null behandelt. API-Antworten nehmen an
+  der bestehenden wiederholten Konsistenzprüfung teil. Deren Grenzen
+  hinsichtlich Sichtbarkeit und fehlender Quelltransaktion bleiben.
+- Synthetische Regressionen: signierte Werte, Typtrennung, Personen-/
+  Periodenfilter, Beschäftigungsrand, Monats-/Jahreswechsel, bekannte
+  leere versus fehlende Quelle, fehlerhafte Werte und API-Zugriffsfehler.
+- Weder harte Tages-/Wochenlimits noch Freigaben oder Solverziele ändern
+  sich. Die Korrektur erklärt nicht ohne Originaleingabe den gemeldeten
+  600-Sekunden-Plan; sie entfernt eine belegte Ursache falscher Sollwerte.
 
 ## Ist/Soll, Sonderdienste und Teamfilter
 
