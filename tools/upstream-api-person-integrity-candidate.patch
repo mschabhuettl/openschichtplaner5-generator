@@ -1,6 +1,6 @@
 --- a/sp5api/routers/employees.py
 +++ b/sp5api/routers/employees.py
-@@ -106,8 +106,27 @@
+@@ -106,8 +106,41 @@
      db = get_db()
      member_ids = db.get_group_members(group_id)
      employees = db.get_employees(include_hidden=True)
@@ -8,9 +8,23 @@
 -    return [emp_map[mid] for mid in member_ids if mid in emp_map]
 +    # Check before the join can silently discard memberships or choose an
 +    # arbitrary employment/nominal-hours record. Never include source values.
++    def person_id(value):
++        import math
++        if not (type(value) is int or (
++            type(value) is float and math.isfinite(value) and value.is_integer()
++        )):
++            raise HTTPException(
++                status_code=500, detail="Personalquelle enthält ungültige Identitäten.",
++                headers={"X-SP5-Error-Code": "employee_source_unresolved",
++                         "X-SP5-Error-Category": "invalid_person_identity"},
++            )
++        return int(value)
++
++    member_ids = [person_id(mid) for mid in member_ids]
 +    emp_map = {}
 +    for employee in employees:
-+        eid = employee["ID"]
++        eid = person_id(employee.get("ID") if isinstance(employee, dict) else None)
++        employee = {**employee, "ID": eid}
 +        if eid in emp_map and emp_map[eid] != employee:
 +            raise HTTPException(
 +                status_code=500,

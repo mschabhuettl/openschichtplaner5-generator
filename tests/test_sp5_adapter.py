@@ -898,3 +898,25 @@ def test_employee_join_preserves_identical_rows_and_repeated_memberships():
     db.get_group_members = lambda group: [101, 101]
     snapshot = import_snapshot(db, date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
     assert len(snapshot.employees) == 1
+
+
+@pytest.mark.parametrize("bad_id", [True, False, [], {}, None, "101", 101.5, float("nan"), float("inf")])
+@pytest.mark.parametrize("source", ["membership", "employee"])
+def test_person_identity_checked_before_native_join(bad_id, source):
+    db = SyntheticDatabase()
+    if source == "membership":
+        db.get_group_members = lambda group: [bad_id]
+    else:
+        row = db.get_employees()[0]
+        db.get_employees = lambda **kw: [{**row, "ID": bad_id}]
+    with pytest.raises(ValueError, match="invalid_person_identity"):
+        import_snapshot(db, date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+
+def test_person_integral_dbf_float_identity_normalizes_without_losing_person():
+    db = SyntheticDatabase()
+    row = db.get_employees()[0]
+    db.get_employees = lambda **kw: [{**row, "ID": 101.0}, row]
+    db.get_group_members = lambda group: [101.0, 101]
+    snapshot = import_snapshot(db, date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+    assert [e.id for e in snapshot.employees] == ["sp5:employee:101"]

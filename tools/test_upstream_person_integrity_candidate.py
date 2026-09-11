@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 
 
 @pytest.mark.parametrize('case', ['valid', 'repeat_member', 'repeat_employee', 'orphan',
-                                  'conflict', 'conflict_reversed'])
+                                  'conflict', 'conflict_reversed', 'bool_member', 'list_member',
+                                  'bool_employee', 'missing_employee_id', 'float_identity'])
 def test_person_join_candidate(tmp_path, case):
     target = tmp_path / 'sp5api/routers/employees.py'
     target.parent.mkdir(parents=True)
@@ -35,6 +36,18 @@ def test_person_join_candidate(tmp_path, case):
         if case.endswith('reversed'):
             employees.reverse()
 
+    if case == 'bool_member':
+        members[:] = [True]
+    if case == 'list_member':
+        members[:] = [[]]
+    if case == 'bool_employee':
+        employees[:] = [{**record, 'ID': True}]
+    if case == 'missing_employee_id':
+        employees[:] = [{'NAME': 'PRIVATE_SENTINEL'}]
+    if case == 'float_identity':
+        members[:] = [101.0]
+        employees[:] = [{**record, 'ID': 101.0}]
+
     class Database:
         def get_group_members(self, group_id):
             assert group_id == 1
@@ -51,10 +64,12 @@ def test_person_join_candidate(tmp_path, case):
     route = '/api/groups/1/members'
     with TestClient(app) as client:
         response = client.get(route)
-    if case == 'orphan' or case.startswith('conflict'):
+    invalid = case in ('bool_member', 'list_member', 'bool_employee', 'missing_employee_id')
+    if invalid or case == 'orphan' or case.startswith('conflict'):
         assert response.status_code == 500
         assert response.headers['X-SP5-Error-Code'] == 'employee_source_unresolved'
         assert response.headers['X-SP5-Error-Category'] == (
+            'invalid_person_identity' if invalid else
             'orphan_membership' if case == 'orphan' else 'conflicting_employee')
         assert 'PRIVATE_SENTINEL' not in response.text
         assert '101' not in response.text and '102' not in response.text

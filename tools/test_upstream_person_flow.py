@@ -97,8 +97,8 @@ def test_boolean_person_identity_aliases_numeric_person_in_both_joins(pipeline):
     source = SyntheticDatabase()
     source.get_employees = lambda **kw: employees
     source.get_group_members = lambda group: [True]
-    snapshot = import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
-    assert len(snapshot.employees) == 1
+    with pytest.raises(ValueError, match='invalid_person_identity'):
+        import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
 
 
 @pytest.mark.parametrize('bad_id', [[], {}])
@@ -109,7 +109,7 @@ def test_container_membership_identity_leaks_raw_join_typeerror(pipeline, bad_id
         adapter.get_group_members(1)
     source = SyntheticDatabase()
     source.get_group_members = lambda group: [bad_id]
-    with pytest.raises(TypeError, match='unhashable type'):
+    with pytest.raises(ValueError, match='invalid_person_identity'):
         import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
 
 
@@ -120,7 +120,7 @@ def test_malformed_membership_is_lost_upstream_but_direct_join_rejects(pipeline,
     assert adapter.get_group_members(1) == []
     source = SyntheticDatabase()
     source.get_group_members = lambda group: [bad_id]
-    with pytest.raises(ValueError, match='orphan_membership'):
+    with pytest.raises(ValueError, match='invalid_person_identity'):
         import_snapshot(source, date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
 
 

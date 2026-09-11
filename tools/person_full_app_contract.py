@@ -33,13 +33,15 @@ def check_person_join(http, headers, prefix):
     url = prefix + '/groups/1/members'
     try:
         assert http.get(url).status_code == 401
-        for case in ('orphan', 'conflict', 'valid'):
+        for case in ('orphan', 'conflict', 'invalid', 'valid'):
             rows[:] = [record]
             members[:] = [101]
             if case == 'orphan':
                 members.append(102)
             if case == 'conflict':
                 rows.append({**record, 'HRSWEEK': 12})
+            if case == 'invalid':
+                members[:] = [True]
             api = object.__new__(APIClient)
             api.base, api.headers, api.cache = 'http://synthetic.test', {}, {}
             api.opener = Transport()
@@ -51,6 +53,7 @@ def check_person_join(http, headers, prefix):
                 assert response.status_code == 500
                 assert response.headers['X-SP5-Error-Code'] == 'employee_source_unresolved'
                 assert response.headers['X-SP5-Error-Category'] == (
+                    'invalid_person_identity' if case == 'invalid' else
                     'orphan_membership' if case == 'orphan' else 'conflicting_employee')
                 assert 'PRIVATE_SENTINEL' not in response.text
                 assert '101' not in response.text and '102' not in response.text

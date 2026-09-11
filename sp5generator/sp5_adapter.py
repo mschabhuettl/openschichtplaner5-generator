@@ -238,12 +238,24 @@ def import_snapshot(
         "group_tree": group_tree(groups),
     }
     source_employees = db.get_employees(include_hidden=True)
-    members = {eid for gid in scope for eid in db.get_group_members(gid)}
+    def person_id(value):
+        # DBF numeric fields may be integral floats; never use Python's bool/int
+        # equality or hash containers before validating native join keys.
+        if not (type(value) is int or (
+            type(value) is float and math.isfinite(value) and value.is_integer()
+        )):
+            raise ValueError("Personenquelle ungültig: invalid_person_identity.")
+        return int(value)
+
+    members = {person_id(eid) for gid in scope for eid in db.get_group_members(gid)}
     # Validate the join before scope filtering/deduplication can conceal people
     # or silently select different employment dates and nominal-hour inputs.
     employee_index = {}
     for employee in source_employees:
-        eid = employee["ID"]
+        if not isinstance(employee, dict):
+            raise ValueError("Personenquelle ungültig: invalid_person_identity.")
+        eid = person_id(employee.get("ID"))
+        employee = {**employee, "ID": eid}
         if eid in employee_index and employee_index[eid] != employee:
             raise ValueError("Personenquelle widersprüchlich: conflicting_employee.")
         employee_index[eid] = employee

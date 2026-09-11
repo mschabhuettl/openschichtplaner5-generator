@@ -4830,3 +4830,30 @@ known dependency warnings; Ruff and diff checks pass. The initial new patch
 had an incorrect hunk length; corrected before the successful rebuilt gate.
 No Generator runtime or released image changed, so the unchanged private
 baseline was not redundantly rerun. Remote CI remains unverified (`gh` absent).
+
+### Direct Generator native person-key guard (2026-09-11)
+
+The Library candidate above does not protect arbitrary database facades passed to
+Generator `sp5_adapter.import_snapshot`. That importer now validates membership
+and EMPL keys **before** constructing a set/index. Boolean, fractional,
+string, null, nonfinite and container keys raise a sanitized
+`invalid_person_identity` error instead of aliasing a person, disappearing, or
+leaking an unhashable-key exception. Integral DBF float keys remain supported
+and normalize to integers before deduplication and public employee IDs.
+
+Evidence: `tests/test_sp5_adapter.py::test_person_identity_checked_before_native_join`
+(18 malformed-source cases) and
+`test_person_integral_dbf_float_identity_normalizes_without_losing_person`.
+The upstream characterization `tools/test_upstream_person_flow.py` still
+demonstrates the unpatched API loss/aliasing but now expects the direct Generator
+guard. This does not reconstruct people already discarded upstream, infer
+approvals, impose assignment of every employee, or establish the cause of the
+unavailable original 0.9.29 600-second input/result.
+
+The staged API person-integrity candidate independently validates native keys,
+including missing/non-object employee rows, before its own join. This covers
+alternative database implementations that bypass the strict Library reader.
+Router tests cover malformed member/employee identities and valid float IDs;
+the packaged real middleware contract checks sanitized error headers,
+Generator APIImportError and an empty error cache under both API prefixes.
+The API candidate remains undeployed.
