@@ -807,3 +807,63 @@ def test_invalid_imported_restriction_blocks_otherwise_valid_planning(transport,
     assert result.solver_status == "MODEL_INVALID"
     assert not result.assignments
     assert not result.validation.valid
+
+
+@pytest.mark.parametrize("reference_plan", ["ist", "soll"])
+@pytest.mark.parametrize("cause", [
+    "no_demand", "other_team", "other_day", "unknown_restriction_shift",
+    "missing_demand_shift", "missing_workplace", "missing_window", "zero_maximum",
+])
+def test_http_restriction_shift_scope_does_not_identify_root_cause(
+    transport, reference_plan, cause
+):
+    """Keep absence of demand distinct from unresolved source references.
+
+    The same aggregate counter currently covers different upstream causes.
+    A zero-capacity demand, in contrast, still has a generated duty and RESTR.
+    """
+    responses, calls = transport
+    requirements = responses["/api/staffing-requirements"]["shift_requirements"]
+    row = requirements[0]
+    if cause == "no_demand":
+        requirements.clear()
+    elif cause == "other_team":
+        row["group_id"] = 2
+    elif cause == "other_day":
+        row["weekday"] = 0
+    elif cause == "unknown_restriction_shift":
+        responses["/api/restrictions"][0]["shift_id"] = 999
+    elif cause == "missing_demand_shift":
+        responses["/api/shifts"] = []
+    elif cause == "missing_workplace":
+        responses["/api/workplaces"] = []
+    elif cause == "missing_window":
+        responses["/api/shifts"][0]["STARTEND7"] = ""
+    elif cause == "zero_maximum":
+        row.update(min=0, max=0)
+    responses["/api/restrictions"][0]["restrict"] = 2
+    responses[("schedule", "2026", "1", reference_plan)] = []
+    day = date(2026, 1, 6)
+    snapshot = import_api(day, day, "1", history_start=day - timedelta(days=1),
+                          history_end=day - timedelta(days=1),
+                          reference_plan=reference_plan)
+    generated = cause in ("unknown_restriction_shift", "zero_maximum")
+    assert len(snapshot.shifts) == int(generated)
+    assert len(snapshot.demands) == int(generated)
+    assert len(snapshot.restrictions) == int(cause == "zero_maximum")
+    counts = snapshot.metadata["restriction_mapping_counts"]
+    assert counts["outside_shift_scope"] == int(cause != "zero_maximum")
+    assert counts["mapped_rows"] == int(cause == "zero_maximum")
+    assert not any("RESTR" in issue for issue in snapshot.unresolved)
+    assert any("Stammdatenreferenz fehlt" in issue for issue in snapshot.unresolved) == (
+        cause in ("missing_demand_shift", "missing_workplace")
+    )
+    assert any("Zeitfenster fehlt" in issue for issue in snapshot.unresolved) == (
+        cause == "missing_window"
+    )
+    if cause == "zero_maximum":
+        assert snapshot.demands[0].maximum == 0
+        assert snapshot.restrictions[0].level == 2
+        assert not snapshot.restrictions[0].approved
+    assert all(not employee.approvals for employee in snapshot.employees)
+    assert all(request.get_method() == "GET" for request in calls)

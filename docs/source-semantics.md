@@ -25,6 +25,7 @@ Diese Übersicht ist keine Release- oder Echtdatenfreigabe.
 | Nicht alle geeigneten Personen eingeplant | **Kein pauschaler Regelverstoß**: `solver.solve` diagnostiziert individuelle Kandidaten/Ausschlüsse. Lineare Sollabweichung kann bei verschiedenen Verteilungen gleich sein; das weiche Blockziel kann Arbeit konzentrieren. Keine erfundene Pflicht zur Einteilung jeder Person. | `tests/test_partial_limits.py:test_linear_hours_target_can_tie_while_block_goal_concentrates_work` und Ausschlussdiagnosen derselben Datei |
 | 24h-Dienst trotz 11h/36h-Ruhe | **Nicht allein daraus verboten**: tägliche Höchstzeit gilt für aufsummierte reale Zeit je Kalendertag, nicht automatisch für die Länge eines einzelnen Dienstes. Tatsächlich zugeordnete Grenzen und angrenzende Ruhe sind entscheidend. | `tests/test_partial_limits.py:test_24_hour_duties_are_not_forbidden_by_11_36_rest_alone`, `test_daily_limit_is_not_a_single_duty_length_limit` |
 | Sollbuchungen / DADEM-Teamfilter / optionale Vergleichsblocker | **Behoben** (`f945180`, `889909b`, `e02a05a`): `_nominal_bookings` normalisiert signierte Typ-1-Buchungen; `import_snapshot` respektiert native DADEM-Teamfelder und trennt nicht fixierte Vergleichsdiagnosen von Pflichtdaten. Keine Umdeutung von Sollstunden zum Wochenmaximum. | `tests/test_nominal_bookings.py`, DADEM-Scope in `tests/test_sp5_adapter.py`, `tests/test_reference_blockers.py` |
+| Ungültiger RESTR-Wochentag wird bei zugehörigem erzeugtem Dienst verworfen | **Im Arbeitszweig behoben** (`49db058`, nicht veröffentlicht): `import_snapshot` blockiert ungültige zugehörige Wochentage/Stufen und zählt verworfene Quellsätze. `outside_shift_scope` bleibt eine Sammelkategorie, kein Nachweis fehlenden Bedarfs oder ungültiger Quelle. | `tests/test_api_adapter.py:test_invalid_imported_restriction_blocks_otherwise_valid_planning`, `test_http_restriction_shift_scope_does_not_identify_root_cause` |
 
 ### Noch offen: Originalreproduktion und fachliche Abnahme
 
@@ -3538,3 +3539,55 @@ nur den neuen RESTR-Klärungsblocker auf ein ansonsten nachweislich lösbares
 synthetisches Modell. Voll- und Teilplanung liefern danach `MODEL_INVALID`,
 keine Einteilungen und ungültige Validierung. Vollsuite vor diesen beiden
 Zusatzfällen: 942 bestanden; anschließend alle 176 HTTP-Adaptertests bestanden.
+
+### RESTR ohne erzeugten Dienst: Ursachen sauber trennen
+
+2026-09-11: `test_http_restriction_shift_scope_does_not_identify_root_cause`
+prüft acht Ursachen jeweils über den HTTP-Import mit Ist- und Sollreferenz
+(16 synthetische Fälle). Bestehende Transportfixture und Importdiagnosen wurden
+verwendet; keine zusätzliche Mappingbibliothek oder parallele Implementierung.
+
+| Synthetischer Quellzustand | Erzeugter Dienst / RESTR | Bestehende Diagnose |
+| --- | --- | --- |
+| Kein Bedarf zum bekannten Dienst | nein / nein | `outside_shift_scope`, kein eigener RESTR-Blocker |
+| Bedarf nur für anderes Team | nein / nein | `outside_shift_scope`, kein eigener RESTR-Blocker |
+| Bedarf nur für anderen Starttag | nein / nein | `outside_shift_scope`, **nicht** `outside_day_scope` |
+| RESTR verweist auf unbekannten Dienst, regulärer Bedarf ist gültig | regulärer Dienst ja / nein | `outside_shift_scope`, kein eigener RESTR-Blocker |
+| Dienststamm für zugehörigen Bedarf fehlt | nein / nein | `outside_shift_scope` plus SHDEM-Stammdatenblocker |
+| Arbeitsplatzstamm für zugehörigen Bedarf fehlt | nein / nein | `outside_shift_scope` plus SHDEM-Stammdatenblocker |
+| Zugehöriges Dienstzeitfenster fehlt | nein / nein | `outside_shift_scope` plus SHIFT-Zeitfensterblocker |
+| Gültiger Bedarf MIN=MAX=0 | ja / ja | `mapped_rows=1`, Maximum bleibt 0 und Sperrstufe 2 bleibt erhalten |
+
+Die Prüfung belegt: **MAX=0 ist nicht gleich fehlender erzeugter Dienst.**
+Ein Referenzdienst kann wegen Nullkapazität unzuordenbar sein, obwohl seine
+RESTR-Zuordnung vollständig erhalten ist. Ebenso bedeutet `outside_day_scope`
+nur, dass bereits erzeugte Dienstvarianten nicht zum RESTR-Starttag passen;
+es zählt nicht sämtliche fehlenden Bedarfsdaten. Die Kategorien sind nach
+Verarbeitungsreihenfolge exklusiv, keine vollständige Ursacheninventur.
+
+Quellkette: Library `sp5lib/database.py:Database.get_restrictions` behält
+RESTR auch bei unbekannter SHIFT-ID; dann sind nur `shift_name/shift_short`
+leer. API `sp5api/routers/schedule.py:get_restrictions` reicht diese Liste durch,
+ohne Ist-/Soll-, Tages- oder Teamfilter. Generator `APIClient.get_restrictions`
+und `import_snapshot` wenden erst danach Personen- und erzeugten Dienstscope
+an. In `import_snapshot` entsteht der Dienst aus einem anwendbaren SHDEM/SPDEM
+mit auflösbaren Stammdaten und Zeitfenstern, nicht aus RESTR oder Historie.
+Die unbekannte RESTR-Referenz ist deshalb als eigener Datenqualitätsbefund
+diagnostizierbar, rechtfertigt aber keine erfundene Sperre auf andere Dienste.
+
+**Präzisierung zur OSP5-Anzeige:** Die oben belegte Erfassungs-/Anzeigelücke
+betrifft `frontend/src/pages/Employees.tsx`, nicht die gesamte Anwendung.
+`MitarbeiterProfil.tsx:restrictions.map` zeigt Wochentag und Stufe bereits an.
+`Einschraenkungen.tsx:handleCreate` übermittelt `formWeekday` und `formGrade`;
+diese dedizierte Verwaltungsseite hat entsprechende Anzeigen.
+Für eine spätere Korrektur des Employees-Pfads ist der vorhandene vollständige
+Vertrag zu verwenden, nicht eine neue fachliche Semantik.
+
+Priorisierte nächste Korrektur: den bestehenden Sammelzähler um eine getrennte
+Diagnose unbekannter Dienststammreferenzen ergänzen; bekannte, aber nicht
+erzeugte Dienste ausdrücklich nicht als verwaist bezeichnen. Danach fehlenden
+Bedarf versus verworfene Bedarfs-/Zeitfensterangaben anhand vorhandener
+SHDEM/SPDEM-Provenienz aufschlüsseln. Unbekannte fremde Quellsätze nicht pauschal
+zum globalen Planungsblocker machen. Originaljob 0.9.29 bleibt für den
+600-Sekunden-Kausalnachweis erforderlich. Keine Runtimeänderung in diesem
+Prüfschritt und keine identische private API-Abnahme wiederholt.
