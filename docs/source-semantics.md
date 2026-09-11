@@ -3117,3 +3117,45 @@ in `solver.solve` bleiben somit neben der auswahlabhängigen Nachtblockbedingung
 wirksam. Der Vergleich bestätigt diese Kombination im aktuellen Stand, belegt
 keinen weiteren Runtimefehler und reproduziert nicht den fehlenden 600s-Originaljob.
 Keine neuen fachlichen Defaults, kein produktiver Code geändert.
+
+### Nachtkennzeichnung: drei Quellheuristiken sind kein Regelvertrag
+
+Zusammenhängend geprüft gegen Library `0dac443`, API `d578f21`, OSP5 `addf5c2`:
+`5SHIFT.STARTEND0/STARTEND<weekday>` → Library
+`SP5Database._is_night_shift` / `get_employee_stats_year` → API-Jahresstatistik
+→ OSP5 `MitarbeiterProfil.tsx` (`getEmployeeStatsYear`). Daneben liefert
+API `reports.py:is_night` die Nachtzählung für OSP5 `Fairness.tsx`
+(`/api/v1/fairness`); `reports.py:categorize_shift` klassifiziert nochmals anders.
+
+Der neue ausführbare Audit `tools/audit_upstream_night_semantics.py` extrahiert
+die bestehenden Funktionen per AST unverändert, ohne Server/DB-Zugriff. Sieben
+synthetische Fälle belegen:
+
+| Zeitfenster | Library-Jahresstatistik | API-Fairness | API-Kategorie |
+|---|---|---|---|
+| 18–23 Uhr | keine Nacht | keine Nacht | Nacht |
+| 20–08 Uhr | keine Nacht | Nacht | Nacht |
+| 05–13 Uhr | keine Nacht | Nacht | Früh |
+| 22–06 Uhr | Nacht | Nacht | Nacht |
+
+Die Library prüft Start ab 22 Uhr oder Ende bis 06 Uhr, die Fairness nur den
+Start des ersten `STARTEND0`-Fensters ab 20 Uhr/vor 06 Uhr; die Kategorie nutzt
+18 Uhr/vor 04 Uhr und einen Namensfallback. Zusätzlich klassifiziert die Library
+einen konkreten 08–16-Uhr-Wochentag weiterhin als Nacht, wenn `STARTEND0` 22–06
+enthält. Umgekehrt erkennt nur sie das konkrete Nachtfenster bei tagsüber
+liegendem `STARTEND0`. Das sind nachgewiesene Unterschiede der Statistikpfade,
+kein Beleg für die fachlich richtige Nachtdefinition des Nutzers.
+
+Generator `sp5_adapter.import_snapshot` übernimmt diese Statistiken bewusst
+nicht als harte Art: importierte `Shift` bleiben unbestätigt, `BoundaryWork.kind`
+bleibt `unknown`. Auch persönliche datierte Generator-Regelprofile werden aus
+diesen Zahlen nicht geliefert. Folgerung für den offenen Ruhequellenvertrag:
+explizite datierte Art/Profilzuordnung mit Herkunft erhalten; bei fehlender
+Quelle Klärungsbedarf behalten. Keinen der drei Statistikwerte automatisch als
+Nachtblockfreigabe einsetzen. Eine automatische Übernahme könnte Ruhebedingungen
+auslassen oder zusätzliche Bedingungen erfinden. Kein Originaljob-Nachweis.
+
+Prüfung: Audit mit beiden oben genannten Quelldateien: sieben Fälle bestanden;
+`tests/test_sp5_adapter.py`, `tools/test_rest_source_window_contract.py` und
+`tests/test_partial_limits.py`: 182 bestanden. Ruff grün. Keine Runtimeänderung,
+kein Release und deshalb keine redundante Abnahme desselben Dockerstands.
