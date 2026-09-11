@@ -204,11 +204,24 @@ def input_diagnostics(snapshot):
             and 1 <= context_days <= MAX_CONTEXT_DAYS):
         issue("size_limit", "Planung ist auf 366 Tage und Kontext auf 1096 Tage begrenzt.")
         return errors
-    if (any(len(getattr(snapshot, key)) > limit
-            for key, limit in COLLECTION_LIMITS.items())
-            or len(snapshot.employees) * len(snapshot.demands) > MAX_CANDIDATE_PAIRS
-            or sum(d.minimum for d in snapshot.demands) > MAX_ASSIGNMENTS):
-        issue("size_limit", "Datensatz überschreitet die unterstützte Planungsgröße.")
+    oversized = False
+    labels = {"employees": "Personen", "positions": "Positionen", "shifts": "Dienste",
+              "demands": "Bedarfe", "profiles": "Regelprofile", "assignments": "Einteilungen",
+              "restrictions": "Dienstsperren", "wishes": "Wünsche"}
+    for key, limit in COLLECTION_LIMITS.items():
+        if len(getattr(snapshot, key)) > limit:
+            issue("size_limit", f"Zu viele {labels[key]}; unterstützt sind höchstens {limit}. "
+                  "Planungszeitraum oder Teamauswahl verkleinern.")
+            oversized = True
+    if len(snapshot.employees) * len(snapshot.demands) > MAX_CANDIDATE_PAIRS:
+        issue("size_limit", "Zu viele Personen-Bedarf-Kombinationen für einen Rechenlauf "
+              "(höchstens 2000000). Kürzeren Planungszeitraum oder weniger Teams wählen.")
+        oversized = True
+    if sum(d.minimum for d in snapshot.demands) > MAX_ASSIGNMENTS:
+        issue("size_limit", "Der Mindestbedarf erfordert mehr als 5000 Einteilungen. "
+              "Kürzeren Planungszeitraum oder weniger Teams wählen.")
+        oversized = True
+    if oversized:
         return errors
 
     payload = snapshot.model_dump(exclude={"metadata"})

@@ -216,6 +216,7 @@ def test_remote_import_rejects_unsavable_structure_at_import(tmp_path, monkeypat
         })
         assert result.status_code == 422
         assert 'size_limit' in result.json()['detail']
+        assert 'Zu viele verschachtelte Planungsdatensätze' in result.json()['detail']
         assert client.get('/api/snapshots').json() == []
 
 

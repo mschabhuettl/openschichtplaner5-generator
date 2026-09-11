@@ -277,6 +277,13 @@ function invalidateResult(){
 function renderProfiles(){
  const box=$('profiles');box.replaceChildren();
  el('h3','Verbindliche Regelprofile',box);
+ const bulk=el('fieldset',undefined,box);el('legend','Regelprofil gesammelt zuordnen',bulk);
+ el('p','Ein bestätigtes Profil allen Personen ohne individuelles Profil zuordnen. Unbestätigte Importplatzhalter werden ersetzt; individuelle Zuordnungen bleiben erhalten.',bulk);
+ let chosen='',team='';
+ select(bulk,'Bestätigtes Profil','',[['','Bitte wählen'],...snapshot.profiles.filter(p=>p.confirmed).map(p=>[p.id,p.id])],v=>chosen=v);
+ select(bulk,'Team','',[['','Alle geladenen Personen'],...[...new Set(snapshot.employees.flatMap(e=>e.team_ids))].map(id=>[id,dataIndex().groups.get(id)?.name??id])],v=>team=v);
+ button(bulk,'Offene Profilzuordnungen übernehmen',()=>{const n=ProfileGroups.apply(snapshot,chosen,team);invalidateResult();renderRules();notice(`${n} Profilzuordnungen übernommen. Individuelle Profile bleiben erhalten. Projekt speichern.`);});
+
  el('p','Alle Grenzen hier sind harte Regeln, keine Optimierungswünsche. Werte fachlich festlegen; es werden keine gesetzlichen Werte vorgeschlagen. Leere optionale Grenzen bedeuten: keine Grenze aus diesem Profil.',box);
  if(!snapshot.profiles.length)el('p','Keine Regelprofile vorhanden. Profile und Zuordnungen können im erweiterten Datenvertrag ergänzt werden.',box);
  snapshot.profiles.forEach(p=>{

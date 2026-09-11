@@ -71,10 +71,11 @@ def check_project_structure(snapshot: Snapshot):
     """Reject unsafe display/input boundaries while allowing unfinished rules."""
     from .domain import input_diagnostics
     blocking_codes = {'input', 'date_range', 'period', 'interval', 'size_limit', 'numeric_range'}
-    codes = sorted({item.code for item in input_diagnostics(snapshot)
-                    if item.code in blocking_codes})
-    if codes:
-        raise HTTPException(422, 'Projektstruktur ungültig: ' + ', '.join(codes))
+    messages = sorted({f'{item.message} [{item.code}]'
+                       for item in input_diagnostics(snapshot)
+                       if item.code in blocking_codes})
+    if messages:
+        raise HTTPException(422, 'Projektstruktur ungültig: ' + ' '.join(messages))
     return snapshot
 
 
