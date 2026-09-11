@@ -4569,3 +4569,38 @@ remain unchanged. Next source boundary is `sp5_adapter.import_snapshot`, where
 the `gid not in (*scope, 0, None)` filter still runs before identity validation.
 That independent boolean/fractional JSON gap needs its own correction and private
 GET audit. Original project/job/result for the user's 0.9.29 run remains missing.
+
+### Generator prefilter identity validation (2026-09-11)
+
+`sp5_adapter.import_snapshot.checked_staffing_rows` now checks SHDEM identifiers
+before team filtering and SPDEM identifiers before date/cell grouping. Boolean,
+fractional, string, container and nonfinite group/service/workplace identifiers
+become explicit unresolved source rows rather than Python-equality matches,
+silent exclusions or unhashable-key crashes. Integral numeric representations
+normalize to int **before** constructing canonical IDs: previously `1.0` matched
+team 1 but produced `sp5:group:1.0`, inconsistent with employee membership.
+Existing null/zero handling remains downstream; this introduces no positive-ID
+range or inferred approvals. Malformed source values are retained only in the
+local snapshot metadata; diagnostics contain field names, not original values.
+
+44 synthetic SHDEM/SPDEM cases in `tests/test_sp5_adapter.py` failed before the
+fix and pass after it. The focused import/partial-plan/calendar-limit suite
+passes 292 tests. The previous three Generator characterizations in
+`tools/test_upstream_staffing_source_contract.py` now assert the corrected
+unresolved behavior. No new parser or dependency: existing Python numeric type
+checks and the import's unresolved-source mechanism are reused.
+
+The upstream package candidates remain necessary: SPDEM is fetched with a team
+filter, so the Generator cannot diagnose malformed rows already removed by the
+remote Library/API. Nor can it reconstruct decimal precision lost before JSON
+arrives. These tests do not establish occurrence in real data or the cause of the
+user's original 0.9.29 plan; that exact project/job/result is still unavailable.
+
+Follow-up checks preserve null/global and out-of-scope integer handling and
+prove that a malformed boolean SPDEM team cannot replace a regular SHDEM cell
+with zero capacity. The original regular demand remains visible, but the
+unresolved source still blocks partial solving (`MODEL_INVALID`); this is not
+an automatic fallback authorization. Full default suite: 1122 passed, followed
+by five additional passing sentinel/cell tests. Three corrected Generator
+characterizations and both clean upstream package reconstructions also pass.
+Two existing dependency deprecation warnings remain. Ruff/diff checks pass.

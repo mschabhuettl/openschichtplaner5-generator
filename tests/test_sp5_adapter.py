@@ -771,3 +771,88 @@ def test_direct_library_invalid_counts_do_not_reach_shift_builder(special, field
     assert any(m.startswith(source + " ") and "Besetzungszahl" in m
                and field.upper() in m for m in snapshot.unresolved)
     assert not any(m.startswith("SHIFT ") for m in snapshot.unresolved)
+
+
+@pytest.mark.parametrize("special", [False, True])
+@pytest.mark.parametrize("field", ["group_id", "shift_id", "workplace_id"])
+@pytest.mark.parametrize("value", [True, False, 1.5, "1", [], {}, float("inf")])
+def test_staffing_identity_is_checked_before_scope_and_cell_matching(special, field, value):
+    class Source(SyntheticDatabase):
+        def get_staffing_requirements(self):
+            data = super().get_staffing_requirements()
+            if special:
+                data["shift_requirements"] = []
+            else:
+                data["shift_requirements"][0][field] = value
+            return data
+
+        def get_special_staffing(self, **kw):
+            if not special:
+                return []
+            row = super().get_staffing_requirements()["shift_requirements"][0]
+            return [{**row, "date": "2026-01-06", field: value}]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.demands
+    source = "SPDEM" if special else "SHDEM"
+    assert any(m.startswith(source + ":") and "Kennung" in m and field.upper() in m
+               for m in snapshot.unresolved)
+    key = "special_requirements" if special else "regular_requirements"
+    assert len(snapshot.metadata["unresolved_native"][key]) == 1
+
+
+@pytest.mark.parametrize("special", [False, True])
+def test_integral_staffing_identities_normalize_before_building_ids(special):
+    class Source(SyntheticDatabase):
+        def get_staffing_requirements(self):
+            data = super().get_staffing_requirements()
+            if special:
+                data["shift_requirements"] = []
+            else:
+                data["shift_requirements"][0].update(group_id=1.0, shift_id=201.0, workplace_id=301.0)
+            return data
+
+        def get_special_staffing(self, **kw):
+            if not special:
+                return []
+            row = super().get_staffing_requirements()["shift_requirements"][0]
+            return [{**row, "date": "2026-01-06", "group_id": 1.0, "shift_id": 201.0, "workplace_id": 301.0}]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.demands) == 1
+    assert snapshot.shifts[0].team_id == "sp5:group:1"
+    assert snapshot.positions[0].function_id == "sp5:service:201"
+    assert snapshot.positions[0].workplace_id == "sp5:workplace:301"
+
+
+@pytest.mark.parametrize("group_id", [0, None, -1, 2])
+def test_identity_guard_preserves_unscoped_and_other_team_semantics(group_id):
+    class Source(SyntheticDatabase):
+        def get_staffing_requirements(self):
+            data = super().get_staffing_requirements()
+            data["shift_requirements"][0]["group_id"] = group_id
+            return data
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.demands
+    assert not any("Ungültige Kennung" in m for m in snapshot.unresolved)
+    rows = snapshot.metadata["unresolved_native"].get("regular_requirements", [])
+    assert len(rows) == int(group_id in (0, None))
+
+
+def test_invalid_special_identity_cannot_replace_regular_cell():
+    class Source(SyntheticDatabase):
+        def get_special_staffing(self, **kw):
+            row = super().get_staffing_requirements()["shift_requirements"][0]
+            return [{**row, "date": "2026-01-06", "group_id": True, "min": 0, "max": 0}]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert len(snapshot.demands) == 1
+    assert snapshot.demands[0].source == "sp5:SHDEM"
+    assert snapshot.demands[0].minimum == 1
+    assert len(snapshot.metadata["unresolved_native"]["special_requirements"]) == 1
+    # Malformed special rows remain a blocker, not permission to use the fallback.
+    from sp5generator.solver import solve
+    result = solve(snapshot, 1, partial=True)
+    assert result.solver_status == "MODEL_INVALID"
+    assert not result.assignments

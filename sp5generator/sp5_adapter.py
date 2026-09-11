@@ -257,7 +257,31 @@ def import_snapshot(
         {"id": f"sp5:workplace:{wid}", "name": workplace.get("NAME", "")}
         for wid, workplace in native_workplaces.items()
     ]
+    def checked_staffing_rows(rows, source, key):
+        # Validate before Python equality/scope filtering and tuple-key grouping.
+        # None/zero retain their existing explicit unresolved/sentinel semantics.
+        for row in rows:
+            invalid = [field for field in ("group_id", "shift_id", "workplace_id")
+                       if row.get(field) is not None and not (
+                           type(row[field]) is int
+                           or (type(row[field]) is float and math.isfinite(row[field])
+                               and row[field].is_integer())
+                       )]
+            if invalid:
+                unresolved.append(
+                    f"{source}: Ungültige Kennung ({', '.join(f.upper() for f in invalid)}); "
+                    "ganze numerische Kennungen erforderlich."
+                )
+                metadata["unresolved_native"].setdefault(key, []).append(row)
+                continue
+            yield {**row, **{field: int(row[field])
+                            for field in ("group_id", "shift_id", "workplace_id")
+                            if row.get(field) is not None}}
+
     requirements = db.get_staffing_requirements()
+    requirements = {**requirements, "shift_requirements": list(checked_staffing_rows(
+        requirements.get("shift_requirements", []), "SHDEM", "regular_requirements"
+    ))}
     if any(r.get("workplace_id") == 0 for r in requirements.get("shift_requirements", [])):
         metadata["workplaces"].append({"id": "sp5:workplace:0", "name": "Ohne feste Arbeitsplatzbindung"})
     specials = _unique_rows(
@@ -276,7 +300,7 @@ def import_snapshot(
         )
         metadata["unresolved_native"]["daily_requirements"] = daily
     special_cells = {}
-    for row in specials:
+    for row in checked_staffing_rows(specials, "SPDEM", "special_requirements"):
         if any(row.get(k) is None for k in ("group_id", "shift_id", "workplace_id", "min", "max")):
             unresolved.append("SPDEM: Unvollständige Bedarfsangabe.")
             metadata["unresolved_native"].setdefault("special_requirements", []).append(row)

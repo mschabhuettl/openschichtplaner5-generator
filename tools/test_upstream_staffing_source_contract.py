@@ -130,8 +130,8 @@ def test_identity_presence_still_accepts_invalid_values(
 
 
 @pytest.mark.parametrize('group_id,demand_count,unresolved_count',
-                         [(True, 1, 0), (None, 0, 1), (1.5, 0, 0)])
-def test_generator_group_identity_gap(group_id, demand_count, unresolved_count):
+                         [(True, 0, 1), (None, 0, 1), (1.5, 0, 1)])
+def test_generator_group_identity_guard(group_id, demand_count, unresolved_count):
     """Downstream characterization of the identity types exposed above."""
     from datetime import date
     from sp5generator.sp5_adapter import import_snapshot
