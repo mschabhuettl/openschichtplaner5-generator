@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.9.6** bewahrt Excel-ähnliche Bezeichnungen als Text und meldet nicht darstellbare XLSX-Zelltexte, statt sie still zu kürzen. Die Eingabeprüfungen aus 0.9.5 sind enthalten. Persönliche Dienstfreigaben bleiben der SP5-Standard; zusätzliche Qualifikationsanforderungen sind optional. [Änderungen und Aktualisierung](docs/release-0.9.6.md).
+**Version 0.9.7** prüft die Ergebniszuordnung bei CLI-Validierung und synthetischer Testübernahme anhand von Snapshot-ID und Inhaltshash. Die Excel-Korrekturen aus 0.9.6 sind enthalten. Persönliche Dienstfreigaben bleiben der SP5-Standard; zusätzliche Qualifikationsanforderungen sind optional. [Änderungen und Aktualisierung](docs/release-0.9.7.md).
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 

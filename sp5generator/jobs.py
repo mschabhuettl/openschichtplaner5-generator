@@ -373,7 +373,7 @@ class Store:
             ) != snapshot_hash(snapshot):
                 raise Conflict("Snapshot changed; recalculate before acceptance")
             result = Result.model_validate_json(job["result"])
-            if result.snapshot_hash != snapshot_hash(snapshot):
+            if result.snapshot_id != snapshot.id or result.snapshot_hash != snapshot_hash(snapshot):
                 raise Conflict("Result belongs to a different snapshot")
             validation = validate(snapshot, result.assignments)
             if not validation.valid or not validation.complete:

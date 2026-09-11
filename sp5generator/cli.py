@@ -107,7 +107,7 @@ def main(argv=None):
         )
         from .domain import snapshot_hash
 
-        if result.snapshot_hash != snapshot_hash(snapshot):
+        if result.snapshot_id != snapshot.id or result.snapshot_hash != snapshot_hash(snapshot):
             raise ValueError("Result does not reference this snapshot")
         if args.command == "validate":
             from .validator import validate as check

@@ -35,6 +35,35 @@ def test_cli_nonfinite_time_limit_reports_input_error_without_result(tmp_path, c
     assert 'endliche' in json.loads(captured.err)['message']
 
 
+@pytest.mark.parametrize("mismatch", ["id", "hash"])
+def test_cli_rejects_mismatched_result_without_replacing_validation(tmp_path, capsys, mismatch):
+    import json
+    from sp5generator.cli import main
+
+    snapshot = make_demo(days=1)
+    result = solve(snapshot, time_limit=5)
+    assert result.validation.valid and result.validation.complete
+    if mismatch == "id":
+        result.snapshot_id = "different-synthetic-project"
+    else:
+        result.snapshot_hash = "stale-hash"
+    source = tmp_path / "input.json"
+    proposal = tmp_path / "result.json"
+    output = tmp_path / "validation.json"
+    source.write_text(snapshot.model_dump_json(), encoding="utf-8")
+    proposal.write_text(result.model_dump_json(), encoding="utf-8")
+    output.write_text("previous validation", encoding="utf-8")
+
+    assert main(["validate", str(source), str(proposal), "-o", str(output)]) == 2
+    assert output.read_text(encoding="utf-8") == "previous validation"
+    captured = capsys.readouterr()
+    assert not captured.out
+    error = json.loads(captured.err)
+    assert error["error"] == "invalid_input"
+    assert "does not reference this snapshot" in error["message"]
+    assert "different-synthetic-project" not in captured.err
+
+
 @pytest.mark.parametrize("case", ["seconds", "microseconds", "offset", "integer", "date", "horizon"])
 def test_invalid_boundaries_return_diagnostics_instead_of_crashing(case):
     snapshot = make_demo()

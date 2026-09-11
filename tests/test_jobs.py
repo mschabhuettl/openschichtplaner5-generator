@@ -55,6 +55,34 @@ def test_acceptance_is_atomic_and_stale_snapshot_rejected(tmp_path):
         store.apply_synthetic(job["id"], "test-owner", "third-key")
 
 
+@pytest.mark.parametrize("mismatch", ["id", "hash"])
+def test_acceptance_rejects_mismatched_result_without_writes(tmp_path, mismatch):
+    from sp5generator.solver import solve
+
+    store = Store(tmp_path / "jobs.sqlite")
+    snapshot = store.save_snapshot(make_demo(days=1), "test-owner")
+    job = store.submit(snapshot.id, "test-owner", 5)
+    result = solve(snapshot, time_limit=5)
+    assert result.validation.valid and result.validation.complete
+    original = result.model_dump_json()
+    if mismatch == "id":
+        result.snapshot_id = "different-synthetic-project"
+    else:
+        result.snapshot_hash = "stale-hash"
+    with store.connect() as conn:
+        conn.execute("UPDATE jobs SET state='succeeded',result=? WHERE id=?",
+                     (result.model_dump_json(), job["id"]))
+    with pytest.raises(Conflict, match="different snapshot"):
+        store.apply_synthetic(job["id"], "test-owner", "retry-key")
+    with store.connect() as conn:
+        for table in ("accepted", "receipts", "audit"):
+            assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+        conn.execute("UPDATE jobs SET result=? WHERE id=?", (original, job["id"]))
+    # Failed acceptance must not consume the idempotency key.
+    receipt = store.apply_synthetic(job["id"], "test-owner", "retry-key")
+    assert receipt["status"] == "applied" and receipt["revision"] == 1
+
+
 def test_worker_process_produces_persistent_result(tmp_path):
     import subprocess
     import sys
