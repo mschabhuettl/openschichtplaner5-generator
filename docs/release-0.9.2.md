@@ -1,5 +1,7 @@
 # Version 0.9.2 – Verständliche Engpassdiagnosen bei Teilplänen
 
+**Aktualisierung empfohlen:** [0.9.3](release-0.9.3.md) korrigiert zusätzlich den Verlust aktivierter Qualifikationsanforderungen bei der Einstellungsübernahme. Bereits übernommene Projekte anhand des ursprünglichen Projekts kontrollieren.
+
 Wenn für einen Bedarf zu wenige Personen geeignet sind, nennt der Prüfbericht jetzt die Ausschlussgründe mit Anzahl: etwa fehlende persönliche Dienstfreigaben, Teamzugehörigkeit, zusätzliche Qualifikationsnachweise oder Abwesenheiten. Eine Person kann aus mehreren Gründen ausgeschlossen sein; die Zahlen dürfen deshalb nicht addiert werden.
 
 Auch ein unabhängig geprüfter, gültiger Teilplan behält die Hinweise zu fehlenden geeigneten Personen und gemeinsam benötigten Kandidaten. Diese Hinweise erklären offene Stellen, ohne sie als Regelverletzungen zu behandeln. Über „Bedarf öffnen“ führt der Bericht zum betroffenen Bedarf.

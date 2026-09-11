@@ -7,6 +7,19 @@
    if(!['sp5-api','sp5lib'].includes(next.metadata.adapter)||previous.timezone!==next.timezone||previous.metadata.adapter!==next.metadata.adapter)throw Error('Datenquelle oder Zeitzone unterscheiden sich. Ohne Übernahme importieren.');
    const oldPeople=new Map(previous.employees.map(e=>[e.id,e])),functions=new Set(next.positions.map(p=>p.function_id));
    const oldFunctions=new Set(previous.positions.map(p=>p.function_id));report.newServices=[...functions].filter(id=>!oldFunctions.has(id));
+   const oldPositions=new Map(previous.positions.map(p=>[p.id,p])),matchedPositions=new Set();
+   for(const position of next.positions){const old=oldPositions.get(position.id);
+    if(!old||old.function_id!==position.function_id||old.workplace_id!==position.workplace_id)continue;
+    matchedPositions.add(old.id);
+    if(position.qualifications_required){
+     // Keep current source requirements; never resolve conflicting active gates implicitly.
+     const ids=p=>JSON.stringify([...new Set(p.qualification_ids??[])].sort());
+     if(old.qualifications_required&&(ids(old)!==ids(position)||old.qualification_level!==position.qualification_level))report.review.push('Qualifikationsanforderungen für '+(position.name??position.id)+' unterscheiden sich zwischen bisherigem Projekt und aktuellem Import. Aktuelle Anforderungen wurden beibehalten; vor der Berechnung fachlich abgleichen.');
+    }else{
+     for(const key of ['qualifications_required','qualification_ids','qualification_level'])if(old[key]!==undefined)position[key]=structuredClone(old[key]);
+    }
+   }
+   for(const old of previous.positions)if(old.qualifications_required&&!matchedPositions.has(old.id))report.review.push('Die frühere zusätzliche Qualifikationspflicht für '+(old.name??old.id)+' konnte keinem aktuellen Dienst und Arbeitsplatz eindeutig zugeordnet werden. Anforderungen vor der Berechnung prüfen.');
    const profileMap=new Map();
    for(const p of previous.profiles){if(!p.confirmed)continue;let id='reused:'+p.id;while(next.profiles.some(x=>x.id===id))id='reused:'+id;
     next.profiles.push({...structuredClone(p),id});profileMap.set(p.id,id);

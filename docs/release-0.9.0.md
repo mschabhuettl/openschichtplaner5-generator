@@ -1,5 +1,7 @@
 # Version 0.9.0 – Einrichtungsassistent
 
+**Korrekturhinweis:** Die Übernahme zusätzlicher Qualifikationsanforderungen von Positionen wurde erst in [0.9.3](release-0.9.3.md) korrigiert. Bereits übernommene Projekte anhand des ursprünglichen Projekts kontrollieren; ein Update repariert diese Daten nicht rückwirkend.
+
 ## Importieren, Änderungen prüfen, berechnen
 
 Beim Import lassen sich historische Dienstfreigaben und die Tag-/Nacht-Zeitregel gemeinsam aktivieren. Die Zeitregel bleibt explizit wählbar und veränderbar.

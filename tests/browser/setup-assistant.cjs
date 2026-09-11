@@ -8,3 +8,42 @@ const result=prepare(fresh,old,{sameSource:true});assert.deepEqual(result.employ
 old.employees[0].approvals=[];assert.deepEqual(prepare(fresh,old,{sameSource:true}).employees[0].approvals,[]);
 old.timezone='Europe/Vienna';assert.throws(()=>prepare(fresh,old,{sameSource:true}));
 assert.equal(prepare(copy,null).metadata.setup_review.newPeople.length,1);
+
+// Reusing personal qualifications must also retain the position's explicit gate.
+const qualificationSource=make();
+Object.assign(qualificationSource.positions[0],{workplace_id:'workplace',qualifications_required:true,qualification_ids:['training'],qualification_level:2});
+const qualificationImport=make();
+Object.assign(qualificationImport.positions[0],{workplace_id:'workplace',qualifications_required:false,qualification_ids:[],qualification_level:1});
+const retained=prepare(qualificationImport,qualificationSource,{sameSource:true});
+assert.equal(retained.positions[0].qualifications_required,true);
+assert.deepEqual(retained.positions[0].qualification_ids,['training']);
+assert.equal(retained.positions[0].qualification_level,2);
+assert.equal(qualificationImport.positions[0].qualifications_required,false);
+retained.positions[0].qualification_ids.push('another');
+assert.deepEqual(qualificationSource.positions[0].qualification_ids,['training']);
+
+// A new source gate is never silently disabled or replaced by older settings.
+const sourceGate=structuredClone(qualificationImport);
+Object.assign(sourceGate.positions[0],{qualifications_required:true,qualification_ids:['new-training'],qualification_level:3});
+const conflict=prepare(sourceGate,qualificationSource,{sameSource:true});
+assert.deepEqual(conflict.positions[0].qualification_ids,['new-training']);
+assert.equal(conflict.positions[0].qualification_level,3);
+assert(conflict.unresolved.some(text=>text.includes('Qualifikationsanforderungen')));
+const disabledPrevious=structuredClone(qualificationSource);
+disabledPrevious.positions[0].qualifications_required=false;
+assert.equal(prepare(sourceGate,disabledPrevious,{sameSource:true}).positions[0].qualifications_required,true);
+
+// Same ID with another workplace is not a safe identity match.
+const changedWorkplace=structuredClone(qualificationImport);
+changedWorkplace.positions[0].workplace_id='another-workplace';
+const unmatched=prepare(changedWorkplace,qualificationSource,{sameSource:true});
+assert.equal(unmatched.positions[0].qualifications_required,false);
+assert(unmatched.unresolved.some(text=>text.includes('Qualifikationspflicht')));
+const removedPosition=structuredClone(qualificationImport);removedPosition.positions=[];
+assert(prepare(removedPosition,qualificationSource,{sameSource:true}).unresolved.some(text=>text.includes('Qualifikationspflicht')));
+
+// An enabled but empty gate remains enabled; reuse is not an implicit repair.
+const emptyGate=structuredClone(qualificationSource);emptyGate.positions[0].qualification_ids=[];
+const stillEmpty=prepare(qualificationImport,emptyGate,{sameSource:true});
+assert.equal(stillEmpty.positions[0].qualifications_required,true);
+assert.deepEqual(stillEmpty.positions[0].qualification_ids,[]);
