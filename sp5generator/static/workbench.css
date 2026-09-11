@@ -262,3 +262,11 @@ main{max-width:none;width:100%;margin:0;padding-left:20px;padding-right:20px}
 @media (pointer: coarse) {
   #matrix .matrix-cell { min-height: 36px; }
 }
+
+/* Team is one continuous list: use page scrolling, not a capped inner viewport. */
+body[data-active-panel=team] #matrix > .collection-content,
+body[data-active-panel=team] #people > .collection-content {
+  max-height: none;
+  overscroll-behavior: auto;
+}
+body[data-active-panel=team] #people { max-height: none; }
