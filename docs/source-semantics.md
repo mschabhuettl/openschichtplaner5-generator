@@ -7,6 +7,139 @@ Library `0dac4438c0be02c1ad612f54d4aba75a3e4d6335`, API
 Dies ist eine eingegrenzte Datenflussanalyse, keine vollständige fachliche
 Abnahme aller Originaltabellen. Keine realen Datensätze sind enthalten.
 
+## Zusammenhängender Abgleich: Ursachen und Korrekturfolge
+
+Vertiefter Lesestand: Generator `267ad4e71e4cff70f28709a5cc83983ea3fe6973`.
+Die folgenden Aussagen unterscheiden Quellvertrag, bewiesenen Mappingfehler
+und noch fehlende fachliche Entscheidungen. Die genannten Quellcheckouts
+wurden nicht verändert. Die aktuelle Generator-Implementierung unterstützt
+bereits Ist/Soll-Auswahl; der ältere Befund „Referenz immer Ist“ beschreibt
+nicht mehr diesen Stand.
+
+### Datenflussübersicht
+
+| Gegenstand | Original → Library | API → OSP5 | Generator und Grenze |
+| --- | --- | --- | --- |
+| Persönliche Einschränkungen | `RESTR.EMPLOYEEID/SHIFTID/WEEKDAY/RESTRICT` → `Database.get_restrictions` (`database.py:6022`), Stufen 0 keine, 1 auf Anfrage, 2 nie (`set_restriction`) | `routers/schedule.py:get_restrictions` → `Employees.tsx:1080` zeigt Einschränkungen; Darstellung unterscheidet dort die drei Stufen nicht | `sp5_adapter.import_snapshot` erhält Stufen; Anfrage bleibt `approved=False`. `domain.eligibility` verlangt zusätzlich positive, zeitlich gültige Dienst-/Arbeitsplatzfreigaben. Keine Einschränkung ist kein Nachweis einer solchen Freigabe. |
+| Teams | `GRASG`, `Database.get_employee_groups` und `get_group_members` | `get_schedule` filtert nach Personenmitgliedschaft, nicht nach Einsatzteam einer Einteilung; API schränkt zusätzlich auf sichtbare Personen ein | `hierarchy.resolve_group_selection`, direkte und geerbte Mitgliedschaften; bei mehreren möglichen Teams keine willkürliche Auswahl |
+| Regelbedarf | `SHDEM.GROUPID/SHIFTID/WORKPLACID/WEEKDAY/MIN/MAX` → `Database.get_staffing_requirements` (`database.py:3590`) | `master_data.get_staffing_requirements` → `Personalbedarf.tsx:379` | je Quellzeile/Datum ein Bedarf; Feiertagsindex 7, Dienstzeit aus `SHIFT.STARTEND{idx}`, bezahlte Minuten aus `DURATION{idx}` |
+| Tagesbedarf | `SPDEM.DATE` plus Gruppe/Dienst/Arbeitsplatz/MIN/MAX → `Database.get_special_staffing` (`database.py:6376`) | `/api/staffing-requirements/special` | ersetzt Regelbedarf in der Gruppe/Datum/Dienst-Zelle; mehrere Tageszeilen werden nicht automatisch addiert oder ausgewählt |
+| Tagesgesamtbedarf | `DADEM` → **unveränderte Großbuchstabenfelder** in `daily_requirements` | API reicht sie durch | fachliche Relation zu Schichtbedarf ungeklärt; zusätzlich nachgewiesener Feldnamenfehler im Teamfilter, siehe unten |
+| Referenzdienste | `MASHI.TYPE` → `Database.get_schedule`, reguläre Ist-/Solldienste; `CYASS`-Expansion und `SPSHI`-Abweichungen separat | `schedule.get_schedule` validiert Sicht, filtert Sichtbarkeit → `Schedule.tsx` | `_reference_schedule` wählt Referenzsicht; Abwesenheiten, Sonderdetails und Randkontext bleiben Ist. Bedarf wird nicht aus Einteilungen erzeugt. |
+| Sollstunden | `EMPL.CALCBASE` und Stundenfelder, zusätzlich `BOOK.TYPE=1` → `calculations.get_nominal_hours` | `reports.get_bookings` → `Kontobuchungen.tsx:289–303` lädt Buchungen und trennt Typ 0/1 | CALCBASE bereits genutzt, Buchungen fehlen; `bookings_included=False` ist eine Einschränkung, kein Vollständigkeitsnachweis |
+| Ruhe/Regelkontext | API-Prüfung `routers/work_time_rules.py`, kein importiertes bestätigtes Generatorprofil | Warn-/Prüffunktion, nicht identischer Planungsvertrag | 660/2160 Minuten aus Nutzerauftrag; ±31 Tage geladener Ist-Kontext, aber `context_complete=False`; wirksame Profile und benötigte Randabdeckung gesondert prüfen |
+
+### Warum MODEL_INVALID hier kein OR-Tools-Modellfehler beweist
+
+`solver.solve` ruft **vor** `cp_model.CpModel()` die Funktion
+`domain.input_diagnostics` auf. Jeder Eintrag in `snapshot.unresolved` und
+jedes fehlende oder unbestätigte wirksame Personenprofil führt bereits dort
+zu `MODEL_INVALID` (`solver.py:88–95`, `domain.py:340–366`).
+
+Ein frischer Import erzeugt solche offenen Punkte absichtlich: Importkonsistenz,
+Regel-/Freigabeneinrichtung, Randkontext, fehlende Buchungen sowie gegebenenfalls
+nicht zugeordnete Vergleichsdienste. Letztere werden **auch im nicht fixierten
+Referenzmodus** in `unresolved` geschrieben. Damit blockieren derzeit sogar
+nur als Vergleich gedachte Altplaneinträge die neue Modellbildung.
+Das ist belegtes Generatorverhalten, nicht automatisch fachlich erforderlich.
+
+Eine fehlende positive Freigabe ist genauer zu unterscheiden: Sie ergibt
+`approval` in `domain.eligibility` und verhindert Kandidaten. Die leere
+Freigabenliste selbst ist nicht die direkte `profile`-Diagnose und nicht
+zwangsläufig allein ein `MODEL_INVALID`. Profilbestätigung, Auflösen von
+Importfragen und persönliche Freigaben sind drei verschiedene Aufgaben.
+Ein zusätzlich bestätigtes Profil beseitigt außerdem kein weiterhin wirksames
+unbestätigtes Profil (`any(not p.confirmed for p in ps)`).
+
+Synthetischer Nachweis: Bei importierter Testperson `CpModel` durch eine
+Funktion ersetzt, die bei Aufruf abbricht; `solve` liefert trotzdem
+`MODEL_INVALID` mit `profile/unresolved`, ohne Modellkonstruktion aufzurufen.
+Bestehende Tests: `tests/test_input_boundaries.py`,
+`test_import_uses_personal_approval_without_implicit_qualification_gate`.
+
+### Warum eine Referenz nicht eindeutig einem Bedarf entspricht
+
+`MASHI` wird in `Database.get_schedule` (`database.py:580–593`) als
+Person/Datum/Dienst/Arbeitsplatz/Sicht ausgegeben, **ohne GROUPID oder SHDEM-ID**.
+Der angefragte `group_id` ist ein Mitgliedschaftsfilter (`database.py:715`),
+keine nachträgliche Einsatzteamzuordnung. Bei Mehrfachmitgliedschaft fehlt
+somit reale Information für eine eindeutige Verbindung zur Bedarfszeile.
+
+`sp5_adapter.import_snapshot` (`sp5_adapter.py:453–501`) filtert schrittweise:
+Datum/Dienst → mögliche Teams → Arbeitsplatz (einschließlich ungebundenem 0)
+→ Maximum ungleich 0. Genau ein Kandidat wird zugeordnet, keiner bleibt
+unmatched, mehrere bleiben ambiguous. Die erste fehlgeschlagene Stufe erklärt
+die Diagnose; sie beweist nicht, dass alle späteren Stufen korrekt wären.
+
+Die OSP5-Bedarfsansicht liefert hier **keinen Eindeutigkeitsbeweis**:
+`Personalbedarf.tsx:384–391` verwendet `reqMap[shift_id][weekday] = r`.
+Nach optionalem Teamfilter überschreibt eine spätere Zeile eine frühere mit
+demselben Dienst/Wochentag; Arbeitsplatz ist kein Schlüssel. Synthetisch
+führen zwei Arbeitsplatzbedarfe dadurch zu einer sichtbaren Zelle, während
+der Generator beide Quellbedarfe behält. Dieses Darstellungsverhalten darf
+nicht als fachliche Erlaubnis zum Zusammenlegen dienen.
+
+Bestehende Generatorregressionen:
+`test_reference_reason_explains_first_failed_filter_without_creating_demand`,
+`test_multigroup_reference_requires_unique_group_mapping`,
+`test_unmatched_or_ambiguous_reference_never_fabricates_demand`,
+`test_date_specific_demand_replaces_holiday_requirement`,
+`test_ambiguous_special_demand_never_falls_back_to_regular`.
+Library: `tests/test_database_calculations.py:test_utilization_against_demand`
+belegt insbesondere SPDEM-Vorrang und „kein Bedarf“ als eigene Kategorie.
+
+### Konkrete Mappinglücken und priorisierte Korrekturen
+
+1. **Nachgewiesener Fehler: DADEM-Teamfilter.** Die Library liefert rohe
+   `GROUPID`-Felder, Generator `sp5_adapter.py:196–200` prüft `group_id`.
+   Dadurch wird jede solche Zeile als `None` behandelt und zugelassen.
+   Synthetische Quelle: Auswahl Team 1, einzige DADEM-Zeile `GROUPID=99`;
+   eine fremde Zeile bleibt in `unresolved_native.daily_requirements`.
+   Korrektur: Quellfeld korrekt lesen, ausgewählte und globale/ungeklärte
+   Werte erhalten, fremde Teams ausschließen; kein DADEM-Soll erfinden.
+   Bestehender Test `test_special_and_zero_preserved_not_summed` deckt nur
+   das Erhalten einer ausgewählten Zeile ab, nicht den Fremdteamfall.
+2. **Nachgewiesene Lücke: Sollbuchungen.** `get_bookings` liefert
+   `employee_id/date/type/value`; `booking_sum` erwartet `DATE/TYPE/VALUE`.
+   Ein bloßes Durchreichen wäre wirkungslos. Der Generator ruft aktuell
+   keine Buchungsquelle auf. Synthetisch: Tagesbasis am arbeitsfreien Feiertag
+   plus +2 Stunden Typ 1 ergibt Library-Soll 120 Minuten, Generator 0 Minuten.
+   Korrektur: explizite Personen-/Periodenfilterung und Feldnormalisierung,
+   negative Werte respektieren, Typ 0 nicht als Soll zählen, Fehler/fehlende
+   Quelle niemals als bestätigte leere Liste behandeln. Library zählt
+   Buchungen vor Beschäftigungsbegrenzung; vorhandener Test
+   `test_nominal_bookings_count_before_clamping` belegt das. Nicht pauschal
+   alle offenen Gutschrift-/Saldofragen damit als gelöst markieren.
+3. **Vertragsentscheidung vorbereiten: Vergleich versus Pflichtdaten.**
+   Nicht fixierte, nicht zuordenbare Referenzen als Diagnose von echten
+   Planungsblockern trennen. Vor Änderung Regressionen für `reference` und
+   `fixed` und unabhängigen Vergleich definieren. Fixierte ungeklärte
+   Einteilungen, Bedarfsunklarheiten und fehlende Freigaben bleiben blockierend.
+4. **Fehlende Fachangaben: positive persönliche Freigaben und Profile.**
+   In den durchverfolgten RESTR-/Schedule-/Mitgliedschaftspfaden ist keine
+   gleichwertige positive, gültigkeitsbezogene Freigabequelle nachgewiesen.
+   Dies ist keine Behauptung, sämtliche Originaltabellen seien abschließend
+   ausgeschlossen. Historienvorschläge und Ersatzpersonenfilter sind keine
+   persönliche Bestätigung. Die vorhandene explizite Einrichtung weiter
+   nutzen, aber unbestätigte Platzhalter nicht durch ein zusätzliches Profil
+   vermeintlich „überstimmen“. Keine Werte oder Freigaben erfinden.
+
+### Prüfstand dieses Analyseschritts
+
+Generator: **165 Tests bestanden** (`test_sp5_adapter.py`,
+`test_api_adapter.py`, `test_input_boundaries.py`, `test_core_rules.py`).
+Library: **84 Tests bestanden** (`test_calculations.py`,
+`test_database_calculations.py`, `test_eligible_replacements.py`), ausgeführt
+mit der bestehenden Generator-Testumgebung, da die Library keine eigene
+`.venv` besitzt. API/OSP5-Pfade wurden gelesen, nicht als vollständige
+API-/Browser-Testabnahme ausgegeben. Die zusätzlichen Minimalreproduktionen
+oben verwenden ausschließlich neu erzeugte synthetische Strukturen.
+
+Kein neuer Echtdatenlauf für unveränderte Version 0.9.29: dessen unmittelbar
+vorheriger privater Ist/Soll-Prüfnachweis bleibt im Automation-Scratch.
+Keine erfolgreiche Neuplanung oder Freigabe wird aus diesen Quell- und
+Regressionstests abgeleitet. Keine Änderung produktiver Originaldaten.
+
 ## Sollstunden: Einheit folgt der Berechnungsbasis
 
 1. Originalfelder `EMPL.CALCBASE`, `HRSDAY`, `HRSWEEK`, `HRSMONTH`,
