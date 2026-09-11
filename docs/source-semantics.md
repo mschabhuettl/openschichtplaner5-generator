@@ -1856,3 +1856,27 @@ von diesem konkreten Verlust unberührt; keine Erklärung des fehlenden
 Original-600s-Jobs daraus ableiten. Nächster gezielter Prüfpunkt sind
 Normaldienst plus Sonderdienst/Abwesenheit und die bestehenden Override-Tests,
 bevor ein kompatibler gemeinsamer Änderungskandidat entsteht.
+
+### Teiltagsabwesenheit verdeckt Dienst und verliert Zeitfenster
+
+Weitere vier synthetische Fälle in `audit_upstream_schedule_views.py`
+(INTERVAL 0/1/2/3), 40 zusätzliche Assertions, belegen: Der Monatsweg
+behält den normalen Ist-Dienst neben der Abwesenheit und liefert deren
+Intervall einschließlich START/END bei stundenweiser Abwesenheit.
+`database.py:get_schedule_day/get_schedule_week` überschreiben hingegen
+in der ABSEN-Schleife den kompletten Personeneintrag, setzen `shift_id=None`
+und reichen weder `interval` noch `start_time/end_time` weiter. Auch eine
+synthetische einstündige Abwesenheit verdeckt damit den ganzen Dienst.
+OSP5 `Wochenansicht.tsx:buildStats` zählt anschließend Abwesenheit statt Dienst.
+Das ist ein nachgewiesener Informationsverlust der Ansicht, **kein Beweis,
+dass Arbeitszeit fachlich entfällt**. Der Generator-Monatsweg ist hiervon
+nicht betroffen; daraus folgt keine Ursache des fehlenden 0.9.29-Originaljobs.
+
+Vorhandener Librarytest `test_schedule_read_paths_expand_cycles` sichert
+Zyklus-/Materialisierungspriorität und freie Tage, aber nicht diese
+Teiltagskonstellation. Ein gemeinsamer Korrekturkandidat muss daher neben
+Planselektion und Mehrfachdiensten auch Abwesenheitszeitfenster transportieren
+und Anzeigepriorität von Zeitberechnung trennen. Sonderdienst-Kombinationen
+bleiben als nächster Prüfpunkt offen; nicht pauschal alle Overrides entfernen.
+Zusätzlich unveränderte Generator-Grenzregression geprüft:
+`tests/test_partial_limits.py`: **88 passed**. Kein Runtimefix oder Release.

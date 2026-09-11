@@ -7,13 +7,16 @@ import uuid
 from sp5lib.database import SP5Database
 
 
-def probe(order, shift_ids=None):
+def probe(order, shift_ids=None, absence_interval=None):
     day = "2026-09-07"
     shift_ids = shift_ids or [5 + kind for kind in order]
     tables = {"MASHI": [
         {"EMPLOYEEID": 10, "DATE": day, "SHIFTID": shift_id, "TYPE": kind}
         for kind, shift_id in zip(order, shift_ids, strict=True)
     ]}
+    if absence_interval is not None:
+        tables["ABSEN"] = [{"EMPLOYEEID": 10, "DATE": day, "LEAVETYPID": 7,
+                            "INTERVAL": absence_interval, "START": 600, "END": 660}]
     db = object.__new__(SP5Database)
     db.db_path = f"synthetic-views-{uuid.uuid4()}"
     db._read = lambda table: tables.get(table, [])
@@ -26,8 +29,18 @@ def probe(order, shift_ids=None):
                if r["kind"] == "shift"]
         for plan in ("ist", "soll", "both")
     }
-    daily = db.get_schedule_day(day)[0]["shift_id"]
-    weekly = db.get_schedule_week(day)["days"][0]["entries"][0]["shift_id"]
+    daily_entry = db.get_schedule_day(day)[0]
+    weekly_entry = db.get_schedule_week(day)["days"][0]["entries"][0]
+    if absence_interval is not None:
+        for entry in (daily_entry, weekly_entry):
+            assert entry["kind"] == "absence"
+            assert not {"interval", "start_time", "end_time"}.intersection(entry)
+        absence = next(r for r in db.get_schedule(2026, 9) if r["kind"] == "absence")
+        assert absence["interval"] == absence_interval
+        assert absence["start_time"] == (600 if absence_interval == 3 else 0)
+        assert absence["end_time"] == (660 if absence_interval == 3 else 0)
+    daily = daily_entry["shift_id"]
+    weekly = weekly_entry["shift_id"]
     return monthly, daily, weekly
 
 
@@ -52,6 +65,12 @@ def main():
             assert daily == shift_ids[-1]
             assert weekly == daily
             checks += 5
+    for interval in range(4):
+        monthly, daily, weekly = probe((0,), absence_interval=interval)
+        assert monthly["ist"] == [5]
+        assert daily is None
+        assert weekly is None
+    print("PASS: 4 absence intervals, 40 assertions; day/week hide duty and time window")
     print(f"PASS: 8 synthetic source orders, {checks} assertions; "
           "day/week lose both cross-plan and same-plan duties")
 
