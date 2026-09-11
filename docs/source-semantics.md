@@ -4545,3 +4545,27 @@ change, release, real-data claim or repeat of the unchanged private baseline.
 Original 0.9.29 project/job/result remains unavailable. Very large decimal ID
 precision and Generator-side prefilter validation remain explicit follow-ups;
 this gate is not proof of arbitrary-width exact numeric decoding.
+
+### Exact decimal identity follow-up (2026-09-11)
+
+The previous candidate's `float.is_integer()` check demonstrably lost source
+precision: synthetic N/F `9007199254740993.0` became `9007199254740992`, while
+`1.0000000000000001` and `9007199254740992.5` passed as integral identities.
+Eight of twelve added cases failed before correction. These are numeric edge
+fixtures, not observed real staffing values or an explanation of the 0.9.29 plan.
+
+The existing opt-in reader now uses standard-library `Decimal` on original field
+bytes after strict numeric validation, checks exact integrality and only then
+converts to Python int. Compiled field offsets are reused; legacy numeric decoding
+and zero/negative sentinels are unchanged. No dependency or parallel parser is
+introduced. The combined reader/package gate passes **107 tests**, with the two
+existing deprecation warnings. N/F signs, negative zero, tiny fractions and large
+decimal integers are covered alongside both full-app API prefixes.
+
+This guarantees the tested Library identity decoding, not arbitrary end-to-end
+JavaScript number precision: large JSON numbers can still lose precision in a
+browser. The candidate is not deployed; Generator runtime and private baseline
+remain unchanged. Next source boundary is `sp5_adapter.import_snapshot`, where
+the `gid not in (*scope, 0, None)` filter still runs before identity validation.
+That independent boolean/fractional JSON gap needs its own correction and private
+GET audit. Original project/job/result for the user's 0.9.29 run remains missing.

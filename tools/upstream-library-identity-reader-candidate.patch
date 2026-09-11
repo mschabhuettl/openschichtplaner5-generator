@@ -1,15 +1,23 @@
 --- a/sp5lib/dbf_reader.py
 +++ b/sp5lib/dbf_reader.py
-@@ -212,7 +212,7 @@
+@@ -6,6 +6,7 @@
+ import io
+ import math
+ import struct
++from decimal import Decimal
+ from datetime import date
+ from typing import Any
+
+@@ -212,7 +213,7 @@
      return _parse_record_specs(raw, _compile_field_specs(fields, names))
- 
- 
+
+
 -def read_dbf(filepath: str, encoding_hint: str = "utf-16-le", *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = (), date_fields: tuple[str, ...] = (), weekday_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
 +def read_dbf(filepath: str, encoding_hint: str = "utf-16-le", *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = (), date_fields: tuple[str, ...] = (), weekday_fields: tuple[str, ...] = (), identity_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
      """
      Liest eine .DBF-Datei und liefert die Datensätze als Liste von dicts.
      Zeichenfelder werden als UTF-16 LE dekodiert (wie von Schichtplaner5
-@@ -228,15 +228,15 @@
+@@ -228,15 +229,15 @@
          with open(filepath, "rb") as f:
              data = f.read()
      except FileNotFoundError:
@@ -25,17 +33,17 @@
          return []
 -    return read_dbf_buffer(data, strict=strict, required_fields=required_fields, numeric_fields=numeric_fields, date_fields=date_fields, weekday_fields=weekday_fields)
 +    return read_dbf_buffer(data, strict=strict, required_fields=required_fields, numeric_fields=numeric_fields, date_fields=date_fields, weekday_fields=weekday_fields, identity_fields=identity_fields)
- 
- 
+
+
  class DBFReadError(ValueError):
-@@ -319,16 +319,16 @@
+@@ -319,16 +320,16 @@
                  raise DBFValueError("nonfinite_numeric_value")
- 
- 
+
+
 -def read_dbf_buffer(data: bytes, *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = (), date_fields: tuple[str, ...] = (), weekday_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
 +def read_dbf_buffer(data: bytes, *, strict: bool = False, required_fields: tuple[str, ...] = (), numeric_fields: tuple[str, ...] = (), date_fields: tuple[str, ...] = (), weekday_fields: tuple[str, ...] = (), identity_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
      """Parst einen bereits eingelesenen .DBF-Bytepuffer (siehe :func:`read_dbf`).
- 
+
      Getrennt vom Dateizugriff, damit Aufrufer die Bytes nur EINMAL lesen müssen
      (z. B. der DBF-Cache, der dieselben Bytes auch für die Inhalts-Prüfung hasht)
      — wichtig bei langsamen Bind-Mounts/Netzpfaden.
@@ -48,7 +56,7 @@
              names = []
              types = []
              position = 32
-@@ -336,15 +336,15 @@
+@@ -336,15 +337,15 @@
                  names.append(data[position:position + 11].split(b"\0", 1)[0])
                  types.append(data[position + 11])
                  position += 32
@@ -67,20 +75,26 @@
              _validate_dbf_numbers(data, layout)
      if len(data) < 32:
          return []
-@@ -398,6 +398,16 @@
+@@ -380,6 +381,8 @@
+     names = _dedupe_names([str(f_["name"]) for f_ in fields])
+     # Feld-Specs einmal je Tabelle berechnen und für alle Datensätze nutzen.
+     specs = _compile_field_specs(fields, names)
++    identity_specs = [(name, width, offset) for name, _, width, _, _, offset in specs
++                      if name in identity_fields]
+
+     for _ in range(num_records):
+         raw = f.read(record_size)
+@@ -398,6 +401,13 @@
          if any(type(record[name]) is not int
                 or not 0 <= record[name] <= 7 for name in weekday_fields):
              raise DBFValueError("invalid_required_weekday")
-+        # Explicit opt-in: preserve zero/negative sentinels, reject fractions.
-+        # N/F DBF decoding can represent an integral identity as a float.
-+        for name in identity_fields:
-+            value = record[name]
-+            if type(value) is int:
-+                continue
-+            if type(value) is float and math.isfinite(value) and value.is_integer():
-+                record[name] = int(value)
-+                continue
-+            raise DBFValueError("invalid_required_identity")
++        # Parse original ASCII decimals, never the rounded float decoder output.
++        # Numeric syntax/finite checks have already run on these active rows.
++        for name, width, offset in identity_specs:
++            value = Decimal(raw[offset:offset + width].decode("ascii").strip())
++            if value != value.to_integral_value():
++                raise DBFValueError("invalid_required_identity")
++            record[name] = int(value)
          records.append(record)
- 
+
      return records

@@ -3,6 +3,7 @@ import importlib.util
 import os
 from pathlib import Path
 import subprocess
+import struct
 
 import pytest
 
@@ -63,6 +64,29 @@ def test_opt_in_and_file_errors(reader, tmp_path):
     path.write_bytes(bytes(data))
     with pytest.raises(reader.DBFStructureError):
         reader.read_dbf(str(path), identity_fields=('GROUPID',))
+
+
+@pytest.mark.parametrize('ftype', ['N', 'F'])
+@pytest.mark.parametrize('raw,expected', [
+    (b'9007199254740993.0', 9007199254740993),
+    (b'-9007199254740993.0', -9007199254740993),
+    (b'1.0000000000000001', None),
+    (b'9007199254740992.5', None),
+    (b'0.0000000000000000000000000000000000001', None),
+    (b'-0.0000000000000000', 0),
+])
+def test_exact_decimal_identity(reader, ftype, raw, expected):
+    data = bytearray(staffing_columns(('GROUPID',), [b' ' + raw]))
+    struct.pack_into('<H', data, 10, 1 + len(raw))
+    data[43] = ord(ftype)
+    data[48] = len(raw)
+    data[49] = 1
+    if expected is None:
+        with pytest.raises(reader.DBFValueError, match='invalid_required_identity'):
+            reader.read_dbf_buffer(bytes(data), identity_fields=('GROUPID',))
+    else:
+        assert reader.read_dbf_buffer(bytes(data), identity_fields=('GROUPID',)) == [
+            {'GROUPID': expected}]
 
 
 @pytest.mark.parametrize('fields', [(), ('GROUPID', 'GROUPID')])
