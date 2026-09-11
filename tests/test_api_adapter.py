@@ -774,7 +774,7 @@ def test_imported_fixed_replacement_timeout_preserves_only_valid_incumbent(trans
 
     monkeypatch.setattr(cp_model.CpSolver, "solve", controlled_status)
     result = solve(snapshot, 3, partial=True)
-    assert len(calls) == (2 if termination == "quality_unknown" else 1)
+    assert len(calls) == (1 if termination == "first_unknown" else 2)
     if termination == "first_unknown":
         assert result.solver_status == "UNKNOWN"
         assert not result.assignments
@@ -785,7 +785,7 @@ def test_imported_fixed_replacement_timeout_preserves_only_valid_incumbent(trans
     if termination == "quality_unknown":
         assert result.parameters["last_optimization_status"] == "UNKNOWN"
     else:
-        assert result.metrics["objective_phase"] == "vacancies"
+        assert result.metrics["objective_phase"] == "quality"
     assert [(a.employee_id, a.demand_id) for a in result.assignments] == fixed
     assert all(a.fixed for a in result.assignments)
     assert sum(result.vacancies.values()) == 1

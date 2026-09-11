@@ -4985,7 +4985,8 @@ required `phase == "vacancies" and status == cp_model.OPTIMAL`. A first-phase
 and reporting weighted contributions does not mean those terms were optimized.
 This is separate from hard-rule validation and from missing approvals.
 
-`tests/test_partial_limits.py::test_equal_coverage_feasible_incumbent_reaches_quality_only_with_coverage_proof`
+The earlier characterization (now updated as
+`tests/test_partial_limits.py::test_equal_coverage_feasible_incumbent_reaches_conditional_quality`)
 quantifies the consequence using two synthetic eligible workers, one eight-hour
 demand, and targets of zero and eight hours. A controlled first-phase incumbent
 assigns the zero-target worker: total absolute target deviation is 960 minutes.
@@ -5014,7 +5015,7 @@ Merely increasing hours weights cannot address a search that never reaches
 the weighted phase. Neither turning nominal hours into hard weekly caps nor
 inventing approvals is an acceptable remedy.
 
-### Zero-vacancy coverage certificate and remaining quality budget
+### Zero-vacancy coverage certificate and remaining quality budget (prior step)
 
 `solver.solve` now also transitions from coverage to quality when an independently
 validated FEASIBLE incumbent has exactly zero vacancies. Vacancy variables are
@@ -5094,3 +5095,36 @@ models when no daily/weekly maximum forbids it. This is a synthetic configuratio
 not evidence that any particular customer duty is permitted. These tests prevent
 an hours-quality objective from being mistaken for an elapsed-time limit and
 avoid inventing a blanket 24-hour ban. No search-runtime behavior changed.
+
+### Bounded conditional quality search (candidate, 2026-09-11)
+
+`solver.solve` now reserves 20% of the budget remaining after model construction
+and warm-plan certification for a conditional quality search. The production
+CP-SAT model is cloned after an independently validated coverage incumbent is
+found; its exact vacancy count is fixed, and its weighted cost is an upper bound
+for the second phase. Complete solution hints reuse the existing CP-SAT path.
+No new dependencies, business limits, approvals or mandatory employee assignments
+are introduced. Both phases use the original shared deadline and independent
+validator/separation loop. This is a bounded two-phase policy, not an alternating
+search that resumes primary coverage later.
+
+The allocation is a heuristic, not evidence that 80/20 is optimal: it may miss
+coverage improvements that a longer first phase would find. It never accepts
+worse coverage or weighted quality than the validated incumbent used to start
+the quality phase. If coverage is unproven, even native conditional OPTIMAL is
+reported as FEASIBLE, with `quality_scope` and `parameters.coverage_proven=false`.
+The quality objective and bound concern only the fixed-coverage subproblem.
+UNKNOWN in quality retains the previous result and its vacancy objective/bound.
+If the first coverage search returns UNKNOWN, this candidate retains the existing
+validated warm fallback (if any); it does not yet start quality from that fallback.
+
+Updated synthetic regressions in `tests/test_partial_limits.py` demonstrate
+960→0 minutes of avoidable target deviation at unchanged nonzero vacancies;
+this is not a timed performance benchmark or a hard maximum-hours violation.
+`tests/test_anytime_quality_contract.py` checks UNKNOWN fallback, allocated first
+phase budget and the existing hard-rule clone contracts.
+`tests/test_api_adapter.py::test_imported_fixed_replacement_timeout_preserves_only_valid_incumbent`
+now also exercises conditional quality while preserving imported fixed duties
+and rejecting a stricter configured elapsed-time weekly maximum independently.
+The configured private 600-second Worker gate must establish practical behavior
+before this candidate is described as an improvement on the real project.

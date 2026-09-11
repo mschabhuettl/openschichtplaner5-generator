@@ -7,7 +7,7 @@ import pytest
 from ortools.sat.python import cp_model
 
 from sp5generator import solver
-from sp5generator.models import Assignment, Objectives
+from sp5generator.models import Assignment, Objectives, Result
 from sp5generator.validator import validate
 from test_core_rules import case, shift
 
@@ -137,3 +137,56 @@ def test_quality_clone_does_not_invent_a_24_hour_duty_ban(monkeypatch):
     # No configured daily/weekly maximum: duration alone is not a violation.
     assert checked_search(snapshot, primary) == (0, 480)
     assert checked_search(snapshot, quality) == (0, 480)
+
+
+def test_conditional_quality_unknown_keeps_valid_coverage_result(monkeypatch):
+    snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
+    snapshot.profiles[0].max_weekly_minutes = 480
+    original = cp_model.CpSolver.solve
+    budgets = []
+
+    def coverage_then_unknown(self, model, *args, **kwargs):
+        budgets.append(self.parameters.max_time_in_seconds)
+        if len(budgets) == 2:
+            return cp_model.UNKNOWN
+        assert original(self, model, *args, **kwargs) == cp_model.OPTIMAL
+        return cp_model.FEASIBLE
+
+    monkeypatch.setattr(cp_model.CpSolver, 'solve', coverage_then_unknown)
+    result = solver.solve(snapshot, 3, partial=True)
+    assert len(budgets) == 2 and 0 < budgets[0] <= 2.4
+    assert result.solver_status == 'FEASIBLE'
+    assert result.metrics['objective_phase'] == 'vacancies'
+    assert result.objective_value == 1
+    assert result.parameters['last_optimization_status'] == 'UNKNOWN'
+    assert not result.parameters['coverage_proven']
+    assert len(result.assignments) == 1
+    assert validate(snapshot, result.assignments).valid
+
+
+def test_conditional_quality_shares_original_deadline(monkeypatch):
+    snapshot = case(1, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
+    snapshot.profiles[0].max_weekly_minutes = 480
+    original = cp_model.CpSolver.solve
+    elapsed = [0.0]
+    budgets = []
+    monkeypatch.setattr(solver, 'monotonic', lambda: elapsed[0])
+
+    def exhaust_phase(self, model, *args, **kwargs):
+        budgets.append(self.parameters.max_time_in_seconds)
+        status = original(self, model, *args, **kwargs)
+        assert status == cp_model.OPTIMAL
+        elapsed[0] += budgets[-1]
+        return cp_model.FEASIBLE if len(budgets) == 1 else status
+
+    monkeypatch.setattr(cp_model.CpSolver, 'solve', exhaust_phase)
+    result = solver.solve(snapshot, 3, partial=True)
+    result = Result.model_validate_json(result.model_dump_json())
+    assert result.best_bound == result.objective_value
+    assert result.metrics["quality_scope"] == "fixed incumbent coverage; global coverage unproven"
+    assert budgets == pytest.approx([2.4, 0.45])
+    assert result.runtime_seconds <= 3
+    assert result.solver_status == 'FEASIBLE'
+    assert result.parameters['last_optimization_status'] == 'OPTIMAL'
+    assert result.metrics['objective_phase'] == 'quality'
+    assert validate(snapshot, result.assignments).valid

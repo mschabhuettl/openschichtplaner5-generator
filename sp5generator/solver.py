@@ -965,6 +965,10 @@ def solve(snapshot, time_limit=30, partial=False):
         else:
             phase = "quality"
             model.minimize(weighted)
+    # Reserve a fifth of the remaining budget for quality at fixed coverage.
+    # This search policy never trades vacancies against an arbitrary penalty.
+    coverage_deadline = monotonic() + max(0, deadline - monotonic()) * 0.8
+    coverage_proven = not partial
     while True:
         remaining = time_limit - (monotonic() - started)
         if best:
@@ -989,6 +993,8 @@ def solve(snapshot, time_limit=30, partial=False):
                     ],
                 ),
             )
+        if phase == "vacancies":
+            remaining = min(remaining, max(0.001, coverage_deadline - monotonic()))
         solver.parameters.max_time_in_seconds = remaining
         search_started = monotonic()
         status = solver.solve(model)
@@ -1125,6 +1131,9 @@ def solve(snapshot, time_limit=30, partial=False):
             )
             != w.want
         ]
+        if phase == "quality" and not coverage_proven:
+            name = "FEASIBLE"
+            metrics["quality_scope"] = "fixed incumbent coverage; global coverage unproven"
         best = result(
             name,
             assignments,
@@ -1142,16 +1151,21 @@ def solve(snapshot, time_limit=30, partial=False):
             for key, x in xs.items():
                 model.add_hint(x, solver.value(x))
             continue
-        if phase == "vacancies" and (
-            status == cp_model.OPTIMAL or solver.value(sum(vacancies)) == 0
-        ):
-            # Vacancies are nonnegative: zero certifies globally best coverage
-            # even when CP-SAT stops at FEASIBLE. Keep that coverage fixed while
-            # using any remaining time for hours/blocks; UNKNOWN still returns
-            # the independently validated coverage incumbent above.
+        if phase == "vacancies":
             optimum = solver.value(sum(vacancies))
+            coverage_proven = status == cp_model.OPTIMAL or optimum == 0
+            parameters["coverage_proven"] = coverage_proven
+            parameters["quality_coverage_count"] = optimum
+            # Clone preserves hard rules and variable indices, while isolating
+            # the conditional coverage equality and quality bound.
+            model = model.clone()
             model.add(sum(vacancies) == optimum)
+            model.add(weighted <= sum(metrics["weighted_objective_contributions"].values()))
             model.minimize(weighted)
+            model.clear_hints()
+            for index in range(len(model.proto.variables)):
+                variable = model.get_int_var_from_proto_index(index)
+                model.add_hint(variable, solver.value(variable))
             phase = "quality"
             continue
         return finish(best)

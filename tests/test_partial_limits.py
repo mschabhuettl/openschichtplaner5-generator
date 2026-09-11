@@ -314,7 +314,7 @@ def test_quality_timeout_preserves_independently_validated_partial_incumbent(mon
     assert result.objective_value == 1  # Vacancy count, not the hours-quality cost.
 
 
-def test_feasible_partial_can_finish_before_hours_and_block_optimization(monkeypatch):
+def test_feasible_partial_runs_conditional_quality_without_coverage_proof(monkeypatch):
     snapshot = case(1, [shift("a", 5, 8, 8), shift("b", 6, 8, 8)])
     snapshot.profiles[0].max_weekly_minutes = 480
     original = cp_model.CpSolver.solve
@@ -327,9 +327,9 @@ def test_feasible_partial_can_finish_before_hours_and_block_optimization(monkeyp
 
     monkeypatch.setattr(cp_model.CpSolver, "solve", feasible_without_optimality_proof)
     result = solver.solve(snapshot, 3, partial=True)
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert result.solver_status == "FEASIBLE"
-    assert result.metrics["objective_phase"] == "vacancies"
+    assert result.metrics["objective_phase"] == "quality"
     assert len(result.assignments) == 1
     assert result.validation.valid and not result.validation.complete
     assert validate(snapshot, result.assignments).valid
@@ -344,8 +344,8 @@ def test_unknown_without_incumbent_never_returns_unchecked_assignments(monkeypat
 
 
 @pytest.mark.parametrize("unavoidable_vacancy", [False, True])
-def test_equal_coverage_feasible_incumbent_reaches_quality_only_with_coverage_proof(monkeypatch, unavoidable_vacancy):
-    """Characterize quality starvation, not a breach of a hard hours limit."""
+def test_equal_coverage_feasible_incumbent_reaches_conditional_quality(monkeypatch, unavoidable_vacancy):
+    """Hours improve without treating the target as a hard hours limit."""
     from sp5generator.models import Objectives
 
     snapshot = case(2)
@@ -383,10 +383,10 @@ def test_equal_coverage_feasible_incumbent_reaches_quality_only_with_coverage_pr
         patch.setattr(cp_model.CpSolver, "solve", first_coverage_incumbent)
         timed = solver.solve(snapshot, 3, partial=True)
     optimized = solver.solve(snapshot, 3, partial=True)
-    assert len(calls) == (1 if unavoidable_vacancy else 2)
+    assert len(calls) == 2
     assert timed.solver_status == ("FEASIBLE" if unavoidable_vacancy else "OPTIMAL")
-    assert timed.metrics["objective_phase"] == ("vacancies" if unavoidable_vacancy else "quality")
-    assert timed.metrics["objective_contributions"]["hours"] == (960 if unavoidable_vacancy else 0)
+    assert timed.metrics["objective_phase"] == "quality"
+    assert timed.metrics["objective_contributions"]["hours"] == 0
     assert optimized.metrics["objective_phase"] == "quality"
     assert optimized.metrics["objective_contributions"]["hours"] == 0
     assert timed.vacancies == optimized.vacancies == ({"unfillable": 1} if unavoidable_vacancy else {})
@@ -394,7 +394,7 @@ def test_equal_coverage_feasible_incumbent_reaches_quality_only_with_coverage_pr
         checked = validate(snapshot, result.assignments)
         assert checked.valid and checked.complete is (not unavoidable_vacancy)
     assert timed.metrics["planning_diagnostics"]["employees"]["e1"]["reason"] == (
-        "not_selected_with_candidates" if unavoidable_vacancy else "assigned"
+        "assigned"
     )
 
 
