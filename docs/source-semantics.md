@@ -3063,3 +3063,37 @@ Minutenfilter bildet diese Regeln nicht gleichwertig ab. Die Ableitung des
 Quellselektionsfensters muss außerdem den vor dem Ruhefenster beginnenden
 eingehenden Dienst erfassen. Weiter offen: datierter Ruhequellenvertrag und
 atomarer Quellenstand; keine neue Vollständigkeits- oder Echtdatenfreigabe.
+
+### Datierte Ruhe und ausgewählte Nachtblockbrücken: Vertragsgrenze belegt
+
+Sechs weitere synthetische Regressionen in
+`tools/test_rest_source_window_contract.py` vergleichen den isolierten
+Skalar-Diagnosekandidaten direkt mit `domain.pair_conflict`,
+`domain.night_block_conflict`, `validator.validate` und `solver.solve`:
+
+- Zwei Dienste mit 16 Stunden Abstand erfüllen den 660-Minuten-Skalar.
+  Ein explizit zugeordnetes 1020-Minuten-Profil, das nur am Anfangstag des
+  ersten **oder** zweiten Dienstes gilt, verhindert trotzdem die gemeinsame
+  Auswahl. Das gleiche nicht zugeordnete Profil tut dies nicht. Validator und
+  Teilplansolver stimmen überein; der Teilplan wählt genau einen statt zwei
+  Dienste. 1020 Minuten sind ausschließlich synthetische Testkonfiguration,
+  kein neuer Standardwert.
+- Drei Nachtdienste an aufeinanderfolgenden Starttagen sind unter expliziter
+  2880-Minuten-Nachtblockruhe gemeinsam zulässig. Entfällt der mittlere Dienst,
+  werden die äußeren Dienste zu aufeinanderfolgenden ausgewählten Diensten:
+  40 Stunden Abstand unterschreiten dann die geforderten 48 Stunden.
+  Der Teilplansolver wählt nur einen; der Validator verwirft beide zusammen.
+  Ein beliebiger Paarvergleich der äußeren Dienste würde dagegen bei vorhandener
+  Brücke einen falschen Konflikt melden. Ein reiner 660-Minuten-Vergleich erkennt
+  den echten Konflikt ohne Brücke nicht.
+
+Damit ist die nächste Integrationsanforderung konkreter: Ein Ruhequellenvertrag
+muss datierte persönliche Profilzuordnung an beiden Dienstanfängen, fachlich
+belegte Nachtkennzeichnung und die tatsächlich ausgewählte Reihenfolge erhalten.
+Quellfenster allein ersetzen diese Daten nicht. Der aktuelle `Duty`-Messkandidat
+enthält nur Identität und Zeitsegmente, keine Nachtart und keine Profilzuordnung;
+er darf daher nicht als gleichwertiger Regelvalidator integriert werden.
+Die bereits vorhandenen DST-Regressionen prüfen zusätzlich reale statt lokale
+Uhrzeitabstände. Alle 45 Tests der kombinierten Ruhe-/Paardiagnose-/Kalenderlimit-
+Suite bestanden. Kein produktiver Code, keine Quelldaten und keine Defaults
+wurden geändert; daraus folgt kein Nachweis über den fehlenden Originaljob.
