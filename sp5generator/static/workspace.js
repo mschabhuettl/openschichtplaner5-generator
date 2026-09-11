@@ -169,6 +169,7 @@
   byId('projectPageNext').addEventListener('click',()=>{projectPage++;renderProjects();byId('projectCards').scrollIntoView({block:'start'});});
   byId('projectName').addEventListener('change',()=>{const name=byId('projectName').value.trim();if(name)dispatch('rename',{name});else if(current.snapshot)byId('projectName').value=projectName(current.snapshot);});
   byId('projectName').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();byId('projectName').blur();}if(event.key==='Escape'&&current.snapshot){byId('projectName').value=projectName(current.snapshot);byId('projectName').blur();}});
+  byId('openImport').addEventListener('click',()=>{byId('importDetails').open=true;byId('importDetails').scrollIntoView({block:'start'});byId('sourceType').focus({preventScroll:true});});
   byId('headerSave').addEventListener('click',()=>byId('save').click());
   byId('headerBackup').addEventListener('click',()=>byId('backup').click());
   const saveObserver=new MutationObserver(()=>{byId('headerSave').disabled=busy()||byId('save').disabled;byId('headerBackup').disabled=byId('backup').disabled;});
