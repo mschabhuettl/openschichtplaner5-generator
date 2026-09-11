@@ -722,3 +722,50 @@ def test_http_restrictions_use_duty_start_slot_not_midnight_spill(transport, slo
         assert mapped.level == 2 and not mapped.approved
     assert not snapshot.employees[0].approvals
     assert all(request.get_method() == "GET" for request in calls)
+
+
+@pytest.mark.parametrize("grade", [0, 1, 2])
+@pytest.mark.parametrize("multiple_groups", [False, True])
+def test_http_split_duty_restriction_covers_each_group_variant(transport, grade, multiple_groups):
+    responses, _ = transport
+    day = date(2026, 1, 6)
+    groups = [1, 2] if multiple_groups else [1]
+    responses["/api/groups"] = [{"ID": gid, "NAME": f"Team {gid}"} for gid in groups]
+    responses["/api/groups/2/members"] = responses["/api/groups/1/members"]
+    row = responses["/api/staffing-requirements"]["shift_requirements"][0]
+    responses["/api/staffing-requirements"]["shift_requirements"] = [
+        {**row, "id": 401 + gid, "group_id": gid} for gid in groups
+    ]
+    native = responses["/api/shifts"][0]
+    native["STARTEND7"] = "08:00-10:00 22:00-06:00"
+    native["DURATION7"] = 4
+    responses["/api/restrictions"][0]["restrict"] = grade
+    responses[("schedule", "2026", "1", "ist")] = []
+    snapshot = import_api(day, day, timezone="Europe/Vienna",
+                          history_start=day - timedelta(days=1),
+                          history_end=day - timedelta(days=1),
+                          team_ids=[str(gid) for gid in groups])
+    assert len(snapshot.shifts) == len(groups)
+    assert len(snapshot.restrictions) == len(groups)
+    assert {r.shift_id for r in snapshot.restrictions} == {s.id for s in snapshot.shifts}
+    assert all(r.level == grade and not r.approved for r in snapshot.restrictions)
+    assert all(len(s.segments) == 2 and s.paid_minutes == 240 for s in snapshot.shifts)
+    assert all(s.segments[1].end.date() == day + timedelta(days=1) for s in snapshot.shifts)
+    assert all(not e.approvals for e in snapshot.employees)
+
+
+@pytest.mark.parametrize("override", [
+    {"employee_id": 999}, {"shift_id": 999}, {"weekday": 0}, {"weekday": 8},
+])
+def test_http_unmatched_restriction_current_mapping_gap(transport, override):
+    """Characterize silent omission; not an endorsement of corrupt source rows."""
+    responses, _ = transport
+    responses["/api/restrictions"][0].update(override)
+    responses[("schedule", "2026", "1", "ist")] = []
+    day = date(2026, 1, 6)  # Fixture holiday: the only generated slot is 7.
+    snapshot = import_api(day, day, "1", history_start=day - timedelta(days=1),
+                          history_end=day - timedelta(days=1))
+    assert len(snapshot.shifts) == 1
+    assert not snapshot.restrictions
+    assert not any("RESTR" in issue for issue in snapshot.unresolved)
+    assert not snapshot.employees[0].approvals

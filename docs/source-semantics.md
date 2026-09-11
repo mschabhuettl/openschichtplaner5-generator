@@ -3473,3 +3473,35 @@ Keine Änderung an produktiver API, Originalbeständen oder fremden Checkouts.
 keine identische private API-Abnahme wiederholt, kein Release. Nächster Prüfpunkt:
 Sperrenzuordnung bei mehreren segmentierten Zeitfenstern und nativen
 Datums-/Gruppenvarianten, einschließlich bislang nicht zuordenbarer RESTR-Sätze.
+
+### RESTR: geteilte Dienste, Teamvarianten und nicht zuordenbare Sätze
+
+2026-09-11: `test_http_split_duty_restriction_covers_each_group_variant`
+belegt sechs HTTP-Importfälle: Stufen 0/1/2, ein/zwei Teams, zwei Zeitfenster
+08–10 und 22–06 Uhr bei absichtlich nur vier bezahlten Stunden. Jeder erzeugte
+Teamdienst erhält dieselbe persönliche Sperrstufe; der Nachtüberhang und die
+Pause erzeugen keine zusätzlichen Freigaben und verlieren keine Sperre.
+
+Der geprüfte Datenfluss ist `Database.get_restrictions` (RESTR-Felder
+EMPLOYEEID/SHIFTID/WEEKDAY/RESTRICT) -> API `schedule.get_restrictions` ->
+`APIClient.get_restrictions` -> `sp5_adapter.import_snapshot`, Schleife über
+`native_restrictions`. Das Library-ORM-Modell `Restriction` und API
+`RestrictionCreate` enthalten weder Datums- noch Gruppenbindung. Der Generator
+expandiert den Wochentag auf konkrete Bedarfsdaten und gegebenenfalls alle
+`:group:`-Varianten. Es gibt in diesem Vertrag daher keine native datierte oder
+teambezogene Sperre, die stillschweigend erfunden werden dürfte. OSP5
+`Employees.tsx:handleAddRestriction` benutzt denselben Vertrag.
+
+**Belegte verbleibende Diagnoselücke:**
+`test_http_unmatched_restriction_current_mapping_gap` reproduziert vier Fälle:
+unbekannte/nicht ausgewählte Person, nicht erzeugter Dienst, anderer Wochentag
+und ungültiger Wochentag 8. Alle werden aktuell ohne RESTR-Diagnose ausgelassen.
+Die ersten drei können regulär außerhalb des gewählten Imports liegen; Index 8
+ist dagegen außerhalb des dokumentierten API-Vertrags 0–7. Die Stufenprüfung
+findet erst nach erfolgreicher Dienst-/Tageszuordnung statt. Das ist kein Beleg,
+dass eine konkret zuordenbare gültige Sperre verloren geht, aber ein fehlender
+Nachweis über verworfene Quellsätze. Diese Charakterisierung ist keine Billigung
+ungültiger Quellwerte. Priorität: importbezogene Zähler/Kategorien für gültig
+außerhalb Scope versus ungültig/nicht auflösbar entwerfen und erst danach
+gezielt fail-closed umsetzen; legitime fremde Teams nicht pauschal blockieren.
+Der Originaljob 0.9.29 bleibt für einen konkreten Kausalnachweis erforderlich.
