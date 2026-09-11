@@ -341,11 +341,13 @@ function renderReferenceImport(){
  const filterSelect=el('select',undefined,filter);filterSelect.id='referenceResolutionFilter';
  for(const [value,label] of [['all','Alle Vergleichsdienste'],['unmatched','Ohne Zuordnung'],['ambiguous','Mehrdeutig'],['matched','Eindeutig zugeordnet'],['unknown','Nicht dokumentiert']])el('option',label,filterSelect).value=value;
  filterSelect.value=state.filter??'all';filterSelect.onchange=()=>{state.filter=filterSelect.value;state.page=0;render();};
+ const services=new Map((snapshot.metadata.services??[]).map(service=>[service.function_id,service]));
+ const identity=row=>({person:dataIndex().employees.get(`sp5:employee:${row?.employee_id}`),service:services.get(`sp5:service:${row?.shift_id}`)});
  const render=()=>{const filtered=rows.filter(row=>!state.filter||state.filter==='all'||status(row)===state.filter);
-  const view=collection(content,'referenceImport',filtered,{size:10,label:'Vergleichsdienste',redraw:render});
+  const view=collection(content,'referenceImport',filtered,{size:10,label:'Vergleichsdienste',search:row=>{const {person,service}=identity(row);return `${person?.name??''} ${service?.name??''} sp5:employee:${row?.employee_id} sp5:service:${row?.shift_id} ${JSON.stringify(row)}`;},redraw:render});
+  if(!view.total)el('p','Keine passenden Vergleichsdienste. Suchbegriff oder Zuordnungsfilter ändern; der Importstand bleibt unverändert.',view.content);
   for(const row of view.items){const item=el('div',undefined,view.content);item.className='card';
-   const person=dataIndex().employees.get(`sp5:employee:${row?.employee_id}`);
-   const service=(snapshot.metadata.services??[]).find(service=>service.function_id===`sp5:service:${row?.shift_id}`);
+   const {person,service}=identity(row);
    el('strong',`${row?.date??'Datum unbekannt'} · ${person?.name??'Person nicht zugeordnet'} · ${service?.name??'Dienst nicht zugeordnet'}`,item);
    el('p',labels[status(row)],item);
    if(status(row)!=='matched')el('p',reasons[row?.resolution_reason]??'Konkrete Ursache im Import nicht dokumentiert. Datum, Dienst, Team, Arbeitsplatz und Bedarf fachlich prüfen.',item);

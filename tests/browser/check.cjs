@@ -239,6 +239,39 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await uploadProject(originalPath);await navigate('rules');
     await page.setViewportSize({width:1440,height:1000});
 
+    // Find comparison duties by the visible person/service names, date or original identifier.
+    const referenceSearchFixture=structuredClone(referenceFixture);
+    referenceSearchFixture.metadata.reference_plan='ist';
+    Object.assign(referenceSearchFixture.metadata.reference_schedule[12],{employee_id:103,shift_id:202,date:'2026-02-03'});
+    const referenceSearchPath=path.join(state,'reference-search.json');fs.writeFileSync(referenceSearchPath,JSON.stringify(referenceSearchFixture));
+    await uploadProject(referenceSearchPath);await navigate('rules');
+    await referenceBox.locator('summary').click();
+    const referenceSearch=referenceBox.getByRole('searchbox',{name:'Vergleichsdienste suchen',exact:true});
+    await referenceSearch.waitFor({state:'visible'});
+    assert.equal(await referenceSearch.count(),1,'Comparison duties need a searchable person/service view');
+    const beforeReferenceSearch=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())}));
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      for(const term of ['testperson 003','Dienst B','2026-02-03','sp5:employee:103']){
+        await referenceSearch.fill(term);
+        await page.waitForFunction(()=>document.querySelectorAll('#referenceImport .card').length===1);
+        assert.match(await referenceBox.locator('.card').innerText(),/Testperson 003.*Dienst B/);
+      }
+      await referenceSearch.fill('nicht vorhandener Vergleichsdienst');
+      await page.waitForFunction(()=>document.querySelectorAll('#referenceImport .card').length===0);
+      assert.match(await referenceBox.innerText(),/Suchbegriff oder Zuordnungsfilter ändern/);
+      await referenceSearch.fill('Testperson 003');
+      await page.waitForFunction(()=>document.querySelectorAll('#referenceImport .card').length===1);
+      if(process.env.WEB_TEST_SCREENSHOT_DIR)await referenceBox.locator('details').screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`reference-name-search-${width}.png`)});
+      await referenceBox.getByLabel('Zuordnung filtern',{exact:true}).selectOption('matched');
+      assert.equal(await referenceBox.locator('.card').count(),0,'Name search and assignment filter combine');
+      assert.match(await referenceBox.innerText(),/Eindeutig zugeordnet: 1/,'Import-wide counts remain unchanged');
+      await referenceBox.getByLabel('Zuordnung filtern',{exact:true}).selectOption('all');
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    }
+    assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())})),beforeReferenceSearch);
+    await uploadProject(originalPath);await navigate('rules');await page.setViewportSize({width:1440,height:1000});
+
     // Large warning lists stay paged and searchable; resolving a filtered duplicate removes only that row.
     const issuesFixture=structuredClone(snapshot);
     issuesFixture.unresolved=Array.from({length:1001},(_,i)=>`Synthetische Prüfangabe ${String(i+1).padStart(4,'0')}`);
