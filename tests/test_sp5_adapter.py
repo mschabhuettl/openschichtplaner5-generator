@@ -638,12 +638,18 @@ def test_reference_selection_never_switches_context_absences_or_special_duties(p
     assert snapshot.metadata['reference_plan'] == plan
     assert snapshot.metadata['context_plan'] == snapshot.metadata['availability_plan'] == snapshot.metadata['special_shift_plan'] == 'ist'
     references = snapshot.metadata['reference_schedule']
-    assert len(references) == 1 and references[0]['shift_id'] == service
-    reference = next(a for a in snapshot.assignments if a.demand_id == references[0]['demand_id'])
-    assert reference.fixed is fixed
+    if plan == 'ist':
+        # Unknown replacement times block; the replaced normal duty is not
+        # a valid fallback reference (nor an implicitly confirmed absence).
+        assert references == []
+        assert snapshot.assignments == []
+    else:
+        assert len(references) == 1 and references[0]['shift_id'] == service
+        reference = next(a for a in snapshot.assignments if a.demand_id == references[0]['demand_id'])
+        assert reference.fixed is fixed
+        assert snapshot.assignments == [reference]
     context = [r for r in snapshot.metadata['context_schedule'] if r['date'] != '2026-01-06']
     assert len(context) == 2 and all(r['shift_id'] == 201 for r in context)
-    assert snapshot.assignments == [reference]
     assert len(snapshot.boundary_work) == 2
     assert snapshot.employees[0].unavailable[0].start.hour == 8
     special = next(r for r in snapshot.metadata['context_schedule'] if r['kind'] == 'special_shift')

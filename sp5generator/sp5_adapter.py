@@ -470,7 +470,7 @@ def import_snapshot(
             db, scope, month.year, month.month, period_start, period_end, reference_plan
         )
         # Library replacement is person-day-wide, independent of TYPE/workplace.
-        # Restrict normalization to Ist boundary work, never Soll references.
+        # Normalize Ist work and references, never replace Soll target duties.
         replaced_days = {
             (row.get("employee_id"), calc.to_date(row.get("date")))
             for row in schedule
@@ -482,7 +482,8 @@ def import_snapshot(
             day = calc.to_date(row.get("date"))
             key = (row.get("employee_id"), day)
             if (row.get("kind") == "shift" and key in replaced_days
-                    and day is not None and not period_start <= day <= period_end):
+                    and day is not None
+                    and (reference_plan == "ist" or not period_start <= day <= period_end)):
                 replaced_rows.setdefault(key, []).append({
                     field: row.get(field)
                     for field in ("employee_id", "date", "shift_id", "workplace_id", "group_id")
@@ -520,8 +521,7 @@ def import_snapshot(
             seen_schedule.add(schedule_key)
             metadata["context_schedule"].append(safe)
             kind = row.get("kind")
-            if (kind == "shift" and (row.get("employee_id"), d) in replaced_rows
-                    and not period_start <= d <= period_end):
+            if kind == "shift" and (row.get("employee_id"), d) in replaced_rows:
                 # Preserve raw context above; unknown special times still block.
                 continue
             if kind == "special_shift" and row.get("spshi_type", 0) == 0 and row.get("shift_id") in native_shifts:
@@ -578,6 +578,8 @@ def import_snapshot(
                                             in {f"sp5:workplace:{wid}", "sp5:workplace:0"}]
                     candidates = [demand for demand in workplace_candidates if demand.maximum != 0]
                     reference = {**safe, "candidate_demand_ids": [v.id for v in candidates]}
+                    if row.get("kind") == "special_shift":
+                        reference["replaced_normal_rows"] = replaced_rows.get((row.get("employee_id"), d), [])
                     metadata["reference_schedule"].append(reference)
                     if len(candidates) == 1:
                         reference["demand_id"] = candidates[0].id

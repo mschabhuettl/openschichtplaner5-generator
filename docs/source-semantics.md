@@ -1054,3 +1054,50 @@ vier reale Randstunden (eine bezahlte Stunde) plus vier reale Planstunden
 sind bei ausdrücklich synthetisch konfiguriertem Wochenmaximum 480 Minuten
 zulässig, bei 479 nicht. Solver und unabhängiger Validator stimmen überein;
 die Randhistorie erfordert keine rückdatierte persönliche Freigabe.
+
+### Reproduktion und Korrektur: Ersatz innerhalb der Planungsperiode
+
+`test_in_period_replacement_reference_respects_selected_plan` liefert zwei
+synthetische HTTP-Gegenproben für Ist (beide Zeilenreihenfolgen) und zwei
+Soll-Verhaltenskontrollen, jeweils im Referenz- und Fixierungsmodus. Zwei nominale
+Vierstundendienste mit verschiedenen Dienst-IDs haben jeweils eindeutigen
+Bedarf. Ein SPSHI-Ersatz mit gesetzter Dienst-ID ersetzt laut
+Library `calculations._replaced_days` / `get_work_hours` den normalen Dienst
+des Personentags. Vor der Korrektur behielt der Generator innerhalb der Periode
+beide Ist-Referenzen und erzeugte zwei Referenzzuweisungen statt einer.
+Die ursprüngliche Gegenprobe ohne XFAIL-Ausnahme scheiterte zweimal genau
+an den zwei statt einer Dienst-IDs; beide Soll-Kontrollen bestanden.
+
+Quellpfad: `SP5Database.get_schedule` behält MASHI-Zeilen und ergänzt SPSHI;
+nur expandierte CYASS-Zeilen werden dort mit `replaced_by_spshi` unterdrückt.
+`sp5api/routers/schedule.py:get_schedule` reicht diese Zeilen mit `plan`
+weiter. OSP5 `frontend/src/pages/Schedule.tsx` verarbeitet an mehreren
+Stellen sowohl `shift` als auch `special_shift`; daraus folgt keine
+Stunden-Normalisierung. Generator `_reference_schedule` liefert die Zeilen
+an `import_snapshot`. Dessen tagbezogene Normalisierung war bisher auf
+Randarbeit beschränkt; nominalidentische Sonderzeiten werden anschließend
+als regulärer Dienst dem Bedarf zugeordnet. Unterschiedliche Dienst-IDs
+verhindern die spätere Assignment-Deduplizierung.
+
+Wichtige Abgrenzung: Library/API liefern Sonderdienste ausdrücklich in
+**beiden** Plansichten; `SPSHI.TYPE` ist kein Soll/Ist-Schalter. Deshalb ist
+das Auftauchen des Sonderdiensts im Soll-Vergleich allein kein belegter
+Fehler. Die zwei Soll-Kontrollen erhalten dessen Kontext und den regulären
+Soll-Dienst. Eine Löschung der Soll-Zielvorgabe aus einer Ist-Ersatzregel
+wäre nicht begründet. Rohkontext, zwei echte Bedarfe, unbestätigte Profile
+und fehlende persönliche Freigaben bleiben in allen vier Fällen erhalten.
+
+Die Korrektur erweitert die vorhandene Normalisierung auf Ist-Referenzen;
+akzeptierte Ersatzreferenzen tragen `replaced_normal_rows`. Rohkontext und
+Soll-Auswahl bleiben erhalten. Die acht HTTP-Fälle bestehen ohne XFAIL.
+Die bestehende Gegenprobe
+`test_reference_selection_never_switches_context_absences_or_special_duties`
+prüft zudem: Ein ungeklärter Typ-1-Ersatz bleibt ein harter Sonderblocker,
+der ersetzte normale Ist-Dienst wird auch im Fixierungsmodus nicht als
+Fallback übernommen. Reguläre Soll-Zielvorgaben bleiben unverändert.
+Weitere acht HTTP-Fälle in
+`test_in_period_unresolved_special_never_becomes_free_time` sichern
+abweichende reale Zeiten bei unverändert bezahlten Stunden und echte
+Zusatzdienste ohne Dienst-ID in beiden Sichten/Modi ab. Sonderblocker
+bleiben erhalten; Zusatzdienste löschen den Normaldienst nicht.
+Dies beweist nicht die Ursache des weiterhin fehlenden Original-600s-Jobs.

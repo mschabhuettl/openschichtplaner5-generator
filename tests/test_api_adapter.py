@@ -442,6 +442,74 @@ def test_boundary_replacement_keeps_blockers_additions_and_selected_references(
                for row in snapshot.metadata["context_schedule"])
 
 
+@pytest.mark.parametrize("plan", ["ist", "soll"])
+@pytest.mark.parametrize("special_first", [False, True])
+@pytest.mark.parametrize("mode", ["reference", "fixed"])
+def test_in_period_replacement_reference_respects_selected_plan(transport, plan, special_first, mode):
+    """Ist hours replace normal work; preserve separate Soll/source special context."""
+    responses, calls = transport
+    day = date(2026, 1, 6)
+    normal = {"employee_id": 101, "date": day.isoformat(), "kind": "shift",
+              "shift_id": 201, "workplace_id": 301}
+    special = {**normal, "kind": "special_shift", "shift_id": 202, "spshi_type": 0}
+    responses["/api/shifts"].append({**responses["/api/shifts"][0], "ID": 202})
+    requirements = responses["/api/staffing-requirements"]["shift_requirements"]
+    requirements.append({**requirements[0], "id": 402, "shift_id": 202})
+    responses[("schedule", "2026", "1", "ist")] = (
+        [special, normal] if special_first else [normal, special])
+    responses[("schedule", "2026", "1", "soll")] = [normal]
+    responses["/api/einsatzplan"] = [{
+        "id": 901, "employee_id": 101, "date": day.isoformat(), "shift_id": 202,
+        "workplace_id": 301, "type": 0,
+        "startend": "08:00-10:00;11:00-13:00", "duration": 4,
+    }]
+    snapshot = import_api(day, day, "1", "UTC", reference_plan=plan, existing_plan_mode=mode)
+    assert all(c.get_method() == "GET" for c in calls)
+    assert not snapshot.employees[0].approvals
+    assert not snapshot.profiles[0].confirmed
+    assert len(snapshot.demands) == 2  # Baseline selection must not invent/remove demand.
+    assert len(snapshot.metadata["context_schedule"]) == 2  # Keep Ist special context.
+    # The source API also exposes special duties in Soll. Do not infer that
+    # its normal target duty may be deleted by the Ist replacement rule.
+    expected_services = [202] if plan == "ist" else [201, 202]
+    assert sorted(r["shift_id"] for r in snapshot.metadata["reference_schedule"]) == expected_services
+    assert len(snapshot.assignments) == len(expected_services)
+    demands = {d.id: d for d in snapshot.demands}
+    shifts = {s.id: s for s in snapshot.shifts}
+    paid = sum(shifts[demands[a.demand_id].shift_id].paid_minutes for a in snapshot.assignments)
+    assert paid == (240 if plan == "ist" else 480)
+    assert all(a.fixed == (mode == "fixed") for a in snapshot.assignments)
+    replacement = next(r for r in snapshot.metadata["reference_schedule"] if r["kind"] == "special_shift")
+    assert len(replacement["replaced_normal_rows"]) == (1 if plan == "ist" else 0)
+
+
+@pytest.mark.parametrize("plan", ["ist", "soll"])
+@pytest.mark.parametrize("replacement", [False, True])
+@pytest.mark.parametrize("mode", ["reference", "fixed"])
+def test_in_period_unresolved_special_never_becomes_free_time(transport, plan, replacement, mode):
+    responses, _ = transport
+    day = date(2026, 1, 6)
+    normal = {"employee_id": 101, "date": day.isoformat(), "kind": "shift",
+              "shift_id": 201, "workplace_id": 301}
+    special = {**normal, "kind": "special_shift", "spshi_type": 0,
+               "shift_id": 201 if replacement else 0}
+    responses[("schedule", "2026", "1", "ist")] = [normal, special]
+    responses[("schedule", "2026", "1", "soll")] = [normal]
+    responses["/api/einsatzplan"] = [{
+        "id": 901, "employee_id": 101, "date": day.isoformat(),
+        "shift_id": special["shift_id"], "workplace_id": 301, "type": 0,
+        "startend": "08:00-14:00", "duration": 4,
+    }]
+    snapshot = import_api(day, day, "1", "UTC", reference_plan=plan, existing_plan_mode=mode)
+    assert any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved)
+    assert len(snapshot.metadata["context_schedule"]) == 2
+    expected = 0 if replacement and plan == "ist" else 1
+    assert len(snapshot.metadata["reference_schedule"]) == expected
+    assert len(snapshot.assignments) == expected
+    assert not snapshot.employees[0].approvals
+    assert not snapshot.profiles[0].confirmed
+
+
 @pytest.mark.parametrize("special_type", [0, 1])
 @pytest.mark.parametrize("special_shift_id", [0, 202])
 def test_library_special_replacement_is_day_wide_and_not_type_selected(special_type, special_shift_id):
