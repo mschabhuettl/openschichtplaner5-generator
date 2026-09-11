@@ -3033,3 +3033,33 @@ tools/test_rest_source_window_contract.py tools/test_duty_conflicts_candidate.py
 tools/test_calendar_limits_candidate.py` — 36 bestanden. Der erste Aufruf ohne
 `tests` im Suchpfad scheiterte bei vier bestehenden Quervergleichstests am
 Fixture-Import; nach korrektem Suchpfad bestanden auch diese.
+
+### Expliziter Planungsumfang der Paardiagnose (11.09.2026)
+
+Der isolierte `tools/duty_conflicts_candidate.diagnose_pairs` akzeptiert jetzt
+optional `planning_source_ids`: Nur Paare mit mindestens einer ausdrücklich
+benannten Planungsquelle werden als Befund ausgegeben. Die unbeschränkte
+Bestandsprüfung bleibt der Default. Eine leere Auswahl prüft keine Planpaare;
+unbekannte Identitäten werden abgewiesen. Unaufgelöste Kontextquellen bleiben
+sichtbar und `complete=False` bleibt unverändert. Keine Datumsheuristik leitet
+hier persönliche Freigaben oder die Zugehörigkeit zum Plan ab.
+
+Synthetisch belegt: Ein ausschließlich historischer Überlappungskonflikt wird
+im Planungsmodus nicht ausgegeben, während beide Konflikte zum vorangehenden
+und folgenden Randdienst erhalten bleiben (420 bzw. 360 Minuten bei 660 Minuten
+Vorgabe). Drei neue Tests sichern auch offene Kontextquellen und falsche IDs ab;
+die kombinierte Paardiagnose-/Kalenderlimit-Suite besteht mit 39 Tests.
+
+Abgrenzung zur Runtime: `validator.validate` prüft derzeit alle Paare der
+jeweiligen Person einschließlich Fixkontext. Diese bestehende konservative
+Semantik wurde **nicht** geändert. Der Diagnosefilter ist keine Erlaubnis,
+einen produktiven Plan trotz Fixkontextfehlern freizugeben.
+
+Die gelesenen Runtime-Horizonte in `validator.validate` berücksichtigen tägliche,
+Nachtnachruhe, Nachtblockruhe, Serienlängen und Wochenfenster; `domain.pair_conflict`
+verwendet datierte Profile an beiden Dienstanfängen, `night_block_conflict`
+zusätzlich den Abstand der lokalen Starttage. Ein einfacher konstanter
+Minutenfilter bildet diese Regeln nicht gleichwertig ab. Die Ableitung des
+Quellselektionsfensters muss außerdem den vor dem Ruhefenster beginnenden
+eingehenden Dienst erfassen. Weiter offen: datierter Ruhequellenvertrag und
+atomarer Quellenstand; keine neue Vollständigkeits- oder Echtdatenfreigabe.
