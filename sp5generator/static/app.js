@@ -453,6 +453,11 @@ function diagnosticMessage(d){
  if(d.message.startsWith('Unvereinbare Dienste'))return d.code==='rest'?'Zwischen dieser Einteilung und einem anderen Dienst bleibt zu wenig Ruhezeit.':'Diese Einteilung ist zeitlich nicht mit einem anderen Dienst der Person vereinbar.';
  return d.message;
 }
+function openRulesReview(id){
+ navigate('rules');const target=$(id);if(!target)return;
+ const disclosure=target.closest('details');if(disclosure)disclosure.open=true;
+ const heading=target.querySelector('h3')??target;heading.tabIndex=-1;heading.focus();target.scrollIntoView({block:'start'});
+}
 function refreshAutomaticReadiness(force=false){
  if(!snapshot||activePanel!=='calculate')return;
  const status=$('automaticReadinessStatus'),details=$('automaticReadinessDetails'),retry=$('retryReadiness');
@@ -472,7 +477,16 @@ function refreshAutomaticReadiness(force=false){
   display(result.ready?'ready':'issues',result.ready?'Keine offenen Eingabefehler gefunden. Die Berechnung und anschließende Ergebnisprüfung stehen noch aus.':`${result.diagnostics.length.toLocaleString('de-DE')} Hinweise vor der Berechnung prüfen.`,result.diagnostics.length);
   if(result.diagnostics.length){
    const disclosure=el('details',undefined,details);disclosure.open=true;el('summary','Konkrete Prüfhinweise',disclosure);
-   const list=el('div',undefined,disclosure);const draw=()=>{const view=collection(list,'automaticReadiness',result.diagnostics,{label:'Hinweise',size:10,redraw:draw});for(const d of view.items){const line=el('div',undefined,view.content);line.className='diagnostic-item';el('p',diagnosticMessage(d),line);const person=dataIndex().employees.get(d.employee_id);if(person)button(line,'Person bearbeiten',()=>personDetails(person));}};draw();
+   const counts=new Map();for(const diagnostic of result.diagnostics)counts.set(diagnostic.code,(counts.get(diagnostic.code)??0)+1);
+   const state=pageState('automaticReadiness',10);if(!counts.has(state.filter)){state.filter='all';state.page=0;}
+   const label=el('label','Hinweiskategorie',disclosure),filter=el('select',undefined,label);filter.id='readinessCategory';
+   el('option',`Alle Hinweise (${result.diagnostics.length.toLocaleString('de-DE')})`,filter).value='all';
+   for(const [code,count] of counts)el('option',`${diagnosticTitles[code]??code} (${count.toLocaleString('de-DE')})`,filter).value=code;
+   filter.value=state.filter;
+   const actions=el('div',undefined,disclosure);actions.className='readiness-actions';
+   for(const [code,id,text] of [['profile','profiles','Regelprofile prüfen'],['context','contextConfirmation','Randkontext prüfen'],['unresolved','unresolved','Offene Angaben prüfen']])if(counts.has(code))button(actions,text,()=>openRulesReview(id));
+   const list=el('div',undefined,disclosure);const draw=()=>{const entries=state.filter==='all'?result.diagnostics:result.diagnostics.filter(d=>d.code===state.filter);const view=collection(list,'automaticReadiness',entries,{label:'Hinweise',size:10,redraw:draw});for(const d of view.items){const line=el('div',undefined,view.content);line.className='diagnostic-item';el('p',diagnosticMessage(d),line);const person=dataIndex().employees.get(d.employee_id);if(person)button(line,'Person bearbeiten',()=>personDetails(person));}};
+   filter.onchange=()=>{state.filter=filter.value;state.page=0;draw();};draw();
   }
  }).catch(error=>{
   if(!current())return;
