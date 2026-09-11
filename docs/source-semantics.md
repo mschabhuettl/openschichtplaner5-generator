@@ -2675,3 +2675,38 @@ Ruhezeitkontext, kein Quellendeckungsnachweis und kein Release. Nächster Schrit
 Konsistenz und stabile Quellidentitäten prüfen, bevor die Diagnosekandidaten in
 einen produktiven Datenfluss übernommen werden. Der konkrete 0.9.29-Job bleibt
 mangels exaktem Eingabe-/Ergebnisartefakt nicht reproduziert.
+
+### Wiederholbare Quellenlesung ist noch kein Datenbank-Snapshot
+
+Library `sp5lib/database.py:SP5Database._read` prüft mtime/Größe pro Tabelle und
+liefert bei Cachetreffern dieselbe global gecachte Liste zurück. `_CACHE_LOCK`
+sichert Cachezugriffe, aber keine gemeinsame Transaktion über MASHI, SPSHI,
+Zyklustabellen, SHIFT, HOLID und ABSEN. Bei Lesefehlern kann `_read` außerdem
+`[]` liefern; daraus lässt sich eine fehlende Tabelle nicht von einer leeren
+unterscheiden. Ein Cachetreffer ist kein Vollständigkeitsnachweis.
+
+Der API-Kandidat `_employee_plan` liest Tabellen erneut, nachdem der
+Diagnosekandidat sie bereits vorgeprüft hat. Vier synthetische Tests mit dem
+echten gepatchten API-Selektor waren zunächst rot: ein Versionswechsel zwischen
+Vorprüfung und Selektion entfernt MASHI in Ist/Soll; eine Mutation der geteilten
+Cacheliste entfernt ein vorgeprüftes Datum; eine Mutation durch den Selektor
+verändert die spätere Zeitmessung von acht auf 24 Stunden. Das sind gezielte
+Störszenarien, **keine nachgewiesenen Ereignisse im Nutzerprojekt**.
+
+`measure_selected` nutzt jetzt `_RequestTables`: jede benötigte Tabelle wird pro
+Aufruf einmal gelesen, mit Standardbibliothek `copy.deepcopy` isoliert und jedem
+Verbraucher erneut als Kopie geliefert. Soll liest weiterhin keine unbeteiligten
+Ist-/Zyklustabellen. Folgende Aufrufe sehen neue Quelldaten; es entsteht kein
+zusätzlicher dauerhafter Cache. Das verhindert nachträgliche Veränderungen einer
+bereits gelesenen Tabelle innerhalb dieses Diagnoseaufrufs, **nicht** wechselnde
+Tabellenstände während des erstmaligen Einlesens. Zwei zusätzliche Tests belegen
+diese Grenze und die Aktualisierung im nächsten Aufruf. `CalendarReport.complete`
+bleibt auch bei gemessenen Zeiten und abgedeckten Tagen ausdrücklich `False`.
+
+**100 fokussierte Tests bestanden**, Ruff und Diffcheck grün. Der zusätzliche
+Grenztest hatte zunächst einen fehlerhaften RuleProfile-Testaufbau; nach Anpassung
+an das bestehende Modell grün. Keine neue Abhängigkeit, kein produktiver Pfad,
+keine Originalrepo-/Datenänderung und kein Release. Für produktive Integration
+fehlen weiterhin ein belegter konsistenter Quellen-Snapshot samt Fehlerstatus,
+tragfähige Quellidentitäten über mehrere Abrufe und der gesonderte Ruhekontext.
+Die bisherigen anfragelokalen Ordinale werden nicht zu DB-Schlüsseln umgedeutet.

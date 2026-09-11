@@ -208,3 +208,82 @@ def test_valid_out_of_period_date_remains_outside_selection(collect):
     data = tables()
     data['MASHI'].append({'EMPLOYEEID': 10, 'DATE': '2026-01-06', 'TYPE': 0})
     assert len(collect(data)) == 1
+
+
+@pytest.mark.parametrize('plan', ['ist', 'soll'])
+def test_validation_and_selection_reuse_first_table_read(plan):
+    from collections import Counter
+
+    data = tables()
+    reads = Counter()
+    def read(name):
+        reads[name] += 1
+        # A second read sees the next database revision, after validation.
+        if name == 'MASHI' and reads[name] > 1:
+            return []
+        return data.get(name, [])
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    result = measure_selected(SimpleNamespace(_read=read), selector, 10, DAY, DAY,
+                              plan, 'Europe/Vienna')
+    assert len(result) == 1
+    assert result[0].duty.calendar_minutes('Europe/Vienna') == {DAY: 480}
+    assert all(count == 1 for count in reads.values())
+    if plan == 'soll':
+        assert not set(reads).intersection({'SPSHI', 'CYASS', 'CYCLE', 'CYENT', 'CYEXC'})
+
+
+def test_source_cache_mutation_cannot_change_already_checked_rows():
+    data = tables()
+    def read(name):
+        if name == 'SPSHI':
+            # Library _read returns the shared cache list, not an isolated copy.
+            data['MASHI'][0]['DATE'] = 'not-a-date'
+        return data.get(name, [])
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    result = measure_selected(SimpleNamespace(_read=read), selector, 10, DAY, DAY,
+                              'ist', 'Europe/Vienna')
+    assert len(result) == 1
+    assert result[0].status == 'measured'
+
+
+def test_selector_mutation_does_not_change_measurement_tables():
+    data = tables()
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    def mutating_selector(db, *args):
+        db._read('SHIFT')[0]['STARTEND0'] = '08:00-08:00'
+        return selector(db, *args)
+    result = measure_selected(SimpleNamespace(_read=lambda name: data.get(name, [])),
+                              mutating_selector, 10, DAY, DAY, 'ist', 'Europe/Vienna')
+    assert result[0].duty.calendar_minutes('Europe/Vienna') == {DAY: 480}
+    assert data['SHIFT'][0]['STARTEND0'] == '08:00-12:00 16:00-20:00'
+
+
+def test_next_diagnostic_request_observes_new_source_revision():
+    data = tables()
+    db = SimpleNamespace(_read=lambda name: data.get(name, []))
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    first = measure_selected(db, selector, 10, DAY, DAY, 'ist', 'Europe/Vienna')
+    data['SHIFT'][0]['STARTEND0'] = '08:00-10:00'
+    second = measure_selected(db, selector, 10, DAY, DAY, 'ist', 'Europe/Vienna')
+    assert first[0].duty.calendar_minutes('Europe/Vienna') == {DAY: 480}
+    assert second[0].duty.calendar_minutes('Europe/Vienna') == {DAY: 120}
+
+
+def test_per_table_copy_does_not_claim_cross_table_atomicity():
+    data = tables()
+    def read(name):
+        if name == 'SPSHI':
+            # A different table can still change before its FIRST read.
+            data['SHIFT'][0]['STARTEND0'] = '08:00-10:00'
+        return data.get(name, [])
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    selected = measure_selected(SimpleNamespace(_read=read), selector, 10, DAY, DAY,
+                                'ist', 'Europe/Vienna')
+    assert selected[0].duty.calendar_minutes('Europe/Vienna') == {DAY: 120}
+    # Even measured records + covered dates are not a source coverage certificate.
+    profile = RuleProfile(id='explicit', confirmed=True, valid_from=DAY,
+                          valid_until=DAY, min_rest_minutes=660, max_daily_minutes=600)
+    report = diagnose_calendar(selected, [profile], ['explicit'], DAY, DAY,
+                               'Europe/Vienna', {DAY})
+    assert not report.complete
+    assert report.checks[0].observed_minutes == 120

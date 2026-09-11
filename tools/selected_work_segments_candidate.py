@@ -4,6 +4,7 @@ The injected selector is the patched API _employee_plan. Its source/date filteri
 is a separate coverage limitation. Identities below are request-local, not DB keys.
 """
 from dataclasses import dataclass
+from copy import deepcopy
 from datetime import date
 
 from sp5lib import calculations as calc
@@ -20,6 +21,25 @@ class SelectedDuty:
     issues: tuple[str, ...] = ()
 
 
+class _RequestTables:
+    """Repeatable per-table reads, NOT an atomic cross-table DB snapshot.
+
+    Library reads expose shared cached lists and may change between calls.
+    Copy on capture and delivery prevents consumers mutating checked records.
+    A missing table returned as [] by the library remains indistinguishable from
+    an empty table; neither this wrapper nor its caller certifies source coverage.
+    """
+
+    def __init__(self, source):
+        self.source = source
+        self.tables = {}
+
+    def _read(self, name):
+        if name not in self.tables:
+            self.tables[name] = deepcopy(self.source._read(name))
+        return deepcopy(self.tables[name])
+
+
 def measure_selected(db, selector, employee_id, start, end, plan, zone):
     """Account for every selected row, including replacement and measurement gaps.
 
@@ -28,6 +48,7 @@ def measure_selected(db, selector, employee_id, start, end, plan, zone):
     """
     if plan not in ('ist', 'soll'):
         raise ValueError('Explicit ist or soll required')
+    db = _RequestTables(db)
     # The API selector silently omits unknown/invalid dates. Their period
     # membership cannot be established, so reject selected-source ambiguity
     # before it disappears. This does not certify cycle or snapshot coverage.
