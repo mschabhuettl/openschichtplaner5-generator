@@ -382,3 +382,18 @@ def test_readiness_ignores_unused_qualification_gate_until_position_is_demanded(
                    for d in report['diagnostics'])
         assert snapshot['positions'][-1]['qualifications_required'] is True
         assert client.get('/api/snapshots').json() == []
+
+
+def test_readiness_person_diagnostics_keep_identity_with_duplicate_names(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        snapshot = client.get('/api/demo').json()
+        first, second = snapshot['employees'][:2]
+        first['name'] = second['name'] = 'Synthetischer gleicher Name'
+        first['profile_ids'] = []
+        report = client.post('/api/readiness', json=snapshot)
+        assert report.status_code == 200
+        issues = [d for d in report.json()['diagnostics'] if d['code'] == 'profile']
+        assert issues
+        assert all(d['employee_id'] == first['id'] for d in issues)
+        assert all(second['id'] != d['employee_id'] for d in issues)
+        assert client.get('/api/snapshots').json() == []

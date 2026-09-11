@@ -102,6 +102,13 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state==='issues');
     assert(await page.locator('#automaticReadinessDetails').innerText());
     assert.deepEqual(writes,[]);page.off('request',observeWrites);
+    const personHint=page.locator('#automaticReadinessDetails .diagnostic-item').filter({hasText:'Kein bestätigtes gültiges Regelprofil: Testperson 001'});
+    assert.equal(await personHint.count(),1);
+    assert(!(await personHint.innerText()).includes('sp5:employee:101'));
+    await personHint.getByRole('button',{name:'Person bearbeiten',exact:true}).click();
+    assert.equal(await page.locator('#details').getByLabel('Name',{exact:true}).inputValue(),'Testperson 001');
+    await navigate('calculate');
+
     await screenshot('automatic-preflight.png');
     // A delayed old success must not replace a newer failed check after an edit.
     let releaseOld,oldSeenResolve;const oldSeen=new Promise(resolve=>oldSeenResolve=resolve);

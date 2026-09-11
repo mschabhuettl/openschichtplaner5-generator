@@ -195,8 +195,8 @@ def planning_record_count(value):
 def input_diagnostics(snapshot):
     errors = []
 
-    def issue(code, message):
-        errors.append(Diagnostic(code=code, message=message))
+    def issue(code, message, employee_id=None):
+        errors.append(Diagnostic(code=code, message=message, employee_id=employee_id))
 
     planning_days = (snapshot.period_end - snapshot.period_start).days + 1
     context_days = (snapshot.context_end - snapshot.context_start).days + 1
@@ -329,24 +329,24 @@ def input_diagnostics(snapshot):
                 issue("profile", "Ungültiger Profilzeitraum: " + p.id)
         for e in snapshot.employees:
             if e.employment_start > e.employment_end:
-                issue("employment", "Ungültiger Beschäftigungszeitraum: " + e.id)
+                issue("employment", "Ungültiger Beschäftigungszeitraum: " + e.id, employee_id=e.id)
             for record in [*e.approvals, *e.qualifications, *e.availability]:
                 if record.valid_from > record.valid_until:
-                    issue("validity", "Ungültiger Gültigkeitszeitraum: " + e.id)
+                    issue("validity", "Ungültiger Gültigkeitszeitraum: " + e.id, employee_id=e.id)
             if not e.profile_ids or not set(e.profile_ids) <= profile_ids:
-                issue("profile", "Fehlendes Regelprofil: " + e.id)
+                issue("profile", "Fehlendes Regelprofil: " + e.id, employee_id=e.id)
             for day in dates(snapshot.period_start, snapshot.period_end):
                 ps = profiles_for(snapshot, e, day)
                 if not ps or any(not p.confirmed for p in ps):
-                    issue("profile", "Kein bestätigtes gültiges Regelprofil: " + e.id)
+                    issue("profile", "Kein bestätigtes gültiges Regelprofil: " + e.id, employee_id=e.id)
                     break
             for v in e.availability:
                 if any(day not in range(7) for day in v.weekdays):
-                    issue("availability", "Ungültiger Wochentag: " + e.id)
+                    issue("availability", "Ungültiger Wochentag: " + e.id, employee_id=e.id)
                 if v.cycle_phase >= v.cycle_weeks or (
                     v.cycle_weeks > 1 and v.cycle_anchor is None
                 ):
-                    issue("availability", "Ungültige Wochenphase: " + e.id)
+                    issue("availability", "Ungültige Wochenphase: " + e.id, employee_id=e.id)
                 for day in dates(
                     max(v.valid_from, snapshot.context_start - timedelta(days=1)),
                     min(v.valid_until, snapshot.context_end),
@@ -355,7 +355,7 @@ def input_diagnostics(snapshot):
                         availability_window(day, v, snapshot.timezone)
             for i in e.unavailable:
                 if minute(i.start) >= minute(i.end):
-                    issue("absence", "Ungültige Abwesenheit: " + e.id)
+                    issue("absence", "Ungültige Abwesenheit: " + e.id, employee_id=e.id)
         for a in snapshot.assignments:
             if a.employee_id not in employee_ids or a.demand_id not in demand_ids:
                 issue("assignment_reference", "Unbekannte Einteilungsreferenz.")
