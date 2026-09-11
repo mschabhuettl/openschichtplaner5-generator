@@ -235,17 +235,18 @@ def test_conditional_quality_shares_original_deadline(monkeypatch):
     assert first['weighted_quality_cost'] >= second['weighted_quality_cost']
 
 
+@pytest.mark.parametrize('change_weight', [0, 100, 600])
 @pytest.mark.parametrize('quality_presolve', [False, True])
 @pytest.mark.parametrize('unfillable', [False, True])
 def test_certified_hint_allows_real_fixed_coverage_quality_gain(
-    monkeypatch, quality_presolve, unfillable,
+    monkeypatch, quality_presolve, unfillable, change_weight,
 ):
-    """Real CP-SAT search must move a fully hinted, imbalanced saved plan."""
+    """Move a certified hint only when the complete weighted cost improves."""
     snapshot = case(2, [shift('a', 5, 8, 8), shift('b', 6, 8, 8)])
     for employee in snapshot.employees:
         employee.target_minutes = 480
     snapshot.objectives = Objectives(
-        hours=1, changes=0, nights=0, weekends=0, holidays=0, wishes=0,
+        hours=1, changes=change_weight, nights=0, weekends=0, holidays=0, wishes=0,
         workday_transitions=0,
     )
     snapshot.assignments = [Assignment(employee_id='e0', demand_id=d.id)
@@ -277,11 +278,24 @@ def test_certified_hint_allows_real_fixed_coverage_quality_gain(
     assert len(calls) == 3  # certificate, coverage, conditional quality
     coverage, quality = result.parameters['search_trace']
     assert coverage['weighted_quality_cost'] == 960
-    assert quality['weighted_quality_cost'] == 0
+    assert quality['weighted_quality_cost'] == min(960, 2 * change_weight)
     assert coverage['vacancy_count'] == quality['vacancy_count'] == int(unfillable)
     assert quality['native_status'] == 'OPTIMAL'
     assert coverage['independently_valid'] and quality['independently_valid']
     assert validate(snapshot, result.assignments).valid
-    assert {a.employee_id for a in result.assignments} == {'e0', 'e1'}
-    assert sorted(m['paid_minutes'] for m in result.metrics['employees'].values()) == [480, 480]
+    original_pairs = {(a.employee_id, a.demand_id) for a in snapshot.assignments}
+    final_pairs = {(a.employee_id, a.demand_id) for a in result.assignments}
+    changed = len(original_pairs ^ final_pairs)
+    paid = sorted(m['paid_minutes'] for m in result.metrics['employees'].values())
+    # Independent arithmetic: moving one duty removes one assignment and adds
+    # another, so the configured change cost is paid twice, not once.
+    hours_cost = sum(abs(minutes - 480) for minutes in paid)
+    assert quality['weighted_quality_cost'] == hours_cost + changed * change_weight
+    if change_weight < 480:
+        assert paid == [480, 480] and changed == 2
+    else:
+        assert paid == [0, 960] and changed == 0
+        assert final_pairs == original_pairs
+        # Better target distribution alone would worsen this objective.
+        assert 2 * change_weight > hours_cost
     assert all(not a.fixed for a in snapshot.assignments)

@@ -5336,3 +5336,25 @@ same-incumbent fixed-coverage comparison with native search statistics. Producti
 parameters remain unchanged; this is a synthetic search-regression addition, not
 a new runtime or release. The existing zero-gain private trace remains the latest
 large-instance evidence.
+
+### Fixed-coverage quality includes configured change costs (2026-09-12)
+
+The controlled certified-hint test above additionally varies the configured
+`changes` weight (0, 100, 600). `solver.solve` builds the `changes` component
+against the original saved `(employee_id, demand_id)` pairs: transferring one
+duty removes one pair and adds another. Both changes count. The quality phase
+retains this original baseline; it does not rebase change costs onto the latest
+coverage incumbent.
+
+With the same two eight-hour duties and two eight-hour targets, a transfer reduces
+absolute hours deviation from 960 to zero but costs twice the change weight.
+Actual CP-SAT quality search therefore reaches costs 0 and 200 for the first two
+weights, and retains the original cost 960 when the weight is 600 (a transfer
+would cost 1200). This is checked for both presolve settings and both zero/one
+unfillable vacancy. Independent arithmetic from the final assignment-pair
+symmetric difference and paid hours verifies the full active weighted objective;
+the independent validator verifies the hard rules. The synthetic high-weight
+case is a concrete reason that an unchanged personnel distribution need not be a
+solver defect. It is not evidence that change costs explain any specific private
+plan, nor permission to change the user's objective weights or require every
+employee to be assigned.
