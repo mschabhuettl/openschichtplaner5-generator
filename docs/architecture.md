@@ -24,4 +24,12 @@ keine optimale Abdeckung; ein Rückfall bleibt `FEASIBLE`, nicht `OPTIMAL`.
 Ohne erfolgreiche Prüfung entsteht dadurch kein ausgebbarer Plan. Reiner
 Fix-/Randkontext aktiviert diesen Vorschlagsmechanismus nicht.
 
+Die Unterbesetzungsvariable je Bedarf ist exakt
+`max(0, Mindestbesetzung - ausgewählte Einteilungen)`. Eine reine Untergrenze
+reicht nicht: Bei einem zeitbegrenzten `FEASIBLE`-Ergebnis könnte die
+Hilfsvariable sonst größer als die wirkliche Unterbesetzung bleiben und damit
+Zielfunktionswert und Ergebniszählung auseinanderlaufen. Überbesetzung innerhalb
+eines konfigurierten Maximums ergibt weiterhin null offene Stellen, keine
+negative Unterbesetzung.
+
 Native SP5-Gesamtübernahme ist nicht implementiert: Die existierenden Writer teilen keine durchgehende Transaktion mit zusätzlich dateibasierten Regeln. Das Experiment ersetzt diese Grenze nicht durch einzelne Tabellenlocks oder einen frühen Versionsvergleich.

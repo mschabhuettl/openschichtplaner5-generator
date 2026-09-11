@@ -504,6 +504,35 @@ def test_approved_service_without_positive_demand_does_not_create_assignments(ze
     assert diagnostic['exclusions'].get('zero_capacity', 0) == int(zero_capacity_demand)
 
 
+@pytest.mark.parametrize('assigned,reported,valid', [
+    (0, 0, False), (0, 1, True),
+    (1, 0, True), (1, 1, False),
+    (2, 0, True), (2, 1, False),
+])
+def test_vacancy_variable_equals_actual_shortage_without_optimality(monkeypatch, assigned, reported, valid):
+    snapshot = case(2)
+    snapshot.demands[0].maximum = 2
+    original = cp_model.CpSolver.solve
+
+    def inspect_model(self, model, *args, **kwargs):
+        # FEASIBLE incumbents need not minimize every auxiliary variable. Check
+        # the accounting identity as a constraint, with no objective to help it.
+        probe = model.clone()
+        probe.clear_objective()
+        variables = {v.name: probe.get_int_var_from_proto_index(i)
+                     for i, v in enumerate(probe.proto.variables)}
+        for i in range(2):
+            probe.add(variables[f'assign:e{i}:s'] == int(i < assigned))
+        probe.add(variables['vacancy:s'] == reported)
+        status = original(cp_model.CpSolver(), probe)
+        assert status == (cp_model.OPTIMAL if valid else cp_model.INFEASIBLE)
+        return cp_model.UNKNOWN
+
+    monkeypatch.setattr(cp_model.CpSolver, 'solve', inspect_model)
+    result = solver.solve(snapshot, 3, partial=True)
+    assert result.solver_status == 'UNKNOWN' and not result.assignments
+
+
 def test_linear_hours_target_can_tie_while_block_goal_concentrates_work():
     from sp5generator.models import Objectives
 

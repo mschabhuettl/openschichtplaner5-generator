@@ -250,7 +250,10 @@ def solve(snapshot, time_limit=30, partial=False):
             )
         if partial:
             v = model.new_int_var(0, d.minimum, "vacancy:" + d.id)
-            model.add(sum(choices) + v >= d.minimum)
+            # A time-limited FEASIBLE incumbent need not tighten inequality
+            # slack. Keep the objective equal to the actual unfilled slots,
+            # including when staffing exceeds the minimum.
+            model.add_max_equality(v, [0, d.minimum - sum(choices)])
             vacancies.append(v)
         else:
             model.add(sum(choices) >= d.minimum)
