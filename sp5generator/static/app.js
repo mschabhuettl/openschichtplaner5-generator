@@ -4,7 +4,7 @@ let groups=[], checkedTeams=new Set(), transposed=false, planMonth="", solving=f
 let dirty=false, jsonDirty=false, changeVersion=0, activePanel='projects', projectBusy=false, personDraft=false;
 let indexVersion=-1, indexes=null, matrixCache=null, stateFrame=null, jsonVersion=-1;
 const renderedPanels=new Map(), collections=new Map();
-let savedRequest=0,jobsRequest=0;
+let savedRequest=0,jobsRequest=0,paginationSerial=0;
 let readinessVersion=-1,readinessPending=-1,readinessRequest=0,readinessSummary=null;
 const fold=value=>String(value??'').toLocaleLowerCase('de-DE');
 function dataIndex(){
@@ -36,13 +36,15 @@ function pageState(key,size=30){if(!collections.has(key))collections.set(key,{pa
 function debounce(fn,delay=180){let pending;return (...args)=>{clearTimeout(pending);pending=setTimeout(()=>fn(...args),delay);};}
 function pagination(parent,state,count,redraw,label='Einträge'){
  const pages=Math.max(1,Math.ceil(count/state.size));state.page=Math.max(0,Math.min(state.page,pages-1));
- const bar=el('div',undefined,parent);bar.className='pagination';bar.setAttribute('aria-label',label+' Seiten');
+ const bar=el('div',undefined,parent);bar.className='pagination';bar.setAttribute('role','navigation');bar.setAttribute('aria-label',label+' Seiten');
+ state.paginationToken??=String(++paginationSerial);bar.dataset.paginationToken=state.paginationToken;
  if(pages===1){el('span',`${count} ${label}`,bar);return 0;}
  const start=count?state.page*state.size+1:0,end=Math.min(count,(state.page+1)*state.size);
- el('span',`${start}–${end} von ${count} ${label}`,bar);
- const prev=button(bar,'Zurück',()=>{state.page--;redraw();});prev.disabled=state.page===0;prev.setAttribute('aria-label',label+': vorherige Seite');
+ const status=el('span',`${start}–${end} von ${count} ${label}`,bar);status.dataset.pageStatus='';status.tabIndex=-1;status.setAttribute('role','status');
+ const move=direction=>{state.page+=direction;redraw();const replacement=parent.querySelector(`[data-pagination-token="${state.paginationToken}"]`);const control=replacement?.querySelector(`[data-page-direction="${direction}"]`);if(control&&!control.disabled)control.focus({preventScroll:true});else replacement?.querySelector('[data-page-status]')?.focus({preventScroll:true});};
+ const prev=button(bar,'Zurück',()=>move(-1));prev.dataset.pageDirection='-1';prev.disabled=state.page===0;prev.setAttribute('aria-label',label+': vorherige Seite');
  el('span',`Seite ${state.page+1} / ${pages}`,bar);
- const next=button(bar,'Weiter',()=>{state.page++;redraw();});next.disabled=state.page>=pages-1;next.setAttribute('aria-label',label+': nächste Seite');
+ const next=button(bar,'Weiter',()=>move(1));next.dataset.pageDirection='1';next.disabled=state.page>=pages-1;next.setAttribute('aria-label',label+': nächste Seite');
  return state.page*state.size;
 }
 function collection(parent,key,items,{label='Einträge',size=30,search=null,redraw}){
@@ -328,11 +330,20 @@ function renderReferenceImport(){
  };
  details.addEventListener('toggle',()=>{if(details.open)render();});
 }
+function renderUnresolved(){
+ const box=$('unresolved');
+ if(!snapshot.unresolved.length){box.replaceChildren();el('p','Keine offenen Importangaben.',box);return;}
+ const entries=snapshot.unresolved.map((message,index)=>({message,index}));
+ const view=collection(box,'unresolved',entries,{label:'Offene Angaben',size:10,search:entry=>entry.message,redraw:renderUnresolved});
+ if(!view.total)el('p','Keine passenden Angaben. Suchbegriff ändern; andere offene Angaben bleiben erhalten.',view.content);
+ for(const {message,index} of view.items){const row=el('div',undefined,view.content);row.className='card';el('span',message,row);
+  button(row,'Nach fachlicher Korrektur als geklärt markieren',()=>{snapshot.unresolved.splice(index,1);invalidateResult();renderRules();});
+ }
+}
 function renderRules(){
  renderReferenceImport();renderSetupReview();renderServiceGroups();
  if(detailsVisible('shifts'))renderShifts();if(detailsVisible('positions'))renderPositions();if(detailsVisible('demands'))renderDemands();
- renderProfiles();renderContext();$('unresolved').replaceChildren();snapshot.unresolved.forEach((u,i)=>{const row=el('div',undefined,$('unresolved'));row.className='card';el('span',u,row);button(row,'Nach fachlicher Korrektur als geklärt markieren',()=>{snapshot.unresolved.splice(i,1);invalidateResult();renderRules();});});
- if(!snapshot.unresolved.length)el('p','Keine offenen Importangaben.',$('unresolved'));$('weights').replaceChildren();Object.entries(snapshot.objectives).forEach(([k,v])=>field($('weights'),({hours:'Stunden',nights:'Nächte',weekends:'Wochenenden',holidays:'Feiertage',wishes:'Wünsche',changes:'Änderungen'})[k],v,n=>snapshot.objectives[k]=n,'number'));
+ renderProfiles();renderContext();renderUnresolved();$('weights').replaceChildren();Object.entries(snapshot.objectives).forEach(([k,v])=>field($('weights'),({hours:'Stunden',nights:'Nächte',weekends:'Wochenenden',holidays:'Feiertage',wishes:'Wünsche',changes:'Änderungen'})[k],v,n=>snapshot.objectives[k]=n,'number'));
 }
 function renderContext(){
  let box=$('contextConfirmation');if(!box){box=el('section');box.id='contextConfirmation';box.className='surface padded';$('profiles').before(box);}box.replaceChildren();

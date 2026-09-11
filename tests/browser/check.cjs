@@ -113,6 +113,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.match(await referenceBox.locator('.card').first().innerText(),/Testperson 001.*Dienst A/);
     await referenceBox.getByRole('button',{name:'Vergleichsdienste: nächste Seite',exact:true}).click();
     assert.equal(await referenceBox.locator('.card').count(),3);
+    assert.equal(await referenceBox.locator('[data-page-status]').evaluate(e=>document.activeElement===e),true,'Last-page navigation focuses the new range instead of the removed button');
     const unfilteredState=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())}));
     const referenceFilter=referenceBox.getByLabel('Zuordnung filtern',{exact:true});
     await referenceFilter.selectOption('unmatched');
@@ -151,6 +152,42 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await uploadProject(originalPath);await navigate('rules');
     await page.setViewportSize({width:1440,height:1000});
 
+    // Large warning lists stay paged and searchable; resolving a filtered duplicate removes only that row.
+    const issuesFixture=structuredClone(snapshot);
+    issuesFixture.unresolved=Array.from({length:1001},(_,i)=>`Synthetische Prüfangabe ${String(i+1).padStart(4,'0')}`);
+    issuesFixture.unresolved[17]=issuesFixture.unresolved[999]='Gezielter synthetischer Hinweis';
+    const issuesPath=path.join(state,'import-issues.json');fs.writeFileSync(issuesPath,JSON.stringify(issuesFixture));
+    await uploadProject(issuesPath);await navigate('rules');
+    const issuesBox=page.locator('#unresolved'),issueSearch=issuesBox.getByRole('searchbox',{name:'Offene Angaben suchen',exact:true});
+    assert.equal(await issuesBox.locator('.card').count(),10);
+    assert.match(await issuesBox.innerText(),/von 1001 Offene Angaben/);
+    const beforeIssueSearch=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())}));
+    await issuesBox.getByRole('button',{name:'Offene Angaben: nächste Seite',exact:true}).click();
+    assert.equal(await issuesBox.getByRole('button',{name:'Offene Angaben: nächste Seite',exact:true}).evaluate(e=>document.activeElement===e),true);
+    await page.keyboard.press('Enter');
+    assert.match(await issuesBox.locator('.card').first().innerText(),/Prüfangabe 0021/);
+    await issuesBox.getByRole('button',{name:'Offene Angaben: vorherige Seite',exact:true}).click();
+    assert.match(await issuesBox.locator('.card').first().innerText(),/Prüfangabe 0011/);
+    await issueSearch.fill('nicht vorhanden xxx');
+    await page.waitForFunction(()=>document.querySelector('#unresolved').textContent.includes('Keine passenden Angaben'));
+    assert.equal(await issuesBox.locator('.card').count(),0);
+    await issueSearch.fill('Gezielter synthetischer Hinweis');
+    await page.waitForFunction(()=>document.querySelectorAll('#unresolved .card').length===2);
+    assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())})),beforeIssueSearch);
+    await issuesBox.locator('.card').nth(1).getByRole('button',{name:'Nach fachlicher Korrektur als geklärt markieren',exact:true}).click();
+    const expectedIssues=[...issuesFixture.unresolved];expectedIssues.splice(999,1);
+    assert.deepEqual(await page.evaluate(()=>currentSnapshot().unresolved),expectedIssues);
+    assert.equal(await issuesBox.locator('.card').count(),1);
+    assert.deepEqual(await page.evaluate(()=>currentSnapshot().employees),issuesFixture.employees);
+    assert.deepEqual(await page.evaluate(()=>currentSnapshot().profiles),issuesFixture.profiles);
+    await issueSearch.fill('');
+    await page.waitForFunction(()=>document.querySelectorAll('#unresolved .card').length===10);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:1000});
+      if(process.env.WEB_TEST_SCREENSHOT_DIR)await page.locator('.unresolved-surface').screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`paged-import-issues-${width}.png`)});
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    }
+    await uploadProject(originalPath);await navigate('rules');await page.setViewportSize({width:1440,height:1000});
     // Select a distinct Soll baseline without changing history, availability or approvals.
     await reveal('#referencePlan');
     assert.equal(await page.locator('#referencePlan').inputValue(),'ist');
