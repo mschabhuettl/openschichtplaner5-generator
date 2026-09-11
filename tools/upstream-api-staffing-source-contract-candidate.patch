@@ -1,0 +1,71 @@
+--- a/sp5api/routers/master_data.py
++++ b/sp5api/routers/master_data.py
+@@ -5,6 +5,7 @@
+ 
+ from fastapi import APIRouter, Depends, HTTPException, Query
+ from pydantic import BaseModel, Field, field_validator, model_validator
++from sp5lib.dbf_reader import DBFReadError, DBFStructureError, DBFValueError
+ 
+ from .. import cache
+ from ..dependencies import (
+@@ -18,6 +19,25 @@
+ from ..schemas import ShiftResponse
+ 
+ router = APIRouter()
++
++
++def _staffing_source_error(error):
++    """Stable source-free failure; never substitute empty/zero staffing.
++
++    Requires the opt-in strict Library reader candidate. Deliberately do not
++    include str(error), file paths, field values or exception-provided codes.
++    """
++    if isinstance(error, DBFValueError):
++        category = "numeric_value"
++    elif isinstance(error, DBFStructureError):
++        category = "structure"
++    elif isinstance(error, DBFReadError):
++        category = "read"
++    else:
++        return _sanitize_500(error)
++    return HTTPException(status_code=500, detail={
++        "code": "staffing_source_unresolved", "category": category,
++    })
+ 
+ 
+ @router.get(
+@@ -125,14 +145,17 @@
+     month: int | None = Query(None),
+     group_id: int | None = Query(None, description="Filter by group ID"),
+ ):
+-    data = get_db().get_staffing_requirements(year=year, month=month)
+-    if group_id is not None:
+-        data["shift_requirements"] = [
+-            r
+-            for r in data["shift_requirements"]
+-            if r.get("group_id") is None or r.get("group_id") == group_id
+-        ]
+-    return data
++    try:
++        data = get_db().get_staffing_requirements(year=year, month=month)
++        if group_id is not None:
++            data["shift_requirements"] = [
++                r
++                for r in data["shift_requirements"]
++                if r.get("group_id") is None or r.get("group_id") == group_id
++            ]
++        return data
++    except Exception as e:
++        raise _staffing_source_error(e) from None
+ 
+ 
+ # ── Staffing Requirements Write ──────────────────────────────
+@@ -813,7 +836,7 @@
+     try:
+         return get_db().get_special_staffing(date=date, group_id=group_id)
+     except Exception as e:
+-        raise _sanitize_500(e)
++        raise _staffing_source_error(e) from None
+ 
+ 
+ class SpecialStaffingCreate(BaseModel):

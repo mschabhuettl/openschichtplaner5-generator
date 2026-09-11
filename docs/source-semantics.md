@@ -3789,3 +3789,61 @@ vorzutäuschen. Der Kandidat bleibt opt-in und wird nicht global eingesetzt:
 Die Frage optionaler numerischer Felder außerhalb dieses Bedarfsvertrags ist
 nicht geklärt. Kein Runtimefix/Release und kein Nachweis, dass diese Quellwerte
 im Originaljob 0.9.29 vorkamen.
+
+### Bedarfsfehler: Library → API → Verbraucher (isolierter HTTP-Kandidat)
+
+`tools/upstream-api-staffing-source-contract-candidate.patch` ergänzt in
+API `routers/master_data.py` den gemeinsamen Helfer `_staffing_source_error`.
+Die beiden GET-Funktionen `get_staffing_requirements` und
+`get_special_staffing` liefern für die drei strikten Library-Fehlerklassen
+HTTP 500 mit `detail.code=staffing_source_unresolved` und einer festen
+Kategorie `numeric_value`, `structure` oder `read`. Es werden weder
+Exceptiontext/-code noch Dateipfad oder Feldinhalt übernommen. Bekannte
+Quellfehler gehen nicht durch den allgemeinen Fehlerlogger; unbekannte
+Ausnahmen behalten `_sanitize_500`. Ein gültiger Präfix wird nicht als
+erfolgreicher Bedarf zurückgegeben. Echte Null und gültige leere Tabellen
+bleiben erfolgreiche Antworten. Gruppenfilter und Query-Weitergabe bleiben
+unverändert.
+
+**33 neue synthetische Regressionen** in
+`tools/test_upstream_staffing_source_contract.py` führen erzeugte DBF-Dateien
+durch die tatsächlichen Library-Bedarfsfunktionen und die extrahierten
+Kandidaten-GET-Funktionen mit ihren echten FastAPI-Dekoratoren im ASGI-Test.
+MIN/MAX leer, ungültig und nichtendlich, echte Null, fehlende Datei,
+abgeschnittener Datensatz, quellfreie Fehlermeldungen, gültige Leerquellen
+und Filterweitergabe sind abgedeckt. Die letzten zwei Tests führen die
+ASGI-Antwort über einen lokalen Transport zum echten Generator
+`APIClient.get/_read`: HTTP 500 bricht mit `APIImportError` ab und erzeugt
+keinen Cacheeintrag; ein späterer erfolgreicher Retry liest neu.
+Zusammen mit Reader-/Library- und bestehenden API-Adapter-Tests:
+**379 Tests bestanden**, Ruff, diff-check und Patch-Dry-run grün.
+
+Die Verbraucherdiagnose ist noch nicht vollständig: Generator
+`sp5generator/api_adapter.py:APIClient._read` zeigt bei HTTP 500 nur seine
+generische Zugriffs-/Versionsmeldung, nicht die Quellkategorie. OSP5
+`frontend/src/api/client.ts:extractErrorMessage` verwendet `String(data.detail)`;
+ein strukturiertes Detail würde deshalb als `[object Object]` erscheinen.
+`pages/Personalbedarf.tsx` fängt den Fehler sowohl im regulären `Promise.all`
+als auch im datierten `load` ab, interpretiert ihn also nicht als erfolgreiche
+Bedarfsliste. Eine verständliche kategorisierte Diagnose bleibt vor Integration
+erforderlich; dies ist ein belegter Vertragskonflikt, kein neuer UI-Auftrag.
+
+Reproduzierbarer Testaufruf nach Anwendung der beiden Kandidaten in isolierten
+Verzeichnissen (der API-Patch benötigt die neuen Library-Fehlerklassen):
+
+```sh
+PYTHONPATH=/home/hilbert/projects/libopenschichtplaner5:tests:tools \
+SP5_STRICT_READER=/tmp/sp5-numeric-reader-candidate/sp5lib/dbf_reader.py \
+SP5_STAFFING_ROUTER=/tmp/sp5-staffing-api-contract/sp5api/routers/master_data.py \
+SP5_WORK_TIME_ROUTER=/tmp/sp5-worktime-contract/sp5api/routers/work_time_rules.py \
+.venv/bin/python -m pytest -q tools/test_upstream_staffing_source_contract.py \
+tools/test_upstream_strict_reader.py tools/test_upstream_source_read_integrity.py \
+tests/test_api_adapter.py
+```
+
+Die Routen aktivieren striktes Lesen ausdrücklich **nicht** global. Tests
+injizieren die vorhandene `StrictSourceTables`-Brücke; produktive Library,
+API und Generatorlaufzeit bleiben unverändert. Vollständiger API-Appstart,
+Authentifizierung und produktive v1-Routenregistrierung sind durch den
+isolierten ASGI-Test nicht abgenommen. Kein Release, keine erneute identische
+Privatabnahme und weiterhin kein Originaljob-Nachweis für die 0.9.29-Meldung.
