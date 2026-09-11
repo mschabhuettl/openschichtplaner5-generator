@@ -2561,3 +2561,28 @@ Nächster offener Integrationsschritt: fehlende/defekte Quelldatumswerte vor
 `_employee_plan` sichtbar machen (dessen `_dated` überspringt sie derzeit) und
 den erforderlichen Randabruf belegen. Profilimport bleibt eine eigene
 fachliche Herkunftsfrage; keine automatischen Höchstgrenzen erfinden.
+
+### Fehlende Quelldaten nicht vor der Messung verlieren
+
+Direkt anschließend reproduziert: API `work_time_rules._employee_plan._dated`
+fängt ungültige Datumswerte ab und überspringt sie; leere/fehlende Werte werden
+ebenfalls nicht ausgegeben. Sechs synthetische Charakterisierungen belegen das
+für MASHI und SPSHI. Sechs zusätzliche Abnahmetests scheiterten zunächst, weil
+auch die Messbrücke diese Quellen ohne Hinweis verlor.
+
+`tools/selected_work_segments_candidate.py:measure_selected` prüft deshalb nun
+vor der Selektion die Datumslesbarkeit der betreffenden Person und Plansicht.
+Unbestimmte Periodenzugehörigkeit führt zu einem ausdrücklichen Abbruch mit
+Quellkategorie, ohne Originalfeldinhalt oder Personen-ID. Fehlendes Datum darf
+nicht als außerhalb der Periode angenommen werden. Gültige fremde Perioden,
+fremde Personen und alternative Plansichten bleiben getrennt; SPSHI gehört
+weiterhin nicht zur Sollsicht. Die Library-Konvertierung `calculations.to_date`
+wird wiederverwendet; Datetime-Werte werden nicht als reine Quelldaten geraten.
+
+Keine behauptete Gesamtdeckung: CYASS/CYEXC, fehlende Zyklusdefinitionen und
+konsistente mehrteilige Datenbanklesung bleiben zu untersuchen. Es wird kein
+Originalcheckout und kein produktiver API-Pfad verändert. Der Diagnosestatus
+bleibt unvollständig. Nach Korrektur **214 Tests grün**, Ruff und Diffcheck grün.
+Öffentlicher lesender GitHub-CI-Metadatenabruf ergibt HTTP 404; `gh` fehlt,
+also kein neuer CI-Erfolgsnachweis. Nächster Schritt ist der Zyklus-/Randkontext,
+nicht ein weiteres UI- oder Releasepaket.

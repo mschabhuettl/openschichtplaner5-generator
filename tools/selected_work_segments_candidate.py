@@ -28,6 +28,24 @@ def measure_selected(db, selector, employee_id, start, end, plan, zone):
     """
     if plan not in ('ist', 'soll'):
         raise ValueError('Explicit ist or soll required')
+    # The API selector silently omits unknown/invalid dates. Their period
+    # membership cannot be established, so reject selected-source ambiguity
+    # before it disappears. This does not certify cycle or snapshot coverage.
+    for source in ('MASHI', 'SPSHI'):
+        if source == 'SPSHI' and plan == 'soll':
+            continue
+        for row in db._read(source):
+            if row.get('EMPLOYEEID') != employee_id:
+                continue
+            if source == 'MASHI' and ((int(row.get('TYPE') or 0) == 1) != (plan == 'soll')):
+                continue
+            try:
+                source_day = calc.to_date(row.get('DATE'))
+            except (TypeError, ValueError):
+                source_day = None
+            if type(source_day) is not date:
+                # No original field content or employee identity in the error.
+                raise ValueError(f'Unresolved {source} source date')
     manual, cycle, special = selector(db, employee_id, start, end, plan)
     holidays = calc.holiday_calendar(db._read('HOLID'))
     shifts = {int(row['ID']): row for row in db._read('SHIFT')}

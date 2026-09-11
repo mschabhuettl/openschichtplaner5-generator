@@ -139,3 +139,44 @@ def test_selected_source_to_explicit_calendar_limit(collect, plan, special_id, e
     assert check.observed_minutes == expected
     assert check.observed_exceeds == (expected > 500)
     assert result.complete is False
+
+
+@pytest.mark.parametrize('source', ['MASHI', 'SPSHI'])
+@pytest.mark.parametrize('invalid_date', [None, '', '2026-02-30'])
+def test_api_selector_silently_omits_invalid_dated_source(source, invalid_date):
+    data = {source: [{'EMPLOYEEID': 10, 'DATE': invalid_date, 'TYPE': 0}]}
+    db = SimpleNamespace(_read=lambda name: data.get(name, []))
+    selector = load_helpers(Path(os.environ['SP5_WORK_TIME_ROUTER']))._employee_plan
+    assert selector(db, 10, DAY, DAY, 'ist') == ([], [], [])
+
+
+@pytest.mark.parametrize('source', ['MASHI', 'SPSHI'])
+@pytest.mark.parametrize('invalid_date', [None, '', '2026-02-30'])
+def test_measurement_bridge_rejects_unknown_source_date(collect, source, invalid_date):
+    data = tables()
+    data.setdefault(source, []).append({'EMPLOYEEID': 10, 'DATE': invalid_date, 'TYPE': 0})
+    with pytest.raises(ValueError, match=f'Unresolved {source} source date'):
+        collect(data)
+
+
+@pytest.mark.parametrize('source', ['MASHI', 'SPSHI'])
+def test_unrelated_employee_bad_date_does_not_block(collect, source):
+    data = tables()
+    data.setdefault(source, []).append({'EMPLOYEEID': 99, 'DATE': 'invalid', 'TYPE': 0})
+    assert len(collect(data)) == 1
+
+
+def test_only_selected_plan_requires_dated_sources(collect):
+    data = tables()
+    data['MASHI'].append({'EMPLOYEEID': 10, 'DATE': None, 'TYPE': 0})
+    data['SPSHI'] = [{'EMPLOYEEID': 10, 'DATE': None}]
+    assert len(collect(data, 'soll')) == 1
+    data = tables()
+    data['MASHI'].append({'EMPLOYEEID': 10, 'DATE': None, 'TYPE': 1})
+    assert len(collect(data, 'ist')) == 1
+
+
+def test_valid_out_of_period_date_remains_outside_selection(collect):
+    data = tables()
+    data['MASHI'].append({'EMPLOYEEID': 10, 'DATE': '2026-01-06', 'TYPE': 0})
+    assert len(collect(data)) == 1
