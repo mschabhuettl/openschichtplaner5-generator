@@ -3423,3 +3423,53 @@ Darstellungslücke, keine Erlaubnis zum Lockern einer Sperre. Nächster fachlich
 Prüfpunkt: Wochentags-/Feiertagszuordnung nativer RESTR bei über Mitternacht
 reichenden Diensten gegen Library und Generator, statt weitere Wiederholung
 bereits abgedeckter individueller Ausschlusscodes.
+
+### RESTR: Starttag, Feiertagsersetzung und irreführende OSP5-Erfassung
+
+2026-09-11: 64 synthetische HTTP-Importfälle in
+`tests/test_api_adapter.py:test_http_restrictions_use_duty_start_slot_not_midnight_spill`
+prüfen alle acht Dienststart-Indizes gegen alle acht RESTR-Indizes. Jeder Dienst
+läuft 22–06 Uhr in Europe/Vienna, bezahlt werden absichtlich nur drei Stunden.
+Bei gewöhnlichen Starttagen ist der Folgetag Feiertag; der Feiertagsstart liegt
+auf einem Montag. Erwartungswerte sind explizit `restricted_slot == slot`, nicht
+vom Generator abgeleitet. Keine Abweichung zwischen Library-Implementierung und
+Generator-Mapping: RESTR gilt für den Starttag des konkreten Dienstes, nicht für
+jeden vom Überhang berührten Kalendertag. Feiertagsindex 7 ersetzt den normalen
+Wochentag; Montagindex 0 ist kein Platzhalter für alle Tage. Importierte Stufe 2
+bleibt unbestätigt und hart, persönliche positive Freigaben bleiben leer.
+
+**Nachgewiesener Quellenwiderspruch:**
+`sp5lib/calculations.py:is_restricted` behauptet im Docstring, zusätzlich den
+normalen Wochentag eines Feiertags zu prüfen. Seine Implementierung vergleicht
+aber nur mit dem übergebenen Index, und `day_index` liefert am Feiertag nur 7.
+`eligible_for_shift` übergibt genau diesen Index. Der zusätzliche Ausdruck
+`weekday_index == HOLIDAY_INDEX and wd == HOLIDAY_INDEX` ist redundant und kann
+keinen Montagindex rekonstruieren. Die vorhandenen Library-Tests
+`test_excluded_by_restriction_on_weekday`,
+`test_restriction_for_other_weekday_does_not_block` und
+`test_restriction_on_holiday_uses_holiday_slot` belegen nicht die im Docstring
+versprochene Vereinigung. Das ist ein Dokumentations-/Implementierungswiderspruch,
+keine hinreichend belegte fachliche Erlaubnis, den Generator anders zu sperren.
+
+**Zusätzliche konkrete Eingabelücke in OSP5:**
+`frontend/src/pages/Employees.tsx:handleAddRestriction` sendet fest `weekday: 0`
+und keine Stufe. `frontend/src/api/client.ts:addRestriction` reicht den Body an
+`/api/restrictions` weiter. API `RestrictionCreate` definiert 0 ausdrücklich als
+Montag und setzt `grade=2`; `set_restriction` gibt beide Werte an
+`Database.set_restriction` weiter. `Database.get_restrictions` liest
+`RESTR.WEEKDAY/RESTRICT`, der API-GET reicht sie unverändert an den Generator
+weiter. Die OSP5-Liste `restrictions.map` zeigt weder Wochentag noch Stufe.
+Damit erzeugt dieser UI-Pfad nachweislich eine **Montagssperre**, obwohl die
+Anzeige nur eine allgemeine Schichteinschränkung erkennen lässt. Das erklärt
+mögliche Erwartungsunterschiede zur Generator-Zuordnung, ist aber kein Nachweis,
+dass der fehlende Originaljob 0.9.29 genau solche Daten enthält.
+
+Priorisierte Korrektur nach fachlicher Untersuchung: OSP5 muss bei Erfassung
+und Anzeige den tatsächlichen Wochentag und die Stufe explizit machen; bestehende
+Montagssätze dürfen nicht rückwirkend zu globalen Sperren umgedeutet werden.
+Die Feiertagsvereinigung bleibt vor einer Verhaltensänderung fachlich zu klären.
+Keine Änderung an produktiver API, Originalbeständen oder fremden Checkouts.
+331 gezielte Import-/Teilplan-Tests bestanden. Nur Tests und Analyse geändert;
+keine identische private API-Abnahme wiederholt, kein Release. Nächster Prüfpunkt:
+Sperrenzuordnung bei mehreren segmentierten Zeitfenstern und nativen
+Datums-/Gruppenvarianten, einschließlich bislang nicht zuordenbarer RESTR-Sätze.

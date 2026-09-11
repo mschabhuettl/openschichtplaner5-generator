@@ -675,3 +675,50 @@ def test_imported_fixed_replacement_timeout_preserves_only_valid_incumbent(trans
     checked = validate(snapshot, result.assignments)
     assert not checked.valid
     assert any(d.code == "weekly_limit" for d in checked.diagnostics)
+
+
+@pytest.mark.parametrize("slot", range(8))
+@pytest.mark.parametrize("restricted_slot", range(8))
+def test_http_restrictions_use_duty_start_slot_not_midnight_spill(transport, slot, restricted_slot):
+    """Characterize the source contract, not the contradictory library docstring.
+
+    A holiday replaces the weekday slot; a second worked date does not turn a
+    duty-specific RESTR into a date-wide absence. Every duty crosses midnight.
+    """
+    from sp5lib import calculations as calc
+
+    responses, calls = transport
+    duty_day = date(2026, 1, 5) + timedelta(days=slot)
+    next_day = duty_day + timedelta(days=1)
+    # For ordinary starts the spill day is a holiday, deliberately different
+    # from the start's slot. Slot 7 starts on a holiday Monday instead.
+    holidays = {duty_day if slot == 7 else next_day: 0}
+    responses["/api/holidays"] = [{"DATE": d.isoformat(), "INTERVAL": 0} for d in holidays]
+    native = responses["/api/shifts"][0]
+    for index in range(8):
+        native[f"STARTEND{index}"] = "22:00-06:00"
+        native[f"DURATION{index}"] = 3  # Paid time does not determine the slot.
+    row = responses["/api/staffing-requirements"]["shift_requirements"][0]
+    responses["/api/staffing-requirements"]["shift_requirements"] = [{**row, "weekday": slot}]
+    restriction = responses["/api/restrictions"][0]
+    responses["/api/restrictions"] = [{**restriction, "weekday": restricted_slot, "restrict": 2}]
+    responses[("schedule", "2026", "1", "ist")] = []
+    snapshot = import_api(duty_day, duty_day, "1", "Europe/Vienna",
+                          duty_day - timedelta(days=1), duty_day - timedelta(days=1))
+    assert len(snapshot.shifts) == 1
+    duty = snapshot.shifts[0]
+    assert duty.segments[0].start.date() == duty_day
+    assert duty.segments[0].end.date() == next_day
+    assert duty.paid_minutes == 180
+    assert calc.day_index(duty_day, holidays) == slot
+    expected = restricted_slot == slot
+    assert calc.is_restricted([{"SHIFTID": 201, "WEEKDAY": restricted_slot, "RESTRICT": 2}],
+                              201, calc.day_index(duty_day, holidays)) is expected
+    assert len(snapshot.restrictions) == int(expected)
+    if expected:
+        mapped = snapshot.restrictions[0]
+        assert mapped.shift_id == duty.id
+        assert mapped.employee_id == snapshot.employees[0].id
+        assert mapped.level == 2 and not mapped.approved
+    assert not snapshot.employees[0].approvals
+    assert all(request.get_method() == "GET" for request in calls)
