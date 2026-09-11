@@ -343,6 +343,14 @@ def solve(snapshot, time_limit=30, partial=False):
             model.add_max_equality(v, choices)
             wev[week] = v
         worked_vars[e.id], nights_vars[e.id], weekend_vars[e.id] = wv, nv, wev
+        # Reuse actual local worked-day variables (including split/overnight
+        # duties and fixed boundary assignments). Minimize fragmentation, not
+        # a hard block length. Include both edges of the planning period.
+        if snapshot.objectives.workday_transitions:
+            for day in dates(snapshot.period_start, snapshot.period_end + timedelta(days=1)):
+                transition = model.new_bool_var("workday_transition:" + e.id + ":" + str(day))
+                model.add_abs_equality(transition, wv.get(day, 0) - wv.get(day - timedelta(days=1), 0))
+                cost("workday_transitions", transition, snapshot.objectives.workday_transitions)
         for p in snapshot.profiles:
             if p.id not in e.profile_ids:
                 continue

@@ -209,3 +209,16 @@ def test_project_factory_api_creates_then_allows_normal_save(tmp_path):
         data = project_payload()
         data['rules_confirmed'] = False
         assert client.post('/api/projects/new', json=data).status_code == 422
+
+
+def test_new_setup_defaults_and_explicit_weekly_rest_are_distinct():
+    payload = project_payload()
+    del payload['rules']['weekly_rest_hours']
+    created = build(payload)
+    assert created.profiles[0].min_rest_minutes == 660
+    assert created.profiles[0].weekly_rest_minutes == 2160
+    assert created.profiles[0].weekly_rest_frame == 'calendar_week'
+    assert not created.profiles[0].weekly_rest_add_daily
+    assert created.objectives.workday_transitions == 100
+    payload['rules']['weekly_rest_hours'] = 48
+    assert build(payload).profiles[0].weekly_rest_minutes == 2880

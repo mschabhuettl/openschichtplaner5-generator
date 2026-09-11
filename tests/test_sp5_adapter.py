@@ -642,3 +642,17 @@ def test_reference_reason_explains_first_failed_filter_without_creating_demand(r
     assert not snapshot.assignments and not snapshot.employees[0].approvals
     assert snapshot.metadata['unresolved_native']['reference_schedule'][0] == reference
     assert len(snapshot.demands) == (0 if reason == 'missing_demand' else 2 if reason == 'ambiguous' else 1)
+
+
+def test_new_import_proposes_authorized_rest_defaults_without_confirming_setup():
+    from sp5generator.domain import input_diagnostics
+    s = import_snapshot(SyntheticDatabase(), date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
+    p = s.profiles[0]
+    assert (p.min_rest_minutes, p.weekly_rest_minutes) == (660, 2160)
+    assert p.weekly_rest_frame == 'calendar_week'
+    assert p.weekly_rest_add_daily is False
+    assert not p.confirmed and p.source == 'unresolved'
+    assert p.max_consecutive_work_days is None
+    assert all(not e.approvals for e in s.employees)
+    assert s.objectives.workday_transitions == 100
+    assert input_diagnostics(s)  # Proposed values do not remove setup blockers.

@@ -221,3 +221,10 @@ body[data-active-panel=calculate] .project-header { border-bottom: 1px solid var
   .sidebar [hidden] { display: none !important; }
   .nav-item > span:not(.running-dot) { display: inline !important; }
 }
+/* Explicit rule proposals are separated from the editable contract fields. */
+[data-rest-defaults] { min-inline-size: 0; margin: 18px 0; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--subtle); }
+[data-rest-defaults] legend { padding-inline: 6px; color: var(--ink); font-weight: 600; }
+[data-rest-defaults] p { font-size: 13px; }
+[data-rest-defaults] button { min-height: 44px; }
+#weights > p, #weights > button { grid-column: 1 / -1; }
+#weights > button { justify-self: start; }

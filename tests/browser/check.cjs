@@ -105,6 +105,41 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.deepEqual(snapshot.metadata.selected_group_ids, [1,2]);
     assert.equal(snapshot.employees.length, 2);
     assert.equal(snapshot.metadata.service_matrix_version,1);
+    assert.equal(snapshot.profiles[0].min_rest_minutes,660);
+    assert.equal(snapshot.profiles[0].weekly_rest_minutes,2160);
+    assert.equal(snapshot.profiles[0].confirmed,false,'Suggested rest defaults do not confirm imported rules');
+    assert.equal(snapshot.objectives.workday_transitions,100);
+    for(const confirmed of [false,true]){
+      const legacy=structuredClone(snapshot);legacy.id+=':rest-adoption-'+confirmed;
+      Object.assign(legacy.profiles[0],{min_rest_minutes:720,weekly_rest_minutes:2880,weekly_rest_frame:'rolling_local',weekly_rest_add_daily:true,weekly_rest_window_days:8,max_consecutive_work_days:4,confirmed});
+      legacy.objectives.workday_transitions=0;
+      await uploadProject({name:'synthetic-rest-adoption.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(legacy))});
+      const beforeProposal=await page.evaluate(()=>({dirty,version:changeVersion,snapshot:currentSnapshot()}));
+      await navigate('rules');
+      const profileCard=page.locator('#profiles [data-profile-id]').first();
+      await profileCard.locator(':scope > summary').click();
+      assert.deepEqual(await page.evaluate(()=>({dirty,version:changeVersion,snapshot:currentSnapshot()})),beforeProposal,'Opening the default proposal leaves the project unchanged');
+      const proposal=profileCard.locator('[data-rest-defaults]');
+      assert.match(await proposal.innerText(),/720 Minuten.*2880 Minuten/);
+      assert.match(await proposal.innerText(),/Nicht 36 \+ 11/);
+      await proposal.getByRole('button',{name:'11/36-Ruhevorgaben in dieses Profil übernehmen',exact:true}).click();
+      const adopted=await page.evaluate(()=>currentSnapshot());
+      const expected=structuredClone(legacy.profiles[0]);Object.assign(expected,{min_rest_minutes:660,weekly_rest_minutes:2160,weekly_rest_frame:'calendar_week',weekly_rest_add_daily:false});
+      assert.deepEqual(adopted.profiles[0],expected,'Only the four explicitly offered rest fields change');
+      assert.deepEqual(adopted.employees,legacy.employees,'Personal approvals and profile assignments remain unchanged');
+      assert.equal(adopted.objectives.workday_transitions,0,'Rest adoption does not silently enable a soft objective');
+      assert(await profileCard.locator('summary').first().evaluate(e=>document.activeElement===e),'Profile summary regains focus after adoption');
+      for(const width of [1440,390]){
+        await page.setViewportSize({width,height:1000});
+        await profileCard.locator('[data-rest-defaults]').waitFor({state:'visible'});
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Rest proposals fit desktop and mobile');
+        if(!confirmed&&process.env.WEB_TEST_SCREENSHOT_DIR)await profileCard.locator('[data-rest-defaults]').screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`rest-defaults-${width}.png`)});
+      }
+      await page.setViewportSize({width:1440,height:1000});
+      await reveal('#weights');await page.locator('#weights').getByRole('button',{name:'Blockplanung aktivieren · Gewicht 100',exact:true}).click();
+      assert.equal(await page.evaluate(()=>currentSnapshot().objectives.workday_transitions),100);
+      assert.deepEqual(await page.evaluate(()=>currentSnapshot().profiles[0]),expected,'The soft goal does not modify hard rules');
+    }
     // Failed solver outcomes never replace existing input assignments with an empty result.
     for(const outcome of ['MODEL_INVALID','UNKNOWN','INFEASIBLE',null]){
       const retained=structuredClone(snapshot);retained.id+=':outcome-'+String(outcome);

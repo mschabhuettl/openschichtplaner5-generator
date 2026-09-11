@@ -679,3 +679,72 @@ def test_result_interval_comparison_uses_actual_instant_during_dst_fold():
     assert any(d.code == "interval_mismatch" for d in checked.diagnostics)
     proposal.segments = [Interval(start=start.astimezone(UTC), end=end.astimezone(UTC))]
     assert validate(s, [proposal]).complete
+
+
+def test_soft_block_goal_reuses_workdays_and_preserves_hard_limits():
+    s = case(shifts=[shift(f'd{day}', day, 8, 8) for day in range(5, 12)])
+    s.profiles[0].max_work_days = 4
+    s.objectives = Objectives(hours=0, nights=0, weekends=0, holidays=0,
+                              wishes=0, changes=0, workday_transitions=100)
+    result = solve(s, time_limit=5)
+    assert result.solver_status == 'OPTIMAL'
+    assert validate(s, result.assignments).valid
+    assert len(result.assignments) == 7
+    # Both people cover 3/4 days in one contiguous block each: start + end.
+    assert result.metrics['objective_contributions']['workday_transitions'] == 4
+    assert result.metrics['weighted_objective_contributions']['workday_transitions'] == 400
+    for e in s.employees:
+        days = sorted(int(a.demand_id[1:]) for a in result.assignments if a.employee_id == e.id)
+        assert len(days) <= 4
+        assert days == list(range(days[0], days[-1] + 1))
+    s.employees[0].approvals = []
+    blocked = solve(s, time_limit=5)
+    assert blocked.solver_status == 'INFEASIBLE'  # Remaining person cannot exceed 4 days.
+
+
+def test_soft_block_goal_counts_overnight_worked_days_once():
+    s = case(n=1, shifts=[shift('night', 5, 22, 8, 'night')])
+    s.objectives = Objectives(hours=0, nights=0, weekends=0, holidays=0,
+                              wishes=0, changes=0, workday_transitions=1)
+    result = solve(s, time_limit=5)
+    assert result.solver_status == 'OPTIMAL'
+    assert validate(s, result.assignments).valid
+    assert result.metrics['objective_contributions']['workday_transitions'] == 2
+
+
+def test_soft_block_goal_uses_fixed_context_on_both_period_edges():
+    s = case(n=1, shifts=[shift('before', 4, 8, 8), shift('inside', 5, 8, 8), shift('after', 6, 8, 8)])
+    s.period_end = s.period_start
+    s.assignments = [Assignment(employee_id='e0', demand_id=name, fixed=True) for name in ['before', 'after']]
+    s.objectives = Objectives(hours=0, nights=0, weekends=0, holidays=0,
+                              wishes=0, changes=0, workday_transitions=1)
+    result = solve(s, time_limit=5)
+    assert result.solver_status == 'OPTIMAL'
+    assert validate(s, result.assignments).valid
+    assert result.metrics['objective_contributions']['workday_transitions'] == 0
+    assert {a.demand_id for a in result.assignments} == {'before', 'inside', 'after'}
+
+
+def test_legacy_objectives_and_explicit_profiles_are_not_migrated():
+    s = case()
+    original = s.model_dump(mode='json')
+    original['objectives'].pop('workday_transitions')
+    restored = Snapshot.model_validate(original)
+    assert restored.objectives.workday_transitions == 0
+    assert restored.profiles == s.profiles
+
+
+def test_36_hour_calendar_rest_includes_daily_rest_unless_explicitly_added():
+    s = case(n=1, shifts=[shift(f'd{day}', day, 0, 12) for day in range(5, 11)])
+    p = s.profiles[0]
+    p.min_rest_minutes = 660
+    p.weekly_rest_minutes = 2160
+    p.weekly_rest_frame = 'calendar_week'
+    p.weekly_rest_add_daily = False
+    plan = [Assignment(employee_id='e0', demand_id=d.id) for d in s.demands]
+    # Saturday 12:00 to Monday 00:00 is exactly 36 hours; other gaps are 12h.
+    assert validate(s, plan).valid
+    p.weekly_rest_add_daily = True
+    checked = validate(s, plan)
+    assert not checked.valid
+    assert any(d.code == 'weekly_rest' for d in checked.diagnostics)

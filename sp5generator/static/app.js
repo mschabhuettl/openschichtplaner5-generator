@@ -383,7 +383,7 @@ function renderUnresolved(){
 function renderRules(){
  renderReferenceImport();renderSetupReview();renderServiceGroups();
  if(detailsVisible('shifts'))renderShifts();if(detailsVisible('positions'))renderPositions();if(detailsVisible('demands'))renderDemands();
- renderProfiles();renderContext();renderUnresolved();$('weights').replaceChildren();Object.entries(snapshot.objectives).forEach(([k,v])=>field($('weights'),({hours:'Stunden',nights:'Nächte',weekends:'Wochenenden',holidays:'Feiertage',wishes:'Wünsche',changes:'Änderungen'})[k],v,n=>snapshot.objectives[k]=n,'number'));
+ renderProfiles();renderContext();renderUnresolved();$('weights').replaceChildren();el('p','Weniger Wechsel zwischen Arbeit und freien Kalendertagen fördern Dienstblöcke und zusammenhängende Freizeit. Beide Zeitraumränder mit bekannten Diensten werden berücksichtigt. Weiches Ziel, keine maximale Blocklänge; Freigaben, Bedarf, Sollstunden und harte Grenzen bleiben unverändert. Auch OPTIMAL bezieht sich auf die gewichtete Gesamtwertung, nicht auf eine garantiert längste Freizeit; FEASIBLE ist nicht optimalitätsbewiesen. 0 schaltet dieses Ziel aus.',$('weights'));button($('weights'),'Blockplanung aktivieren · Gewicht 100',()=>{snapshot.objectives.workday_transitions=100;invalidateResult();renderRules();notice('Weiches Blockziel aktiviert. Harte Regeln und Freigaben bleiben unverändert. Projekt speichern.');});Object.entries(snapshot.objectives).forEach(([k,v])=>field($('weights'),({workday_transitions:'Arbeits-/Freizeitwechsel · weiches Blockziel',hours:'Stunden',nights:'Nächte',weekends:'Wochenenden',holidays:'Feiertage',wishes:'Wünsche',changes:'Änderungen'})[k],v,n=>snapshot.objectives[k]=n,'number'));
 }
 function renderContext(){
  let box=$('contextConfirmation');if(!box){box=el('section');box.id='contextConfirmation';box.className='surface padded';$('profiles').before(box);}box.replaceChildren();
@@ -410,7 +410,7 @@ function renderProfiles(){
  select(bulk,'Team','',[['','Alle geladenen Personen'],...[...new Set(snapshot.employees.flatMap(e=>e.team_ids))].map(id=>[id,dataIndex().groups.get(id)?.name??id])],v=>team=v,{updatesProject:false});
  button(bulk,'Offene Profilzuordnungen übernehmen',()=>{const n=ProfileGroups.apply(snapshot,chosen,team);invalidateResult();renderRules();notice(`${n} Profilzuordnungen übernommen. Individuelle Profile bleiben erhalten. Projekt speichern.`);});
 
- el('p','Alle Grenzen hier sind harte Regeln, keine Optimierungswünsche. Werte fachlich festlegen; es werden keine gesetzlichen Werte vorgeschlagen. Leere optionale Grenzen bedeuten: keine Grenze aus diesem Profil.',box);
+ el('p','Alle Grenzen hier sind harte Regeln. Die angebotenen 11/36-Ruhevorgaben sind gewünschte Standardwerte, keine rechtliche Prüfung. Leere optionale Höchstgrenzen bedeuten: keine Grenze aus diesem Profil. Bestätigungen und persönliche Freigaben bleiben eigene Entscheidungen.',box);
  if(!snapshot.profiles.length)el('p','Keine Regelprofile vorhanden. Profile und Zuordnungen können im erweiterten Datenvertrag ergänzt werden.',box);
  snapshot.profiles.forEach(p=>{
   const card=el('details',undefined,box);card.dataset.profileId=p.id;
@@ -424,6 +424,14 @@ function renderProfiles(){
    if(type==='date'||type==='text')input.required=true;
    return input;
   };
+  const defaults=el('fieldset',undefined,content);defaults.dataset.restDefaults='true';el('legend','Gewünschte Ruhevorgaben',defaults);
+  el('p',`Aktuell: ${p.min_rest_minutes} Minuten tägliche Ruhe, ${p.weekly_rest_minutes} Minuten Wochenruhe (${({calendar_week:'Kalenderwoche Montag–Sonntag',rolling_elapsed:'rollierend verstrichene Zeit',rolling_local:'rollierend lokale Tage'})[p.weekly_rest_frame]||p.weekly_rest_frame}${p.weekly_rest_add_daily?', tägliche Ruhe zusätzlich':''}).`,defaults);
+  el('p','Übernahme: 11 Stunden (660 Minuten) zwischen Diensten; 36 Stunden (2160 Minuten) zusammenhängend je Kalenderwoche Montag–Sonntag, einschließlich täglicher Ruhe. Nicht 36 + 11 und keine rollierende Siebentageregel. Randdienste bleiben erforderlich. Nur diese Ruhefelder ändern sich; andere Grenzen, Gültigkeit, Bestätigung und Freigaben bleiben erhalten.',defaults);
+  button(defaults,'11/36-Ruhevorgaben in dieses Profil übernehmen',()=>{
+   p.min_rest_minutes=660;p.weekly_rest_minutes=2160;p.weekly_rest_frame='calendar_week';p.weekly_rest_add_daily=false;
+   invalidateResult();renderRules();const reopened=[...$('profiles').querySelectorAll('[data-profile-id]')].find(card=>card.dataset.profileId===p.id);if(reopened){reopened.open=true;reopened.querySelector('summary').focus();}
+   notice('11/36-Ruhevorgaben übernommen. Bestätigungsstand und alle anderen Regeln bleiben unverändert. Projekt speichern.');
+  });
   let g=group('Identität und Gültigkeit');
   const id=field(g,'Profil-ID (Referenz)',p.id,()=>{});id.readOnly=true;
   edit(g,'version','Version','text');edit(g,'source','Herkunft','text');

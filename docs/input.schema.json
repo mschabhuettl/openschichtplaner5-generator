@@ -368,6 +368,12 @@
     "Objectives": {
       "additionalProperties": false,
       "properties": {
+        "workday_transitions": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Workday Transitions",
+          "type": "integer"
+        },
         "hours": {
           "default": 1,
           "minimum": 0,

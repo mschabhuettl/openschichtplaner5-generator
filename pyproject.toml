@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openschichtplaner5-generator"
-version = "0.9.28"
+version = "0.9.29"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

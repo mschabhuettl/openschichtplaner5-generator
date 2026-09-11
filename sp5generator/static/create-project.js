@@ -41,7 +41,7 @@
           <label class="wizard-field">Arbeitsstunden pro Kalenderwoche · höchstens<input id="wizardMaxWeeklyHours" type="number" min="0.25" max="175" step="0.25" value="48" required></label>
           <label class="wizard-field">Zusammenhängende Wochenruhe · Stunden<input id="wizardWeeklyRest" type="number" min="0" max="168" step="0.25" value="36" required></label>
         </div>
-        <p class="muted">Wochenruhe wird je Kalenderwoche geprüft. 0 deaktiviert diese zusätzliche Vorgabe. Weitere Regeln stehen nach der Einrichtung unter „Regeln & Bedarf“ zur Verfügung.</p>
+        <p class="muted">Standard: 11 Stunden tägliche Ruhe und 36 Stunden zusammenhängende Ruhe je Kalenderwoche (Montag–Sonntag), einschließlich der darin liegenden täglichen Ruhe, nicht 36 + 11 Stunden. Das ist keine rollierende Siebentageregel; Randdienste müssen vollständig sein. 0 deaktiviert die Wochenruhe. Neue Projekte bevorzugen Dienstblöcke und zusammenhängende Freizeit als weiches Ziel (Gewicht 100), ohne zusätzliche maximale Blocklänge oder Garantie der längsten Freizeit. Weitere Regeln stehen nach der Einrichtung unter „Regeln & Bedarf“ zur Verfügung.</p>
         <div id="wizardSummary" class="wizard-summary" aria-live="polite"></div>
         <label class="wizard-check"><input id="wizardRulesConfirmed" type="checkbox" required><span>Ich habe die gewählten Planungsregeln geprüft und bestätige sie für dieses Team.</span></label>
         <label class="wizard-check"><input id="wizardApprovalsConfirmed" type="checkbox"><span>Alle genannten Personen dürfen alle angelegten Funktionen ohne zusätzliche Qualifikationsnachweise ausführen. Ohne diese Bestätigung erteile ich die Freigaben später einzeln in der Teammatrix.</span></label>

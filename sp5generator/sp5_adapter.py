@@ -12,6 +12,7 @@ from .domain import MAX_PLANNING_DAYS
 
 from .models import (
     Employee,
+    Objectives,
     Interval,
     Position,
     Shift,
@@ -580,7 +581,10 @@ def import_snapshot(
         id="sp5:unconfirmed",
         valid_from=context_start,
         valid_until=context_end,
-        min_rest_minutes=0,
+        min_rest_minutes=660,
+        weekly_rest_minutes=2160,
+        weekly_rest_frame="calendar_week",
+        weekly_rest_add_daily=False,
         confirmed=False,
         source="unresolved",
     )
@@ -601,6 +605,7 @@ def import_snapshot(
         shifts=list(shifts.values()),
         demands=demands,
         profiles=[profile],
+        objectives=Objectives(workday_transitions=100),
         restrictions=restrictions,
         assignments=assignments,
         unresolved=list(dict.fromkeys(unresolved)),

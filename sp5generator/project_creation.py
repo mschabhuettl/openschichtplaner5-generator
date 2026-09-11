@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from .domain import COLLECTION_LIMITS, MAX_ASSIGNMENTS, MAX_CANDIDATE_PAIRS, MAX_PLANNING_DAYS, MAX_RECORDS
-from .models import Approval, Demand, Employee, Interval, Position, RuleProfile, Shift, Snapshot
+from .models import Approval, Demand, Employee, Interval, Objectives, Position, RuleProfile, Shift, Snapshot
 from .timeutils import localize, minute
 
 
@@ -81,7 +81,7 @@ class ProjectRules(SetupModel):
     max_consecutive_nights: Annotated[int, Field(strict=True, ge=1, le=31)]
     max_daily_hours: Annotated[float, Field(strict=True, gt=0, le=25, allow_inf_nan=False)]
     max_weekly_hours: Annotated[float, Field(strict=True, gt=0, le=175, allow_inf_nan=False)]
-    weekly_rest_hours: Annotated[float, Field(strict=True, ge=0, le=168, allow_inf_nan=False)] = 0
+    weekly_rest_hours: Annotated[float, Field(strict=True, ge=0, le=168, allow_inf_nan=False)] = 36
 
 
 class ProjectCreateRequest(SetupModel):
@@ -236,6 +236,7 @@ def create_project(data: ProjectCreateRequest) -> Snapshot:
         context_complete=data.context_duty_free_confirmed,
         rule_version='project-rules:1', source='json', employees=people, positions=positions,
         shifts=shifts, demands=demands, profiles=[profile],
+        objectives=Objectives(workday_transitions=100),
         metadata={
             'project_name': data.project_name,
             'created_with': 'project-setup',

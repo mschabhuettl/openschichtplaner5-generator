@@ -58,6 +58,15 @@ Sperre zu überschreiben.
 
 ## Ruhe und Randkontext
 
+Neue SP5-Importe schlagen 11 Stunden tägliche Ruhe (660 Minuten) und
+36 Stunden zusammenhängende Ruhe je Kalenderwoche (2160 Minuten,
+`calendar_week`, `weekly_rest_add_daily=false`) vor. Die tägliche Ruhe ist
+enthalten, es werden nicht 36 + 11 Stunden verlangt. Der Import bestätigt
+weder das Profil noch persönliche Freigaben. Die Startwerte stammen aus dem
+Nutzerauftrag und sind keine allgemeine Rechtsauskunft. Alte explizite
+Profile bleiben erhalten; die Oberfläche bietet eine bewusste Übernahme
+nur dieser vier Ruhefelder an.
+
 Die tägliche Ruhe läuft vom Ende des letzten Teils bis zum Anfang des nächsten
 Dienstes. Alle aktiven Profile an beiden Dienstanfängen werden berücksichtigt.
 Nach Nacht gilt zusätzlich `after_night_rest_minutes`. Ein Nachtblock enthält
@@ -163,3 +172,25 @@ Der Validator liest Ergebnispaare neu, berechnet Eignung, Zeit, Besetzung,
 Fixierungen, Betreuung und Grenzen erneut, und verwendet keine Solver-Wahrheitswerte.
 Optionale Ergebnisintervalle müssen exakt zum referenzierten Snapshot passen.
 Snapshot-Integrität verwendet SHA-256 des vollständigen kanonischen JSON.
+
+
+## Weiche Dienstblöcke und zusammenhängende Freizeit
+
+`objectives.workday_transitions` gewichtet die Anzahl der Wechsel zwischen
+lokalen Arbeitstagen und Tagen ohne Dienst. Vorhandene Dienstsegment-Variablen
+werden wiederverwendet: Übernacht- und geteilte Dienste zählen je tatsächlich
+berührtem Kalendertag, fixierte Dienste unmittelbar vor und nach dem Zeitraum
+fließen in die Randübergänge ein. Keine zusätzliche maximale Blocklänge.
+
+Neue Importe und Projektanlagen beginnen mit Gewicht 100; beim Laden älterer
+Projekte ohne dieses Feld gilt 0 (deaktiviert). Aktivieren lässt sich das Ziel
+unter „Optimierungswünsche“. Bestehende Stundenwerte, Profile, harte Grenzen,
+Freigaben und Bedarfs-Minima/-Maxima werden dadurch nicht geändert. Andere
+aktive weiche Ziele werden weiterhin gemeinsam gewichtet.
+
+Weniger Wechsel fördern zusammenhängende Dienstblöcke und freie Tage. Das ist
+kein exaktes Maximierungsmodell für die längste Freizeit in Minuten. Auch
+`OPTIMAL` gilt für die gewichtete Gesamtwertung; `FEASIBLE` garantiert keine
+Maximalität. Der Ergebnisbericht weist den ungewichteten und gewichteten
+Beitrag unter `workday_transitions` aus. Fehlende Randinformationen bleiben
+Einrichtungsfehler, nicht automatisch freie Tage.
