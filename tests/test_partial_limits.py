@@ -487,7 +487,7 @@ def test_weekly_violation_does_not_hide_later_daily_or_weekly_diagnostics(partia
 
 @pytest.mark.parametrize("partial", [False, True])
 @pytest.mark.parametrize("credit,balance", [(480, 0), (0, 480), (720, -240)])
-def test_confirmed_account_adjustments_can_explain_nonselection(partial, credit, balance):
+def test_confirmed_account_adjustments_can_explain_nonselection(partial, credit, balance, tmp_path):
     """A person whose target is covered need not receive a duty.
 
     These are explicitly configured synthetic values, never imported actual
@@ -514,6 +514,32 @@ def test_confirmed_account_adjustments_can_explain_nonselection(partial, credit,
     assert diagnostic["eligible_demands"] == 1
     assert diagnostic["reason"] == "not_selected_with_candidates"
     assert validate(snapshot, result.assignments).complete
+
+    # Exercise the public export gate with the solved plan, not a hand-built
+    # success result. Cached metrics must not become an accounting source.
+    import csv
+    from openpyxl import load_workbook
+    from sp5generator.export import export_table
+
+    result.metrics["employees"]["e0"]["deviation_minutes"] = 999999
+    csv_path = tmp_path / "account.csv"
+    export_table(snapshot, result, csv_path)
+    with csv_path.open(encoding="utf-8-sig", newline="") as stream:
+        balances = {row[0]: row[1:] for row in csv.reader(stream)
+                    if len(row) == 4 and row[0] in {"e0", "e1"}}
+    assert balances == {"e0": ["480", str(credit), "0"], "e1": ["480", "480", "0"]}
+
+    xlsx_path = tmp_path / "account.xlsx"
+    export_table(snapshot, result, xlsx_path)
+    workbook = load_workbook(xlsx_path)
+    try:
+        sheet = workbook["Stundenübersicht"]
+        assert [sheet.cell(5, c).value for c in range(2, 7)] == [
+            8, 0, credit / 60, balance / 60, 0,
+        ]
+        assert [sheet.cell(6, c).value for c in range(2, 7)] == [8, 8, 0, 0, 0]
+    finally:
+        workbook.close()
 
 
 @pytest.mark.parametrize("partial", [False, True])

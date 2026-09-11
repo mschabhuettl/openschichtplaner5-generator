@@ -79,3 +79,12 @@ Diese Nachweise autorisieren **keine** Übernahme importierter Ist-Summen,
 Buchungsnachweise oder Abwesenheitsbewertungen als Gutschrift/Anfangssaldo.
 Sie reproduzieren nicht den bislang fehlenden Originalstand des gemeldeten
 600-Sekunden-Laufs aus 0.9.29.
+
+Die sechs Auswahl-Gegenproben durchlaufen außerdem den öffentlichen CSV-/XLSX-
+Export mit dem tatsächlich gelösten und erneut validierten Plan. Beide Exporte
+geben für die nicht ausgewählte und die eingeteilte Person dieselbe Bilanz aus;
+Excel trennt Planstunden, Gutschrift und Vortrag, CSV fasst Planminuten und
+Gutschrift in der ausdrücklich so beschrifteten Ist-Spalte zusammen.
+Absichtlich verfälschte zwischengespeicherte Ergebniskennzahlen beeinflussen
+diese exportierte Bilanz nicht (`export.rows`, `workbook.planning_workbook`).
+Damit ist hier keine abweichende Exportarithmetik nachgewiesen.
