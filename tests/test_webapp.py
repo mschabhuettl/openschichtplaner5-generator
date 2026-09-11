@@ -264,3 +264,23 @@ def test_readiness_explains_empty_additional_qualification_gate(tmp_path):
         report = client.post('/api/readiness', json=snapshot).json()
         assert not any(d['code'] == 'qualification' for d in report['diagnostics'])
         assert client.get('/api/snapshots').json() == []
+
+
+def test_readiness_ignores_unused_qualification_gate_until_position_is_demanded(tmp_path):
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        snapshot = client.get('/api/demo').json()
+        unused = {**snapshot['positions'][0], 'id': 'unused-position',
+                  'name': 'Unbenutzte Testfunktion', 'qualifications_required': True,
+                  'qualification_ids': []}
+        snapshot['positions'].append(unused)
+        report = client.post('/api/readiness', json=snapshot).json()
+        assert report['ready']
+        assert not any(d['code'] == 'qualification' for d in report['diagnostics'])
+
+        snapshot['demands'][0]['position_id'] = unused['id']
+        report = client.post('/api/readiness', json=snapshot).json()
+        assert not report['ready']
+        assert any(d['code'] == 'qualification' and unused['name'] in d['message']
+                   for d in report['diagnostics'])
+        assert snapshot['positions'][-1]['qualifications_required'] is True
+        assert client.get('/api/snapshots').json() == []

@@ -258,8 +258,10 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
         from .domain import input_diagnostics
         issues = input_diagnostics(snapshot)
         from .models import Diagnostic
+        demanded_positions = {d.position_id for d in snapshot.demands}
         for position in snapshot.positions:
-            if position.qualifications_required and not position.qualification_ids:
+            if (position.id in demanded_positions and position.qualifications_required
+                    and not position.qualification_ids):
                 issues.append(Diagnostic(
                     code='qualification',
                     message=f'{position.name}: Zusätzlicher Qualifikationsnachweis ist aktiviert, '
