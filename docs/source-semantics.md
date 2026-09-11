@@ -4515,3 +4515,33 @@ DBF float representation, plus existing workplace-zero interpretation. Follow
 with the combined package gate and a private GET audit for Generator runtime
 changes. Original 0.9.29 input/job/result remains unavailable; this finding does
 not establish the cause of the 600-second plan, 24-hour duties or weekly overruns.
+
+### Opt-in staffing identity correction candidate (2026-09-11)
+
+The new `upstream-library-identity-reader-candidate.patch` extends the existing
+strict/temporal reader with explicit `identity_fields`. Numeric N/F descriptors
+are required; boolean/logical and memo descriptors fail structurally, including
+empty/deleted-only tables. Active fractional, blank and malformed IDs fail rather
+than being coerced into a team. Integral numeric representations normalize to int;
+zero and negative values remain unchanged (no invented positive-ID range).
+Without opt-in, legacy reader behavior remains unchanged.
+
+`upstream-library-staffing-identity-activation-candidate.patch` opts SHDEM/SPDEM
+into this contract at `SP5Database._read`, before Library/API filtering and outside
+the permissive shared cache. Existing source-safe API error categories are reused.
+The combined packaged gate now rebuilds eight patches from tracked source and
+checks both API prefixes: each identity column, boolean/memo/fractional failures,
+integral float compatibility, unmatched team filters, warmed permissive cache,
+and successful reread after source repair. The reader suite also covers file
+forwarding/missing files, duplicate/missing descriptors and opt-in compatibility.
+**95 tests pass**, including both full-app package cases; Ruff passes. During
+integration a context-short patch and an overbroad test insertion failed; both
+were corrected before the passing run.
+
+This is an isolated upstream correction candidate, not a productive API change.
+Generator's independent JSON import identity check remains next; the remote API
+cannot gain this reader behavior through GET-only auditing. No Generator runtime
+change, release, real-data claim or repeat of the unchanged private baseline.
+Original 0.9.29 project/job/result remains unavailable. Very large decimal ID
+precision and Generator-side prefilter validation remain explicit follow-ups;
+this gate is not proof of arbitrary-width exact numeric decoding.

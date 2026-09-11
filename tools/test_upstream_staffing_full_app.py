@@ -118,6 +118,9 @@ def run_contract(prefix):
         if os.environ.get('SP5_TEMPORAL_ACTIVATION'):
             from test_upstream_staffing_temporal_app import check_temporal
             check_temporal(http, headers, prefix, root, SP5Database, APIClient, APIImportError)
+            if os.environ.get('SP5_IDENTITY_ACTIVATION'):
+                from tools.test_upstream_identity_reader import check_identity_api
+                check_identity_api(http, headers, prefix, root, SP5Database)
             del _sessions[token]
             assert http.get(prefix + '/staffing-requirements', headers=headers).status_code == 401
             print('full-app contract passed')
