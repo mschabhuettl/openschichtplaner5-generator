@@ -6,6 +6,24 @@ from sp5generator.webapp import create_app
 from sp5generator.solver import solve
 
 
+@pytest.mark.parametrize("text", ["private-name\x01", "x" * 32768],
+                         ids=["control", "overlong"])
+def test_xlsx_text_error_is_actionable_without_echoing_source(tmp_path, text):
+    from sp5generator.demo import make_demo
+
+    snapshot = make_demo(days=1)
+    snapshot.assignments = []
+    snapshot.employees[0].name = text
+    original = snapshot.model_dump(mode="json")
+    payload = {"snapshot": original, "assignments": []}
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        response = client.post('/api/export/xlsx', json=payload)
+        assert response.status_code == 422
+        assert 'Excel-Export' in response.json()['detail']
+        assert text not in response.text
+        assert client.post('/api/export/csv', json=payload).status_code == 200
+
+
 def test_local_web_persist_solve_and_export(tmp_path):
     with TestClient(create_app(str(tmp_path), start_worker=False)) as c:
         assert c.get('/').status_code == 200

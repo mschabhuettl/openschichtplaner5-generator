@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from datetime import timedelta
+import re
 from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
@@ -19,10 +20,27 @@ LINE = "DEE7E8"
 DAY = "E6F3EF"
 NIGHT = "EAEFFB"
 WEEKEND = "F1F4F6"
+INVALID_XML_TEXT = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def _cell(sheet, row, column, value):
+    value = safe_cell(value)
+    if isinstance(value, str):
+        # Check before openpyxl silently truncates strings or includes source
+        # text in an IllegalCharacterError. Do not alter the original labels.
+        if len(value) > 32767:
+            raise ValueError("Excel-Export: Zelltext überschreitet 32767 Zeichen; Text kürzen oder CSV verwenden.")
+        if INVALID_XML_TEXT.search(value):
+            raise ValueError("Excel-Export: Zelltext enthält nicht unterstützte Steuer- oder Unicode-Zeichen; Text korrigieren.")
+    cell = sheet.cell(row, column, value)
+    if isinstance(value, str):
+        # Labels such as #REF! are literal source text, never Excel errors.
+        cell.data_type = "s"
+    return cell
 
 
 def _text(sheet, row, column, value):
-    cell = sheet.cell(row, column, safe_cell(value))
+    cell = _cell(sheet, row, column, value)
     cell.font = Font(name="Calibri", size=10, color=INK)
     cell.alignment = Alignment(vertical="center", wrap_text=True)
     return cell
@@ -184,10 +202,11 @@ def planning_workbook(snapshot, result):
     detail = workbook.create_sheet("Einteilungen")
     detail.sheet_view.showGridLines = False
     headers = {"Person-ID", "Offener Bedarf", "Prüfhinweis"}
-    for values in rows(snapshot, result):
-        detail.append([safe_cell(value) for value in values])
+    for row_number, values in enumerate(rows(snapshot, result), 1):
+        for column, value in enumerate(values, 1):
+            _cell(detail, row_number, column, value)
         if values and values[0] in headers:
-            _heading(detail, detail.max_row, values)
+            _heading(detail, row_number, values)
     detail.freeze_panes = "C4"
     detail.column_dimensions["B"].width = 30
     for column in "ACDEFGHIJ":

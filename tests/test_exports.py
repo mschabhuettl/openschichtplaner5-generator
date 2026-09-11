@@ -55,6 +55,69 @@ def incomplete_result(snapshot):
     )
 
 
+@pytest.mark.parametrize("text", ["#REF!", "#N/A", "#VALUE!"])
+def test_xlsx_error_like_names_remain_literal_text(tmp_path, text):
+    from openpyxl import load_workbook
+    from sp5generator.demo import make_demo
+    from sp5generator.export import export_table
+    from sp5generator.models import Assignment
+
+    snapshot = make_demo(days=1)
+    snapshot.assignments = []
+    snapshot.employees[2].name = text
+    result = incomplete_result(snapshot)
+    result.assignments = [Assignment(employee_id=snapshot.employees[2].id,
+                                     demand_id="d0-day-p0")]
+    path = tmp_path / "literal.xlsx"
+    export_table(snapshot, result, path)
+    workbook = load_workbook(path)
+    try:
+        cells = [cell for sheet in workbook for row in sheet for cell in row
+                 if cell.value == text]
+        assert len(cells) == 3  # Calendar, balances and assignment detail.
+        assert all(cell.data_type == "s" for cell in cells)
+        assert workbook["Stundenübersicht"]["C7"].data_type == "n"
+    finally:
+        workbook.close()
+
+
+@pytest.mark.parametrize("text", ["x" * 32768, "private-name\x01", "private-name\uffff"],
+                         ids=["overlong", "control", "invalid-xml"])
+def test_xlsx_unsupported_text_is_rejected_without_replacing_export(tmp_path, text):
+    from sp5generator.demo import make_demo
+    from sp5generator.export import export_table
+
+    snapshot = make_demo(days=1)
+    snapshot.assignments = []
+    snapshot.employees[0].name = text
+    result = incomplete_result(snapshot)
+    path = tmp_path / "previous.xlsx"
+    path.write_bytes(b"previous export")
+    with pytest.raises(ValueError, match="Excel") as error:
+        export_table(snapshot, result, path)
+    assert "private-name" not in str(error.value)
+    assert path.read_bytes() == b"previous export"
+
+
+def test_xlsx_supported_text_is_preserved_at_cell_length_boundary(tmp_path):
+    from openpyxl import load_workbook
+    from sp5generator.demo import make_demo
+    from sp5generator.export import export_table
+
+    snapshot = make_demo(days=1)
+    snapshot.assignments = []
+    text = "Ä\t\n" + "x" * (32767 - 3)
+    snapshot.employees[0].name = text
+    path = tmp_path / "boundary.xlsx"
+    export_table(snapshot, incomplete_result(snapshot), path)
+    workbook = load_workbook(path)
+    try:
+        assert workbook.active["A5"].value == text
+        assert workbook["Stundenübersicht"]["A5"].value == text
+    finally:
+        workbook.close()
+
+
 @pytest.mark.parametrize("suffix", ["csv", "xlsx"])
 def test_partial_export_revalidates_and_recomputes_vacancies(tmp_path, suffix):
     from sp5generator.demo import make_demo
