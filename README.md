@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.14.0** nimmt den Beschäftigungszeitraum auf beiden Wegen ernst: Die Sammelübernahme historischer Vorschläge legt keine Freigaben mehr für Personen an, die im Planungszeitraum nicht beschäftigt sind, und der Import benennt jetzt, wie viele der geladenen Personen das betrifft, statt sie stillschweigend mitzuführen. Es wird niemand verworfen. Die [Releasehinweise](docs/release-0.14.0.md) trennen Prüfstand und offene Grenzen. Harte Regeln, Freigaben und Bedarfe bleiben unverändert.
+**Version 0.15.0** stellt Bedarf und tatsächliches Dienstgeschehen gegenüber: Dienstarten, die eine Mindestbesetzung fordern, im Vergleichsplan des Zeitraums aber nicht vorkommen, werden jetzt mit Anzahl und Pflichtplätzen benannt. Das erklärt offene Stellen, die sonst unerklärt blieben. Ohne gelesenen Vergleichsplan bleibt die Angabe aus. Die [Releasehinweise](docs/release-0.15.0.md) trennen Prüfstand und offene Grenzen. Bedarf, Freigaben und harte Regeln bleiben unverändert.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -53,7 +53,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.14.0-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.15.0-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
