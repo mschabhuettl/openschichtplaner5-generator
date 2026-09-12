@@ -350,6 +350,7 @@ def import_snapshot(
             unresolved.append("SPDEM: Mehrdeutiger tagesbezogener Bedarf; lokal auflösen.")
             metadata["unresolved_native"].setdefault("special_requirements", []).extend({k: v for k, v in r.items() if not k.startswith("_")} for r in values)
     employees = []
+    not_employed_in_period = 0
     parents = {int(g["id"]): int(g["parent_id"]) for g in metadata["group_tree"]}
     metadata["direct_group_memberships"] = {}
     for e in source_employees:
@@ -376,6 +377,10 @@ def import_snapshot(
             unresolved.append(
                 f"Negatives Quell-Soll für {eid}: Der nichtnegative Zielstundenvertrag kann diesen Wert nicht abbilden; lokal klären."
             )
+        employment_start = calc.to_date(e.get("EMPSTART")) or date.min
+        employment_end = calc.to_date(e.get("EMPEND")) or date.max
+        if employment_end < period_start or employment_start > period_end:
+            not_employed_in_period += 1
         employees.append(
             Employee(
                 id=eid,
@@ -383,8 +388,8 @@ def import_snapshot(
                     str(e.get(k) or "").strip() for k in ("FIRSTNAME", "NAME")
                 ).strip(),
                 team_ids=[f"sp5:group:{g}" for g in sorted(effective_groups)],
-                employment_start=calc.to_date(e.get("EMPSTART")) or date.min,
-                employment_end=calc.to_date(e.get("EMPEND")) or date.max,
+                employment_start=employment_start,
+                employment_end=employment_end,
                 profile_ids=["sp5:unconfirmed"],
                 target_minutes=max(0, _minutes(target)),
                 contractual_weekly_minutes=(
@@ -427,6 +432,13 @@ def import_snapshot(
                     nominal_bookings[e["ID"]], 1, period_start, period_end
                 )),
             })
+    metadata["not_employed_in_period"] = not_employed_in_period
+    if not_employed_in_period:
+        unresolved.append(
+            f"{not_employed_in_period} der importierten Personen sind im Planungszeitraum nicht "
+            "beschäftigt. Sie bleiben wegen ihres früheren Dienstkontexts erhalten, können "
+            "aber keinen Bedarf decken."
+        )
     unresolved.append(
         ("Sollbuchungen nicht verfügbar; " if nominal_bookings is None else "")
         + "Zeitgutschriften und Anfangssalden für den gewählten Zeitraum ergänzen."

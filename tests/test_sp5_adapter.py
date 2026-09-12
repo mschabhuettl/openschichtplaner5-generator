@@ -102,6 +102,49 @@ def test_holiday_demand_and_request_restriction():
     assert s.unresolved and not s.context_complete
 
 
+@pytest.mark.parametrize(
+    "employment_periods,expected_count",
+    [
+        ([("2026-01-01", "2026-01-04")], 1),
+        ([("2026-01-07", "2026-12-31")], 1),
+        ([("2026-01-01", "2026-01-04"), ("2026-01-07", "2026-12-31")], 2),
+        ([("2026-01-01", "2026-12-31")], 0),
+        ([("2026-01-01", "2026-01-05")], 0),
+        ([("2026-01-06", "2026-12-31")], 0),
+    ],
+)
+def test_not_employed_in_period_is_reported_once_without_dropping_people(
+    employment_periods, expected_count
+):
+    class Source(SyntheticDatabase):
+        def get_employees(self, **kw):
+            employee = super().get_employees(**kw)[0]
+            return [
+                {**employee, "ID": 101 + index, "EMPSTART": start, "EMPEND": end}
+                for index, (start, end) in enumerate(employment_periods)
+            ]
+
+        def get_group_members(self, g):
+            return [101 + index for index in range(len(employment_periods))]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+    assert {person.id for person in snapshot.employees} == {
+        f"sp5:employee:{101 + index}" for index in range(len(employment_periods))
+    }
+    assert snapshot.metadata["not_employed_in_period"] == expected_count
+    messages = [
+        message for message in snapshot.unresolved
+        if "im Planungszeitraum nicht beschäftigt" in message
+    ]
+    assert len(messages) == (1 if expected_count else 0)
+    if expected_count:
+        assert messages[0].startswith(f"{expected_count} der importierten Personen")
+        assert "früheren Dienstkontexts erhalten" in messages[0]
+        assert "keinen Bedarf decken" in messages[0]
+        assert all(person.name not in messages[0] for person in snapshot.employees)
+
+
 def test_native_24_hour_window_paid_duration_and_nominal_week_are_distinct():
     from sp5generator.timeutils import day_minutes
 
