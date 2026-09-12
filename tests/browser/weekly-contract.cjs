@@ -1,12 +1,8 @@
 'use strict';
 // Isolated synthetic server; never customer data.
 const assert=require('node:assert/strict');
-const {chromium}=require('playwright');
-(async()=>{
- const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
- try {
-  const page=await browser.newPage();
-  await page.goto(process.env.WEB_TEST_BASE||'http://127.0.0.1:8765');
+module.exports=async function weeklyContract({page,base}){
+  await page.goto(base);
   await page.evaluate(async()=>{
    load(await api('/api/demo'));
    const e=snapshot.employees[0];
@@ -28,5 +24,4 @@ const {chromium}=require('playwright');
   await page.getByLabel('Vertragliche Wochenstunden',{exact:true}).press('Tab');
   assert.equal(await page.evaluate(()=>snapshot.employees[0].contractual_weekly_minutes),null);
   console.log('Weekly contract UI: distinct values, editing, clearing and API roundtrip passed');
- } finally {await browser.close();}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+};

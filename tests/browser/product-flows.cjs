@@ -109,7 +109,7 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   await page.waitForFunction(()=>window.PlannerApp.getState().snapshot.employees.length===4);
   // The calculation summary exposes the exact inclusive period and real review routes.
   await navigate('calculate');
-  assert.match(await page.locator('#calcPeriod').innerText(), /02\. Feb\. 2026.*06\. Feb\. 2026/);
+  assert.match(await page.locator('#calcPeriod').innerText(), /02\.02\.2026.*06\.02\.2026/);
   assert.equal(await page.locator('#calcDays').innerText(),'5');
   assert.equal(await page.locator('#calcTimezone').innerText(),'Europe/Vienna');
   for(const width of [1440,390]){

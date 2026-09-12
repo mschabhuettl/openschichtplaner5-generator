@@ -20,7 +20,7 @@
     const use = document.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#icon-'+name);svg.append(use);return svg;
   };
   const dispatch = (name,detail) => window.dispatchEvent(new CustomEvent('planner:'+name,{detail}));
-  const date = (value, options={day:'2-digit',month:'short',year:'numeric'}) => {
+  const date = (value, options={day:'2-digit',month:'2-digit',year:'numeric'}) => {
     if(!value)return '—';
     const parsed = new Date(typeof value==='number'?value*1000:/^\d{4}-\d\d-\d\d$/.test(value)?value+'T12:00:00Z':value);
     if(Number.isNaN(+parsed))return '—';
@@ -28,7 +28,7 @@
     if(!dateFormatters.has(key))dateFormatters.set(key,new Intl.DateTimeFormat('de-DE',options));
     return dateFormatters.get(key).format(parsed);
   };
-  const period = project => `${date(project.period_start,{day:'2-digit',month:'short'})} – ${date(project.period_end)}`;
+  const period = project => `${date(project.period_start)} – ${date(project.period_end)}`;
   const projectName = project => project.project_name || project.metadata?.project_name || project.name || project.metadata?.name || `Planung ${date(project.period_start,{month:'long',year:'numeric'})}`;
   const number = value => Number(value||0).toLocaleString('de-DE');
   const busy = () => !!(current.solving || current.jobId || current.projectBusy || ['save','saveDraft'].some(id=>byId(id)?.dataset.busy==='true'));
@@ -99,7 +99,7 @@
       const symbol=node('span',undefined,'job-row-icon');symbol.append(icon('clock'));row.append(symbol);
       const info=node('span');info.append(node('span',job.project_name||(project?projectName(project):'Dienstplan-Berechnung'),'job-row-name'));
       const created=typeof job.created_at==='number'?new Date(job.created_at*1000):new Date(job.created_at);
-      info.append(node('span',Number.isNaN(+created)?'Gespeicherte Berechnung':created.toLocaleString('de-DE',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}),'job-row-date'));
+      info.append(node('span',Number.isNaN(+created)?'Gespeicherte Berechnung':created.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),'job-row-date'));
       row.append(info,node('span',states[job.state]||job.state,'job-badge '+(job.state==='succeeded'?'finished':['queued','running','failed','cancelled'].includes(job.state)?job.state:'')));
       const elapsed=job.finished_at&&job.started_at?Math.max(0,Math.round(job.finished_at-job.started_at)):null;
       row.append(node('span',elapsed===null?'':`${number(elapsed)} Sekunden`,'job-row-duration'),icon('arrow'));

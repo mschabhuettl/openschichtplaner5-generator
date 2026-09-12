@@ -7,6 +7,10 @@ const renderedPanels=new Map(), collections=new Map();
 let savedRequest=0,jobsRequest=0;
 let readinessVersion=-1,readinessPending=-1,readinessRequest=0,readinessSummary=null;
 const fold=value=>String(value??'').toLocaleLowerCase('de-DE');
+// Visible dates are TT.MM.JJJJ; stored and compared values stay ISO.
+function dayText(value){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value??''));return m?`${m[3]}.${m[2]}.${m[1]}`:String(value??'');}
+function periodText(from,to){return `${dayText(from)} bis ${dayText(to)}`;}
+function dayTextInMessage(message){return String(message??'').replace(/(^|[\s(])(\d{4})-(\d{2})-(\d{2})\b/g,(all,lead,y,m,d)=>`${lead}${d}.${m}.${y}`);}
 function dataIndex(){
  if(indexVersion===changeVersion&&indexes)return indexes;
  const keyed=rows=>new Map(rows.map(row=>[row.id,row]));
@@ -114,7 +118,7 @@ function table(parent,head){parent.replaceChildren();const t=el('table',undefine
 async function saved(){
  const request=++savedRequest,list=[];for(let offset=0;offset<=1000000;offset+=1000){const page=await api('/api/snapshots?limit=1000&offset='+offset);if(request!==savedRequest)return;list.push(...page);if(page.length<1000)break;}const selected=snapshot?.id??$('saved').value;$('saved').replaceChildren();
  if(!list.length)el('option','Keine gespeicherten Projekte',$('saved')).value='';
- list.forEach(x=>{const o=el('option',`${x.project_name??x.name??'Projekt'} · ${x.period_start??x.id} bis ${x.period_end??''} · ${x.employee_count??'?'} Personen · Stand ${x.revision} · ${x.id.slice(0,8)}`,$('saved'));o.value=x.id;});
+ list.forEach(x=>{const o=el('option',`${x.project_name??x.name??'Projekt'} · ${x.period_start?dayText(x.period_start):x.id} bis ${dayText(x.period_end??'')} · ${x.employee_count??'?'} Personen · Stand ${x.revision} · ${x.id.slice(0,8)}`,$('saved'));o.value=x.id;});
  if(list.some(x=>x.id===selected))$('saved').value=selected;window.PlannerUI?.setProjects?.(list);updateJobButtons();
 }
 const jobStates={queued:'In Warteschlange',running:'Berechnung läuft',succeeded:'Berechnung beendet',failed:'Fehlgeschlagen',cancelled:'Abgebrochen'};
@@ -142,7 +146,7 @@ function load(s,persisted=false){
  notice(`Daten geladen: ${s.employees.length} Personen${s.metadata.selected_group_ids?' aus '+s.metadata.selected_group_ids.length+' ausgewählten Teams':''}. Regeln und offene Angaben prüfen.`);
 }
 function render(){
- $('source').textContent=`Quelle: ${snapshot.source==='synthetic'?'SYNTHETISCHE DEMO':snapshot.source} · ${snapshot.period_start} bis ${snapshot.period_end} · ${snapshot.timezone} · Stand ${snapshot.revision}`;
+ $('source').textContent=`Quelle: ${snapshot.source==='synthetic'?'SYNTHETISCHE DEMO':snapshot.source} · ${periodText(snapshot.period_start,snapshot.period_end)} · ${snapshot.timezone} · Stand ${snapshot.revision}`;
  renderActivePanel(true);publishState();
 }
 function setTargetHours(person,value){person.target_minutes=value===null?null:Math.round(value*60);for(const input of document.querySelectorAll('[data-employee-hours]'))if(input.dataset.employeeHours===person.id&&input!==document.activeElement)input.value=value===null?'':String(value);}
@@ -188,7 +192,7 @@ function personDetails(e){
  if(origin&&Number.isInteger(origin.calcbase)&&Object.hasOwn(bases,origin.calcbase)){
   const [basis,key,unit]=bases[origin.calcbase];
   if(Number.isFinite(origin[key])&&Number.isFinite(origin.target_minutes)&&/^\d{4}-\d{2}-\d{2}$/.test(origin.period_start)&&/^\d{4}-\d{2}-\d{2}$/.test(origin.period_end)){
-   const imported=el('p',`SP5-Importstand: ${basis} mit ${origin[key].toLocaleString('de-DE')} Stunden je ${unit}. Berechnetes Soll für ${origin.period_start} bis ${origin.period_end}: ${(origin.target_minutes/60).toLocaleString('de-DE')} Stunden. Teilzeiträume werden nach der SP5-Quellenformel berechnet, nicht pauschal umgerechnet. Das oben bearbeitbare Soll kann inzwischen abweichen.`,hoursGroup);imported.className='helper-text';imported.id='personHoursOrigin';hours.setAttribute('aria-describedby',`${hoursHelp.id} ${imported.id}`);
+   const imported=el('p',`SP5-Importstand: ${basis} mit ${origin[key].toLocaleString('de-DE')} Stunden je ${unit}. Berechnetes Soll für ${periodText(origin.period_start,origin.period_end)}: ${(origin.target_minutes/60).toLocaleString('de-DE')} Stunden. Teilzeiträume werden nach der SP5-Quellenformel berechnet, nicht pauschal umgerechnet. Das oben bearbeitbare Soll kann inzwischen abweichen.`,hoursGroup);imported.className='helper-text';imported.id='personHoursOrigin';hours.setAttribute('aria-describedby',`${hoursHelp.id} ${imported.id}`);
    if(origin.bookings_included===false)imported.append(document.createTextNode(' Sollbuchungen sind im Importwert nicht enthalten; separat prüfen.'));
   }
  }
@@ -244,10 +248,10 @@ function renderHistory(){
  const line=el('p',`${p.name} · ${a.evidence_count} beobachtete Einsätze `,content);
  const exists=approved(e,p);const b=button(line,exists?'Im Planungszeitraum freigegeben':'Für Planungszeitraum ausdrücklich freigeben',()=>{setApproval(e,p,true);renderMatrix();renderHistory();});b.disabled=exists;});};});
 }
-function demandLabel(d){const idx=dataIndex();if(idx.demandLabels.has(d.id))return idx.demandLabels.get(d.id);const s=idx.shifts.get(d.shift_id),p=idx.positions.get(d.position_id);const label=`${s?.segments[0]?localDay(s.segments[0].start)+' · ':''}${s?.name??'Dienst'}${p?.name&&p.name!==s?.name?' / '+p.name:''} · ${(s?.segments??[]).map(x=>localTime(x.start)+'–'+localTime(x.end)+(localDay(x.end)!==localDay(x.start)?' (Folgetag)':'')).join(' / ')}`;idx.demandLabels.set(d.id,label);return label;}
+function demandLabel(d){const idx=dataIndex();if(idx.demandLabels.has(d.id))return idx.demandLabels.get(d.id);const s=idx.shifts.get(d.shift_id),p=idx.positions.get(d.position_id);const label=`${s?.segments[0]?dayText(localDay(s.segments[0].start))+' · ':''}${s?.name??'Dienst'}${p?.name&&p.name!==s?.name?' / '+p.name:''} · ${(s?.segments??[]).map(x=>localTime(x.start)+'–'+localTime(x.end)+(localDay(x.end)!==localDay(x.start)?' (Folgetag)':'')).join(' / ')}`;idx.demandLabels.set(d.id,label);return label;}
 function renderShifts(){
- const view=collection($('shifts'),'shifts',snapshot.shifts,{label:'Schichten',size:30,search:s=>s.name+' '+s.segments.map(x=>localDay(x.start)).join(' '),redraw:renderShifts});
- const body=table(view.content,['Schicht','Dienstart','Zeitfenster']);view.items.forEach(s=>{const tr=el('tr',undefined,body);el('td',s.name,tr);select(el('td',undefined,tr),'Art',s.kind,[['unconfirmed','Noch festzulegen'],['day','Tag'],['night','Nacht']],v=>s.kind=v);el('td',s.segments.map(x=>`${localDay(x.start)} · ${localTime(x.start)}–${localTime(x.end)}`).join(' / '),tr);});
+ const view=collection($('shifts'),'shifts',snapshot.shifts,{label:'Schichten',size:30,search:s=>s.name+' '+s.segments.map(x=>localDay(x.start)+' '+dayText(localDay(x.start))).join(' '),redraw:renderShifts});
+ const body=table(view.content,['Schicht','Dienstart','Zeitfenster']);view.items.forEach(s=>{const tr=el('tr',undefined,body);el('td',s.name,tr);select(el('td',undefined,tr),'Art',s.kind,[['unconfirmed','Noch festzulegen'],['day','Tag'],['night','Nacht']],v=>s.kind=v);el('td',s.segments.map(x=>`${dayText(localDay(x.start))} · ${localTime(x.start)}–${localTime(x.end)}`).join(' / '),tr);});
 }
 function renderPositions(){
  const view=collection($('positions'),'positions',snapshot.positions,{label:'Positionen',size:30,search:p=>p.name+' '+workplaceName(p.workplace_id),redraw:renderPositions});
@@ -313,7 +317,7 @@ function renderReferenceImport(){
  box.replaceChildren();box.hidden=!Array.isArray(rows);if(box.hidden)return;
  el('h3','Importierte Vergleichsdienste',box).id='referenceImportTitle';
  const basis={ist:'Istplan',soll:'Sollplan'}[snapshot.metadata.reference_plan]||'Plansicht nicht dokumentiert';
- el('p',`${basis} · ${snapshot.period_start} bis ${snapshot.period_end} · ${rows.length} Vergleichsdienste im Import`,box);
+ el('p',`${basis} · ${periodText(snapshot.period_start,snapshot.period_end)} · ${rows.length} Vergleichsdienste im Import`,box);
  if(snapshot.metadata.context_plan==='ist')el('p','Normale Vergleichsdienste aus der gewählten Plansicht. Abwesenheiten, Sonderdienste und Randkontext bleiben aus dem Istplan.',box).className='helper-text';
  el('p','Importstand, keine aktuelle Planprüfung: Die historische Planbasis betrifft frühere Einsätze und ändert diese Referenz nicht. Nur eindeutig zugeordnete Dienste wurden als Einteilungen übernommen.',box).className='helper-text';
  const status=row=>row&&typeof row==='object'?(typeof row.demand_id==='string'&&row.demand_id?'matched':row.resolution==='unmatched'?'unmatched':row.resolution==='ambiguous'?'ambiguous':'unknown'):'unknown';
@@ -341,7 +345,7 @@ function renderReferenceImport(){
   if(!view.total)el('p','Keine passenden Vergleichsdienste. Suchbegriff oder Zuordnungsfilter ändern; der Importstand bleibt unverändert.',view.content);
   for(const row of view.items){const item=el('div',undefined,view.content);item.className='card';
    const {person,service}=identity(row);
-   el('strong',`${row?.date??'Datum unbekannt'} · ${person?.name??'Person nicht zugeordnet'} · ${service?.name??'Dienst nicht zugeordnet'}`,item);
+   el('strong',`${row?.date?dayText(row.date):'Datum unbekannt'} · ${person?.name??'Person nicht zugeordnet'} · ${service?.name??'Dienst nicht zugeordnet'}`,item);
    el('p',labels[status(row)],item);
    if(status(row)!=='matched')el('p',reasons[row?.resolution_reason]??'Konkrete Ursache im Import nicht dokumentiert. Datum, Dienst, Team, Arbeitsplatz und Bedarf fachlich prüfen.',item);
    const actions=el('div',undefined,item);actions.className='actions';
@@ -361,7 +365,7 @@ function renderUnresolved(){
   const reference=/^Bestehender Dienst (sp5:employee:\S+) (\d{4}-\d{2}-\d{2}):/.exec(message);
   const person=reference?dataIndex().employees.get(reference[1]):null;
   const label=person?`Bestehender Dienst ${person.name} ${message.slice(`Bestehender Dienst ${reference[1]} `.length)}`:message;
-  return {message,index,reference,person,label};
+  return {message,index,reference,person,label:dayTextInMessage(label)};
  });
  const view=collection(box,'unresolved',entries,{label:'Offene Angaben',size:10,search:entry=>`${entry.message} ${entry.label}`,redraw:renderUnresolved});
  if(!view.total)el('p','Keine passenden Angaben. Suchbegriff ändern; andere offene Angaben bleiben erhalten.',view.content);
@@ -381,7 +385,7 @@ function renderRules(){
 function renderContext(){
  let box=$('contextConfirmation');if(!box){box=el('section');box.id='contextConfirmation';box.className='surface padded';$('profiles').before(box);}box.replaceChildren();
  el('h3','Dienste vor und nach dem Planungszeitraum',box);
- el('p',`Planung: ${snapshot.period_start} bis ${snapshot.period_end}. Für Ruhezeiten und Dienstserien wird auch der Randzeitraum ${snapshot.context_start} bis ${snapshot.context_end} berücksichtigt.`,box);
+ el('p',`Planung: ${periodText(snapshot.period_start,snapshot.period_end)}. Für Ruhezeiten und Dienstserien wird auch der Randzeitraum ${periodText(snapshot.context_start,snapshot.context_end)} berücksichtigt.`,box);
  if(snapshot.metadata.created_with==='project-setup'){
   field(box,'Außer den erfassten Diensten gibt es im angegebenen Randzeitraum vor und nach der Planung keine weiteren Dienste.',snapshot.context_complete&&snapshot.metadata.context_duty_free_confirmed,confirmed=>{snapshot.context_complete=confirmed;snapshot.metadata.context_duty_free_confirmed=confirmed;},'checkbox');
   el('p','Nur bestätigen, wenn die Aussage für alle Personen tatsächlich zutrifft. Zusätzliche Dienste zuerst im Projekt erfassen; ohne bestätigten Randkontext kann der Plan nicht abschließend geprüft werden.',box);
@@ -474,7 +478,8 @@ function focusAssignment(index){
 }
 const diagnosticTitles={candidate_shortage:'Zu wenige geeignete Personen',shared_candidate_shortage:'Gemeinsamer Kandidatenengpass',vacancy:'Offene Stellen',maximum:'Höchstbesetzung',fixed:'Fixierte Einteilungen',duplicate:'Doppelte Einteilungen',reference:'Ungültige Verweise',context_assignment:'Planungszeitraum',interval_mismatch:'Dienstzeiten',unresolved:'Offene Angaben',profile:'Regelprofile',qualification:'Qualifikationen',approval:'Freigaben',rest:'Ruhezeiten',overlap:'Überlappende Dienste',interleaving:'Geteilte Dienste',availability:'Verfügbarkeit',kind:'Dienstart',boundary_kind:'Tag-/Nachtart der Randarbeit',boundary_period:'Randarbeit im Planungszeitraum',boundary_duplicate:'Doppelt erfasste Randarbeit',weekend:'Wochenenden',holiday:'Feiertage',employment:'Beschäftigungszeitraum',team:'Teamzuordnung',restriction:'Dienstsperren',absence:'Abwesenheiten',night_block:'Ruhe nach Nachtblock',daily_limit:'Tägliche Höchstzeit',weekly_limit:'Wöchentliche Höchstzeit',period_limit:'Höchstzeit im Planungszeitraum',work_days:'Höchstens erlaubte Arbeitstage',nights:'Höchstens erlaubte Nächte',weekends:'Höchstens erlaubte Wochenenden',consecutive_work:'Aufeinanderfolgende Arbeitstage',consecutive_nights:'Aufeinanderfolgende Nächte',weekly_rest:'Zusammenhängende Wochenruhe',context:'Angrenzende Dienste und Zeiträume',mentoring:'Erforderliche Betreuung',size_limit:'Planungsgröße',numeric_range:'Zahlenbereich',date_range:'Datumsbereich',created_at:'Datenstand',empty_id:'Fehlende Kennungen',duplicate_id:'Doppelte Kennungen',interval:'Dienstzeiten',demand:'Besetzungsbedarf',validity:'Gültigkeitszeitraum',assignment_reference:'Einteilungen',input:'Eingabedaten'};
 const eligibilityMessages={employment:'Der Dienst liegt außerhalb des Beschäftigungszeitraums.',team:'Die Person gehört nicht zum Team dieses Dienstes.',kind:'Diese Dienstart ist für die Person nicht erlaubt.',weekend:'Wochenenddienste sind für diese Person nicht erlaubt.',holiday:'Feiertagsdienste sind für diese Person nicht erlaubt.',approval:'Eine gültige Freigabe für diesen Dienst oder Arbeitsplatz fehlt.',qualification:'Ein gültiger Qualifikationsnachweis für diesen Dienst fehlt.',restriction:'Eine bestätigte Dienstsperre verhindert diese Einteilung.',absence:'Der Dienst überschneidet sich mit einer Abwesenheit.',availability:'Der vollständige Dienst liegt nicht innerhalb der erlaubten Zeitfenster.'};
-function diagnosticMessage(d){
+function diagnosticMessage(d){return dayTextInMessage(rawDiagnosticMessage(d));}
+function rawDiagnosticMessage(d){
  const person=snapshot&&d.employee_id?dataIndex().employees.get(d.employee_id):null;
  if(person&&d.message.endsWith(': '+d.employee_id))return d.message.slice(0,-d.employee_id.length)+person.name;
  if(d.message.startsWith('Einsatz nicht zulässig:'))return eligibilityMessages[d.code]??d.message;
@@ -531,7 +536,7 @@ function renderValidation(report){
  if(!report.diagnostics.length){el('p','Die unabhängige Prüfung hat keine Regelverletzungen oder unbesetzten Stellen gefunden.',box);return;}
  const grouped=new Map(),idx=dataIndex();for(const diagnostic of report.diagnostics){if(!grouped.has(diagnostic.code))grouped.set(diagnostic.code,[]);grouped.get(diagnostic.code).push(diagnostic);}
  for(const [code,entries] of grouped){const group=el('details',undefined,box);group.className='validation-group';group.open=grouped.size===1;el('summary',`${diagnosticTitles[code]??'Regel prüfen'} · ${entries.length}`,group);
- const content=el('div',undefined,group);const draw=()=>{const view=collection(content,'diagnostics-'+code,entries,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items){const line=el('article',undefined,view.content);line.className='diagnostic-item';const employee=idx.employees.get(d.employee_id),demand=idx.demands.get(d.demand_id);el('strong',[employee?.name,d.date].filter(Boolean).join(' · ')||diagnosticTitles[code]||code,line);el('p',diagnosticMessage(d),line);if(demand)el('small',demandLabel(demand),line);if(employee)button(line,'Person bearbeiten',()=>personDetails(employee));if(demand)button(line,'Bedarf öffnen',()=>{const state=pageState('demands',40);state.query=demand.id;state.page=0;navigate('rules');const details=$('demands').closest('details');if(details)details.open=true;renderDemands();$('demands').scrollIntoView({block:'center',behavior:'smooth'});});}};
+ const content=el('div',undefined,group);const draw=()=>{const view=collection(content,'diagnostics-'+code,entries,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items){const line=el('article',undefined,view.content);line.className='diagnostic-item';const employee=idx.employees.get(d.employee_id),demand=idx.demands.get(d.demand_id);el('strong',[employee?.name,d.date&&dayText(d.date)].filter(Boolean).join(' · ')||diagnosticTitles[code]||code,line);el('p',diagnosticMessage(d),line);if(demand)el('small',demandLabel(demand),line);if(employee)button(line,'Person bearbeiten',()=>personDetails(employee));if(demand)button(line,'Bedarf öffnen',()=>{const state=pageState('demands',40);state.query=demand.id;state.page=0;navigate('rules');const details=$('demands').closest('details');if(details)details.open=true;renderDemands();$('demands').scrollIntoView({block:'center',behavior:'smooth'});});}};
  group.ontoggle=()=>{if(group.open&&!content.childNodes.length)draw();};if(group.open)draw();}
 }
 function checkPeopleReady(){const unfinished=snapshot.employees.find(person=>!person.name.trim()||person.target_minutes==null);if(unfinished){personDetails(unfinished);throw Error('Name und Sollstunden der neuen Person zuerst festlegen.');}}
@@ -542,7 +547,7 @@ async function save(){
  const invalid=$('workspace').querySelector('input:invalid');
  if(invalid){const panel=invalid.closest('[data-panel]')?.dataset.panel;if(panel){renderedPanels.set(panel,changeVersion);navigate(panel);}let parent=invalid.parentElement;while(parent){if(parent.tagName==='DETAILS')parent.open=true;parent=parent.parentElement;}invalid.scrollIntoView({block:'center',behavior:'smooth'});invalid.reportValidity();throw Error('Ungültige oder fehlende Eingabe korrigieren.');}
  const persisted=await api('/api/snapshots','PUT',currentSnapshot());
- snapshot.revision=persisted.revision;snapshot.assignments=structuredClone(assignments);dirty=false;jsonVersion=-1;updateSaveStatus();$('source').textContent=`Quelle: ${snapshot.source==='synthetic'?'SYNTHETISCHE DEMO':snapshot.source} · ${snapshot.period_start} bis ${snapshot.period_end} · ${snapshot.timezone} · Stand ${snapshot.revision}`;
+ snapshot.revision=persisted.revision;snapshot.assignments=structuredClone(assignments);dirty=false;jsonVersion=-1;updateSaveStatus();$('source').textContent=`Quelle: ${snapshot.source==='synthetic'?'SYNTHETISCHE DEMO':snapshot.source} · ${periodText(snapshot.period_start,snapshot.period_end)} · ${snapshot.timezone} · Stand ${snapshot.revision}`;
  syncJson();
  await saved();notice('Regeln und Entwurf dauerhaft gespeichert.');
 }
@@ -653,11 +658,11 @@ function historyDefaults(){
 }
 function refreshFollowingPeriod(busy=false){
  const base=$('followPeriodBase'),preview=$('followPeriodPreview'),button=$('prepareNextPeriod'),mode=$('followPeriodMode');
- base.textContent=snapshot?`Geöffnetes Projekt: ${snapshot.period_start} bis ${snapshot.period_end} · ${snapshot.timezone}`:'Zuerst das bisherige Projekt öffnen.';
+ base.textContent=snapshot?`Geöffnetes Projekt: ${periodText(snapshot.period_start,snapshot.period_end)} · ${snapshot.timezone}`:'Zuerst das bisherige Projekt öffnen.';
  button.disabled=true;mode.disabled=busy||!snapshot||jsonDirty||personDraft;
  if(!snapshot){preview.textContent='';return;}
  if(jsonDirty||personDraft){preview.textContent='Offene JSON- oder Abwesenheitsbearbeitung zuerst übernehmen oder verwerfen.';return;}
- try{const next=SetupAssistant.followingPeriod(snapshot,mode.value);preview.textContent=`Vorschlag: ${next.start} bis ${next.end} · ${next.days} Kalendertage`;button.disabled=busy||button.dataset.busy==='true';}
+ try{const next=SetupAssistant.followingPeriod(snapshot,mode.value);preview.textContent=`Vorschlag: ${periodText(next.start,next.end)} · ${next.days} Kalendertage`;button.disabled=busy||button.dataset.busy==='true';}
  catch(error){preview.textContent=error.message;}
 }
 action('prepareNextPeriod',()=>{
@@ -665,7 +670,7 @@ action('prepareNextPeriod',()=>{
  const next=SetupAssistant.followingPeriod(snapshot,$('followPeriodMode').value);
  $('start').value=next.start;$('end').value=next.end;$('timezone').value=snapshot.timezone;historyDefaults();
  $('start').focus();$('start').scrollIntoView({block:'center'});
- notice(`${next.start} bis ${next.end} und Historie vorbelegt. Quelle, Teams und Importoptionen prüfen; erst „Daten importieren“ startet den Import. Das geöffnete Projekt bleibt unverändert.`);
+ notice(`${periodText(next.start,next.end)} und Historie vorbelegt. Quelle, Teams und Importoptionen prüfen; erst „Daten importieren“ startet den Import. Das geöffnete Projekt bleibt unverändert.`);
 });
 $('followPeriodMode').onchange=()=>updateJobButtons();
 function serviceMatrix(){return snapshot?.metadata?.service_matrix_version===1;}
@@ -704,7 +709,7 @@ function renderMatrix(){
  const mixedSupervision=supervised&&e.approvals.some(a=>samePosition(a,p)&&!a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
  const workplacePartial=partial&&serviceMatrix()&&e.approvals.some(a=>relatedApproval(a,p)&&a.workplace_id!=='*'&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
  const text=allowed?(mixedSupervision?'✓ Teils betreut':supervised?'✓ Betreut':'✓ Frei'):(workplacePartial?'◐ Einzelne Arbeitsplätze':partial?'◐ Teilzeitraum':history?'◇ Vorschlag':'− Keine Freigabe');const td=el('td',undefined,tr);
- const b=button(td,text,()=>{setApproval(e,p,!allowed);renderMatrix();renderHistory();$('matrix').querySelector(`[data-row="${ri}"][data-col="${ci}"]`)?.focus();});b.className='matrix-cell '+(allowed?'allowed':partial?'partial':history?'suggested':'prohibited');b.dataset.row=ri;b.dataset.col=ci;b.dataset.employeeId=e.id;b.dataset.functionId=p.function_id;b.dataset.workplaceId=p.workplace_id;b.setAttribute('aria-pressed',String(allowed));b.setAttribute('aria-label',`${e.name} · ${p.name}: ${text}. ${allowed?'Freigabe im Zeitraum entfernen':(serviceMatrix()?'Dienst an allen Arbeitsplätzen für ganzen Planungszeitraum freigeben':'Für ganzen Planungszeitraum freigeben')}`);b.title=`${snapshot.period_start} bis ${snapshot.period_end}. ${supervised?'Betreuung erforderlich. ':''}${p.qualifications_required?'Zusätzlicher Qualifikationsnachweis bleibt erforderlich.':''}`;
+ const b=button(td,text,()=>{setApproval(e,p,!allowed);renderMatrix();renderHistory();$('matrix').querySelector(`[data-row="${ri}"][data-col="${ci}"]`)?.focus();});b.className='matrix-cell '+(allowed?'allowed':partial?'partial':history?'suggested':'prohibited');b.dataset.row=ri;b.dataset.col=ci;b.dataset.employeeId=e.id;b.dataset.functionId=p.function_id;b.dataset.workplaceId=p.workplace_id;b.setAttribute('aria-pressed',String(allowed));b.setAttribute('aria-label',`${e.name} · ${p.name}: ${text}. ${allowed?'Freigabe im Zeitraum entfernen':(serviceMatrix()?'Dienst an allen Arbeitsplätzen für ganzen Planungszeitraum freigeben':'Für ganzen Planungszeitraum freigeben')}`);b.title=`${periodText(snapshot.period_start,snapshot.period_end)}. ${supervised?'Betreuung erforderlich. ':''}${p.qualifications_required?'Zusätzlicher Qualifikationsnachweis bleibt erforderlich.':''}`;
  b.onkeydown=event=>{const delta={ArrowRight:[0,1],ArrowLeft:[0,-1],ArrowDown:[1,0],ArrowUp:[-1,0]}[event.key];if(!delta)return;event.preventDefault();$('matrix').querySelector(`[data-row="${ri+delta[0]}"][data-col="${ci+delta[1]}"]`)?.focus();};});});
  grid.scrollTo(...scroll);
  if(!rows.length||!cols.length)el('p','Keine passenden Personen oder Dienste. Suche leeren oder Teams und Planungszeitraum beim Import prüfen.',$('matrix'));
@@ -752,8 +757,8 @@ function pendingHistoryApprovals(){
  }
  return pairs;
 }
-function updateHistoryApplyLabel(){const count=pendingHistoryApprovals().length;$('confirmHistory').textContent=`Alle ${count} historischen Vorschläge übernehmen`;}
-action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${snapshot.period_start} bis ${snapshot.period_end} freigeben – unabhängig von Suche und sichtbaren Zeilen? Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
+function updateHistoryApplyLabel(){const count=pendingHistoryApprovals().length;$('confirmHistory').textContent=`Alle ${count} historischen Vorschläge übernehmen`;$('historyBulk').dataset.pending=String(count);$('historyBulkTitle').textContent=count?`${count} historische Vorschläge offen`:'Keine offenen historischen Vorschläge';}
+action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${periodText(snapshot.period_start,snapshot.period_end)} freigeben – unabhängig von Suche und sichtbaren Zeilen? Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
 $('start').addEventListener('change',historyDefaults);
 {
  const today=new Date(),year=today.getFullYear(),month=String(today.getMonth()+1).padStart(2,'0');

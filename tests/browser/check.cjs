@@ -170,7 +170,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     let unintendedImports=0;
     const countFollowingImports=request=>{if(request.url().endsWith('/api/remote-import'))unintendedImports++;};
     page.on('request',countFollowingImports);
-    assert.match(await page.locator('#followPeriodPreview').innerText(),/2026-02-09 bis 2026-02-15.*7 Kalendertage/);
+    assert.match(await page.locator('#followPeriodPreview').innerText(),/09\.02\.2026 bis 15\.02\.2026.*7 Kalendertage/);
     await page.click('#prepareNextPeriod');
     assert.equal(await page.locator('#start').inputValue(),'2026-02-09');
     assert.equal(await page.locator('#end').inputValue(),'2026-02-15');
@@ -179,7 +179,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(await page.locator('#timezone').inputValue(),snapshot.timezone);
     assert.equal(await page.locator('#start').evaluate(e=>document.activeElement===e),true);
     await page.selectOption('#followPeriodMode','month');
-    assert.match(await page.locator('#followPeriodPreview').innerText(),/2026-02-09 bis 2026-02-28.*20 Kalendertage/);
+    assert.match(await page.locator('#followPeriodPreview').innerText(),/09\.02\.2026 bis 28\.02\.2026.*20 Kalendertage/);
     assert.equal(await page.locator('#end').inputValue(),'2026-02-15','Preview alone does not replace import dates');
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});await page.click('#prepareNextPeriod');
@@ -265,7 +265,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       await referenceBox.getByRole('button',{name:'Bedarfe am Datum prüfen',exact:true}).click();
       assert.equal(await page.locator('[data-collection-search="demands"]').inputValue(),'2026-02-02');
       assert.equal(await page.locator('[data-collection-search="demands"]').evaluate(e=>document.activeElement===e),true);
-      assert.match(await page.locator('#demands').innerText(),/2026-02-02/);
+      assert.match(await page.locator('#demands').innerText(),/02\.02\.2026/);
     }
     assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())})),unfilteredState,'Reference review shortcuts do not change project data, approvals or validation state');
     const staleReference=structuredClone(referenceFixture);
@@ -635,7 +635,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const nominal=page.locator('#details').getByLabel('Sollstunden im Planungszeitraum',{exact:true});
     assert.equal(await nominal.inputValue(),'40');
     assert.match(await page.locator('#personHoursOrigin').innerText(),/Monatsbasis mit 156 Stunden je Monat/);
-    assert.match(await page.locator('#personHoursOrigin').innerText(),/2026-02-02 bis 2026-02-08: 40 Stunden/);
+    assert.match(await page.locator('#personHoursOrigin').innerText(),/02\.02\.2026 bis 08\.02\.2026: 40 Stunden/);
     assert.doesNotMatch(await page.locator('#personHoursOrigin').innerText(),/Sollbuchungen sind im Importwert nicht enthalten/);
     assert.equal(await nominal.getAttribute('aria-describedby'),'personHoursHelp personHoursOrigin');
     await nominal.fill('48');await nominal.blur();
@@ -1018,6 +1018,11 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await navigate('calculate');
     await page.uncheck('#partial');
     await require('./product-flows.cjs')({page,base,navigate,reveal,uploadProject,root,state,delay});
+    // Own page: both suites drive their own dialogs and project state.
+    for(const suite of ['./weekly-contract.cjs','./all-proposals.cjs']){
+      const isolated=await page.context().browser().newPage();isolated.setDefaultTimeout(30000);
+      try{await require(suite)({page:isolated,base});}finally{await isolated.close();}
+    }
     assert.deepEqual(errors, []);
     console.log('Passed: exact team selection, history, matrix, solver, job recovery, project backup roundtrip, rejected invalid files, unsaved-work guard, profile persistence, calendar/timezones, fixed-input validation/export, desktop/mobile, actionable errors.');
   } catch(error) {
