@@ -598,6 +598,36 @@ function refreshAutomaticReadiness(force=false){
   display('error','Vorprüfung nicht abgeschlossen. '+error.message);
  }).finally(()=>{if(request===readinessRequest)readinessPending=-1;});
 }
+// 150 single demands are one maintenance task per service, not 150 tasks.
+function shortageByService(entries){
+ const idx=dataIndex(),rows=new Map();
+ for(const diagnostic of entries){
+  const demand=idx.demands.get(diagnostic.demand_id);if(!demand)continue;
+  const position=idx.positions.get(demand.position_id);if(!position)continue;
+  const key=position.function_id;
+  if(!rows.has(key))rows.set(key,{key,name:position.name||key,demands:0,slots:0});
+  const row=rows.get(key);row.demands++;row.slots+=demand.minimum;
+ }
+ for(const row of rows.values())
+  row.approved=snapshot.employees.filter(e=>e.approvals.some(a=>a.function_id===row.key)).length;
+ return [...rows.values()].sort((a,b)=>b.slots-a.slots||a.name.localeCompare(b.name,'de-DE'));
+}
+function renderShortageSummary(box,entries){
+ const rows=shortageByService(entries);if(!rows.length)return;
+ const wrap=el('div',undefined,box);wrap.className='shortage-summary';
+ el('strong',`${rows.length} Dienste betroffen`,wrap);
+ el('p','Je Dienst genügt eine Freigabeentscheidung. „Freigegeben insgesamt“ zählt Personen mit einer Freigabe für diesen Dienst, unabhängig von Team und Zeitraum. Es werden keine Freigaben ergänzt.',wrap).className='helper-text';
+ const body=table(el('div',undefined,wrap),['Dienst','Betroffene Bedarfe','Offene Stellen','Freigegeben insgesamt','']);
+ for(const row of rows){
+  const tr=el('tr',undefined,body);tr.dataset.serviceRow=row.key;
+  el('td',row.name,tr);el('td',String(row.demands),tr);el('td',String(row.slots),tr);
+  el('td',String(row.approved),tr);
+  button(el('td',undefined,tr),'Freigaben öffnen',()=>{
+   $('matrixSearch').value=row.name;navigate('team');renderMatrix();
+   $('matrix').scrollIntoView({block:'center'});
+  });
+ }
+}
 function renderValidation(report){
  $('validation').textContent=JSON.stringify(report,null,2);$('validationSummary')?.remove();
  let raw=$('validationRaw');if(!raw){raw=el('details');raw.id='validationRaw';el('summary','Technischer Prüfbericht (JSON)',raw);$('validation').before(raw);raw.append($('validation'));}
@@ -606,7 +636,8 @@ function renderValidation(report){
  if(!report.diagnostics.length){el('p','Die unabhängige Prüfung hat keine Regelverletzungen oder unbesetzten Stellen gefunden.',box);return;}
  const grouped=new Map(),idx=dataIndex();for(const diagnostic of report.diagnostics){if(!grouped.has(diagnostic.code))grouped.set(diagnostic.code,[]);grouped.get(diagnostic.code).push(diagnostic);}
  for(const [code,entries] of grouped){const group=el('details',undefined,box);group.className='validation-group';group.open=grouped.size===1;el('summary',`${diagnosticTitles[code]??'Regel prüfen'} · ${entries.length}`,group);
- const content=el('div',undefined,group);const draw=()=>{const view=collection(content,'diagnostics-'+code,entries,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items){const line=el('article',undefined,view.content);line.className='diagnostic-item';const employee=idx.employees.get(d.employee_id),demand=idx.demands.get(d.demand_id);el('strong',[employee?.name,d.date&&dayText(d.date)].filter(Boolean).join(' · ')||diagnosticTitles[code]||code,line);el('p',diagnosticMessage(d),line);if(demand)el('small',demandLabel(demand),line);if(employee)button(line,'Person bearbeiten',()=>personDetails(employee));if(demand)button(line,'Bedarf öffnen',()=>{const state=pageState('demands',40);state.query=demand.id;state.page=0;navigate('rules');const details=$('demands').closest('details');if(details)details.open=true;renderDemands();$('demands').scrollIntoView({block:'center',behavior:'smooth'});});}};
+ const summary=code==='candidate_shortage'?el('div',undefined,group):null;
+ const content=el('div',undefined,group);const draw=()=>{if(summary){summary.replaceChildren();renderShortageSummary(summary,entries);}const view=collection(content,'diagnostics-'+code,entries,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items){const line=el('article',undefined,view.content);line.className='diagnostic-item';const employee=idx.employees.get(d.employee_id),demand=idx.demands.get(d.demand_id);el('strong',[employee?.name,d.date&&dayText(d.date)].filter(Boolean).join(' · ')||diagnosticTitles[code]||code,line);el('p',diagnosticMessage(d),line);if(demand)el('small',demandLabel(demand),line);if(employee)button(line,'Person bearbeiten',()=>personDetails(employee));if(demand)button(line,'Bedarf öffnen',()=>{const state=pageState('demands',40);state.query=demand.id;state.page=0;navigate('rules');const details=$('demands').closest('details');if(details)details.open=true;renderDemands();$('demands').scrollIntoView({block:'center',behavior:'smooth'});});}};
  group.ontoggle=()=>{if(group.open&&!content.childNodes.length)draw();};if(group.open)draw();}
 }
 function checkPeopleReady(){const unfinished=snapshot.employees.find(person=>!person.name.trim()||person.target_minutes==null);if(unfinished){personDetails(unfinished);throw Error('Name und Sollstunden der neuen Person zuerst festlegen.');}}

@@ -279,3 +279,9 @@ body[data-active-panel=team] #people { max-height: none; }
 .bulk-approve[data-pending="0"]{background:transparent}
 .bulk-approve[data-pending="0"] button{background:transparent;border-color:#d9e2df;color:#526d66;box-shadow:none}
 @media(max-width:720px){.bulk-approve{padding:12px}.bulk-approve button{width:100%}}
+
+/* Per-service summary above the individual staffing shortage diagnostics. */
+.shortage-summary{margin:0 0 14px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--subtle)}
+.shortage-summary strong{font-size:13px;color:var(--ink)}
+.shortage-summary table{margin-top:10px}
+.shortage-summary td:last-child{text-align:right}
