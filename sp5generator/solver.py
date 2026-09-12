@@ -327,7 +327,11 @@ def solve(snapshot, time_limit=30, partial=False):
         for i, (left_d, left_x) in enumerate(context_entries):
             if monotonic() >= deadline:
                 return timed_out()
-            for right_d, right_x in normal_entries + context_entries[:i]:
+            # Context constrains new work only. Two immutable duties are facts
+            # the plan cannot undo; asserting a rule between them would read as
+            # 1 + 1 <= 1 and make every plan unsolvable without saying where.
+            # The validator reports such source contradictions as context.
+            for right_d, right_x in normal_entries:
                 if pair_conflict(snapshot, e, shifts[left_d.shift_id], shifts[right_d.shift_id]):
                     model.add(left_x + right_x <= 1)
         for choices in by_shift.values():

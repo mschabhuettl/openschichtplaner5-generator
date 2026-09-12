@@ -230,9 +230,16 @@ def _validate(snapshot, assignments, input_errors=None):
         for (a, left), (b, right) in combinations(entries, 2):
             problem = pair_conflict(snapshot, e, left, right)
             if problem:
+                # Both sides immutable: a contradiction the source already
+                # contains, not one this plan caused or can resolve. Report it
+                # as context so it stays visible without invalidating a plan
+                # whose own assignments keep every rule.
+                source_only = a is None and b is None
                 add(
-                    problem,
-                    "Unvereinbare Dienste " + left.id + " / " + right.id,
+                    "context" if source_only else problem,
+                    ("Bestehende Dienste aus der Quelle sind unvereinbar ("
+                     + problem + "): " if source_only else "Unvereinbare Dienste ")
+                    + left.id + " / " + right.id,
                     e.id,
                     a.demand_id if a else None,
                 )
