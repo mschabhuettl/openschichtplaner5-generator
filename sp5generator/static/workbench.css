@@ -36,7 +36,7 @@ button.quiet:hover { color: var(--teal-dark); background: var(--teal-light); }
 .surface > summary .summary-description { font-size: 13px; color: var(--muted); }
 .details-content, .padded { padding: var(--space); }
 .eyebrow { color: #526b84; font-size: 11px; letter-spacing: .1em; }
-.app-shell { grid-template-columns: 248px minmax(0, 1fr); }
+.app-shell { grid-template-columns: 248px minmax(0, 1fr); background: linear-gradient(to right, var(--sidebar) 248px, transparent 248px); }
 .sidebar { padding: 26px 16px 20px; }
 .brand { font-size: 15px; padding: 0 7px 34px; gap: 10px; }
 .brand-mark { background: #d9e8ff; color: #215cae; width: 36px; height: 38px; }
@@ -138,7 +138,7 @@ table { font-size: 13px; }
 body[data-active-panel=plan] .sheet { max-height: 72vh; }
 .app-footer { color: var(--muted); font-size: 11px; }
 @media (max-width: 1100px) and (min-width: 721px) {
-  .app-shell { grid-template-columns: 216px minmax(0, 1fr); }
+  .app-shell { grid-template-columns: 216px minmax(0, 1fr); background: linear-gradient(to right, var(--sidebar) 216px, transparent 216px); }
   .sidebar { padding-inline: 10px; }
   .brand { font-size: 13px; padding-inline: 0; }
   .nav-item { font-size: 12px; padding-inline: 9px; }
@@ -148,7 +148,7 @@ body[data-active-panel=plan] .sheet { max-height: 72vh; }
 }
 @media (max-width: 720px) {
   :root { --space: 18px; }
-  .app-shell { display: block; }
+  .app-shell { display: block; background: none; }
   .sidebar { padding: 0; height: auto; }
   .main-nav { gap: 2px; padding: 5px; }
   .nav-item { min-height: 56px; padding: 8px 3px; gap: 5px; font-size: 10px; }
@@ -232,3 +232,41 @@ body[data-active-panel=calculate] .project-header { border-bottom: 1px solid var
 #calendar { overflow: visible; }
 body[data-active-panel=plan] #calendar { max-height: none; }
 #calendar > .collection-content { overflow: auto; max-height: 72vh; }
+
+
+/* Full-width work areas: records are browsed by scrolling, never page controls. */
+main{max-width:none;width:100%;margin:0;padding-left:20px;padding-right:20px}
+.app-main,.workspace-section,.collection-content{min-width:0}
+.collection-count{padding:10px 14px;color:var(--muted);font-size:12px}
+.collection-content{max-height:72dvh;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:auto;scrollbar-color:#819c94 #edf2f0}
+.collection-content:focus-visible{outline:3px solid #4baca2;outline-offset:-3px}
+#matrix,#calendar,body[data-active-panel=plan] .sheet{max-height:none;overflow:hidden}
+#matrix>.collection-content,#calendar>.collection-content{max-height:max(300px,calc(100dvh - 270px))}
+#matrix>.collection-count{display:inline-block}
+#calendar>.collection-count{padding:10px 17px;align-self:center}
+#calendar>.collection-content,#calendar>.coverage-summary{grid-column:1/-1}
+#projectCards,#jobCards{max-height:72dvh;overflow:auto;scrollbar-gutter:stable}
+.project-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
+@media(max-width:720px){main{padding-left:12px;padding-right:12px}.collection-content{max-height:70dvh}#matrix>.collection-content,#calendar>.collection-content{max-height:max(280px,calc(100dvh - 235px))}#calendar>.collection-count{padding:6px 13px}}
+
+/* Compact approval workspace; preserve full labels, focus and all rows. */
+.matrix-surface > .surface-toolbar { padding: 8px 12px; gap: 8px; }
+.matrix-surface > .matrix-legend { padding: 0 12px 8px; gap: 6px 14px; font-size: 11px; }
+.matrix-surface > .surface-footer { padding: 7px 12px; gap: 8px; }
+#matrix > .collection-count { padding: 4px 12px; font-size: 11px; }
+#matrix .matrix-table th:not(:first-child) { min-width: 104px; max-width: 140px; padding: 6px; white-space: normal; overflow-wrap: anywhere; }
+#matrix .matrix-table tbody th { min-width: 145px; max-width: 180px; padding: 4px 8px; }
+#matrix .matrix-table td { padding: 2px; }
+#matrix .matrix-cell { min-height: 28px; padding: 3px 5px; font-size: 11px; line-height: 1.25; border-radius: 4px; }
+#matrix .matrix-cell:focus-visible { outline-offset: -2px; }
+@media (pointer: coarse) {
+  #matrix .matrix-cell { min-height: 36px; }
+}
+
+/* Team is one continuous list: use page scrolling, not a capped inner viewport. */
+body[data-active-panel=team] #matrix > .collection-content,
+body[data-active-panel=team] #people > .collection-content {
+  max-height: none;
+  overscroll-behavior: auto;
+}
+body[data-active-panel=team] #people { max-height: none; }

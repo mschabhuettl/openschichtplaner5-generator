@@ -6,8 +6,7 @@
   let activePanel = 'projects';
   let current = {snapshot:null,assignments:[],dirty:false,jsonDirty:false,jobId:null,solving:false};
   let projects = [], jobs = [], searchableProjects = [];
-  let projectPage=0, lastUiBusy=false;
-  const projectPageSize=24;
+  let lastUiBusy=false;
   const dateFormatters=new Map();
   const node = (tag, text, className) => {
     const item = document.createElement(tag);
@@ -70,19 +69,12 @@
   function renderProjects() {
     const query=byId('projectSearch').value.trim().toLocaleLowerCase('de');
     const filtered=searchableProjects.filter(entry=>!query||entry.search.includes(query)).map(entry=>entry.project);
-    const pages=Math.max(1,Math.ceil(filtered.length/projectPageSize));
-    projectPage=Math.max(0,Math.min(projectPage,pages-1));
-    const offset=projectPage*projectPageSize;
-    const visible=filtered.slice(offset,offset+projectPageSize);
     const cards=byId('projectCards');cards.replaceChildren();
     text('projectTotal',number(projects.length));text('projectCount',number(filtered.length));
-    show('projectPagination',filtered.length>projectPageSize);
-    text('projectPageStatus',`${number(filtered.length?offset+1:0)}–${number(offset+visible.length)} von ${number(filtered.length)} Projekten · Seite ${number(projectPage+1)} / ${number(pages)}`);
-    byId('projectPagePrevious').disabled=projectPage===0;
-    byId('projectPageNext').disabled=projectPage>=pages-1;
+    show('projectPagination',false);
     if(!filtered.length){cards.append(emptyProjects(!!query));return;}
     const fragment=document.createDocumentFragment();
-    visible.forEach(project=>{
+    filtered.forEach(project=>{
       const card=node('button',undefined,'project-card');card.type='button';card.disabled=busy();card.dataset.projectId=project.id;card.setAttribute('aria-label',`${projectName(project)} öffnen`);
       const head=node('div',undefined,'project-card-head');const symbol=node('span',undefined,'project-card-icon');symbol.append(icon('calendar'));head.append(symbol);
       if(project.id===current.snapshot?.id)head.append(node('span','Geöffnet','subtle-badge'));else if(project.source==='synthetic')head.append(node('span','Demoprojekt','subtle-badge'));else head.append(node('span','Projekt','subtle-badge'));
@@ -101,7 +93,7 @@
     text('jobTotal',number(jobs.length));text('activeJobTotal',number(jobs.filter(job=>['queued','running'].includes(job.state)).length));
     const list=byId('jobCards');list.replaceChildren();
     if(!jobs.length){list.append(node('div','Noch keine Berechnung. Sobald Sie einen Plan berechnen, finden Sie das Ergebnis hier wieder.','list-empty'));return;}
-    jobs.slice(0,8).forEach(job=>{
+    jobs.forEach(job=>{
       const project=projects.find(project=>project.id===job.snapshot_id);
       const row=node('button',undefined,'job-row');row.type='button';row.disabled=busy();row.dataset.jobId=job.id;
       const symbol=node('span',undefined,'job-row-icon');symbol.append(icon('clock'));row.append(symbol);
@@ -164,9 +156,7 @@
   }
   document.querySelectorAll('[data-navigate]').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.navigate,{focus:true,scroll:true})));
   document.querySelector('.brand').addEventListener('click',event=>{event.preventDefault();navigate('projects',{focus:true,scroll:true});});
-  byId('projectSearch').addEventListener('input',()=>{projectPage=0;renderProjects();});
-  byId('projectPagePrevious').addEventListener('click',()=>{projectPage--;renderProjects();byId('projectCards').scrollIntoView({block:'start'});});
-  byId('projectPageNext').addEventListener('click',()=>{projectPage++;renderProjects();byId('projectCards').scrollIntoView({block:'start'});});
+  byId('projectSearch').addEventListener('input',()=>{renderProjects();});
   byId('projectName').addEventListener('change',()=>{const name=byId('projectName').value.trim();if(name)dispatch('rename',{name});else if(current.snapshot)byId('projectName').value=projectName(current.snapshot);});
   byId('projectName').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();byId('projectName').blur();}if(event.key==='Escape'&&current.snapshot){byId('projectName').value=projectName(current.snapshot);byId('projectName').blur();}});
   byId('openImport').addEventListener('click',()=>{byId('importDetails').open=true;byId('importDetails').scrollIntoView({block:'start'});byId('sourceType').focus({preventScroll:true});});

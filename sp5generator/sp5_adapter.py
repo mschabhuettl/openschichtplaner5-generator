@@ -384,6 +384,11 @@ def import_snapshot(
                 employment_end=calc.to_date(e.get("EMPEND")) or date.max,
                 profile_ids=["sp5:unconfirmed"],
                 target_minutes=max(0, _minutes(target)),
+                contractual_weekly_minutes=(
+                    _minutes(ctx.hrs_week) if ctx.calcbase == 1
+                    and e.get("HRSWEEK") not in (None, "")
+                    and math.isfinite(ctx.hrs_week) and ctx.hrs_week >= 0 else None
+                ),
             )
         )
         metadata["provenance"][eid] = {
