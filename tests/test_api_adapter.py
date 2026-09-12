@@ -854,7 +854,7 @@ def test_http_restrictions_use_duty_start_slot_not_midnight_spill(transport, slo
 
 @pytest.mark.parametrize("grade", [0, 1, 2])
 @pytest.mark.parametrize("multiple_groups", [False, True])
-def test_http_split_duty_restriction_covers_each_group_variant(transport, grade, multiple_groups):
+def test_http_split_duty_restriction_maps_once_per_merged_duty(transport, grade, multiple_groups):
     responses, _ = transport
     day = date(2026, 1, 6)
     groups = [1, 2] if multiple_groups else [1]
@@ -873,12 +873,16 @@ def test_http_split_duty_restriction_covers_each_group_variant(transport, grade,
                           history_start=day - timedelta(days=1),
                           history_end=day - timedelta(days=1),
                           team_ids=[str(gid) for gid in groups])
-    assert len(snapshot.shifts) == len(groups)
-    assert len(snapshot.restrictions) == len(groups)
+    # One duty on one day is one shift, however many groups state it, so the
+    # restriction maps once instead of once per group copy.
+    assert len(snapshot.shifts) == 1
+    assert len(snapshot.restrictions) == 1
+    demand, = snapshot.demands
+    assert demand.team_ids == [f"sp5:group:{gid}" for gid in groups]
     counts = snapshot.metadata["restriction_mapping_counts"]
     assert counts["mapped_rows"] == 1
-    assert counts["mapped_instances"] == len(groups)
-    assert sum(counts.values()) == 1 + len(groups)
+    assert counts["mapped_instances"] == 1
+    assert sum(counts.values()) == 2
     assert {r.shift_id for r in snapshot.restrictions} == {s.id for s in snapshot.shifts}
     assert all(r.level == grade and not r.approved for r in snapshot.restrictions)
     assert all(len(s.segments) == 2 and s.paid_minutes == 240 for s in snapshot.shifts)

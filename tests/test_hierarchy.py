@@ -44,7 +44,7 @@ def test_invalid_or_reserved_group_ids_are_rejected(group_id):
         group_tree([{"ID": group_id}])
 
 
-def test_parent_import_includes_children_preserves_demand_teams_and_deduplicates():
+def test_parent_import_includes_children_and_merges_child_team_requirements():
     pytest.importorskip("sp5lib")
     from test_sp5_adapter import SyntheticDatabase
     from sp5generator.sp5_adapter import import_snapshot, historical_matrix
@@ -90,11 +90,15 @@ def test_parent_import_includes_children_preserves_demand_teams_and_deduplicates
     assert len(snapshot.employees) == 1
     assert snapshot.employees[0].team_ids == ["sp5:group:1", "sp5:group:2", "sp5:group:3"]
     regular = [s for s in snapshot.shifts if s.source == "sp5:SHIFT"]
-    assert {s.team_id for s in regular} == {"sp5:group:2", "sp5:group:3"}
+    # Both child teams state the same duty: one requirement both may staff.
+    shift, = regular
+    assert shift.team_id == "sp5:group:2"
+    demand, = [d for d in snapshot.demands if d.shift_id == shift.id]
+    assert demand.team_ids == ["sp5:group:2", "sp5:group:3"]
     assert not snapshot.assignments
     assert len(snapshot.boundary_work) == 1
     assert len(snapshot.metadata["context_schedule"]) == 1
-    assert len(snapshot.restrictions) == 2
+    assert len(snapshot.restrictions) == 1
     history = historical_matrix(db, snapshot, date(2026, 1, 1), date(2026, 1, 5))
     assert history[0]["observed_assignment_count"] == 1
 

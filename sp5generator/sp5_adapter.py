@@ -430,6 +430,7 @@ def import_snapshot(
     )
     employee_map = {e.id: e for e in employees}
     shifts, positions, demands, restrictions, assignments = {}, {}, [], [], []
+    demand_cells = {}
     boundary_work = {}
     rows = _unique_rows(list(requirements.get("shift_requirements", [])) + [values[0] for values in special_cells.values() if len(values) == 1])
     for row in rows:
@@ -509,9 +510,7 @@ def import_snapshot(
             cell = (gid, d, sid)
             applies = (d.isoformat() == row["_date"]) if "_date" in row else (idx == row.get("weekday") and cell not in special_cells)
             if applies:
-                shift_id = f"sp5:shift:{sid}:{d.isoformat()}" + (
-                    f":group:{gid}" if len(scope) > 1 else ""
-                )
+                shift_id = f"sp5:shift:{sid}:{d.isoformat()}"
                 native = native_shifts[sid]
                 try:
                     windows = _parse_native_windows(
@@ -526,7 +525,7 @@ def import_snapshot(
                         )
                         for a, b in windows
                     ]
-                    shifts[shift_id] = Shift(
+                    shifts.setdefault(shift_id, Shift(
                         id=shift_id,
                         name=native.get("NAME", ""),
                         kind="unconfirmed",
@@ -535,20 +534,62 @@ def import_snapshot(
                         paid_minutes=_minutes(native.get(f"DURATION{idx}")),
                         holiday=d in holidays,
                         source="sp5:SHIFT",
-                    )
-                    demands.append(
-                        Demand(
-                            id=f"sp5:demand:{row.get('_source', 'SHDEM')}:{gid}:{sid}:{wid}:{row['id']}:{d}",
-                            shift_id=shift_id,
-                            position_id=position_id,
-                            minimum=row["min"],
-                            maximum=None if row["max"] == -1 else row["max"],
-                            source=f"sp5:{row.get('_source', 'SHDEM')}",
-                        )
+                    ))
+                    # One duty at one workplace on one day is one requirement,
+                    # however many groups state it. The groups decide who may
+                    # staff it; their numbers are alternatives, not a sum.
+                    demand_cells.setdefault((sid, wid, d), []).append(
+                        (gid, row, shift_id)
                     )
                 except ValueError as exc:
                     unresolved.append(f"SHIFT {sid} {d}: {exc}")
             d += timedelta(days=1)
+    merged_cells = 0
+    for (sid, wid, day), contributions in sorted(demand_cells.items(), key=lambda item: str(item[0])):
+        by_group = {}
+        for gid, row, shift_id in contributions:
+            by_group.setdefault(gid, []).append((row, shift_id))
+        team_ids = sorted({f"sp5:group:{gid}" for gid in by_group}, key=lambda t: int(t.rsplit(":", 1)[1]))
+        # Several groups stating the same duty at the same workplace and day
+        # state alternatives, not a sum: the highest group requirement counts
+        # and every stating group may staff it. Rows within one group keep
+        # their own additive meaning, including an explicit MAX=0 ban.
+        winner = max(
+            by_group,
+            key=lambda gid: (sum(row["min"] for row, _ in by_group[gid]), -int(gid)),
+        )
+        if len(by_group) > 1:
+            merged_cells += 1
+        for row, shift_id in by_group[winner]:
+            demand_id = f"sp5:demand:{row.get('_source', 'SHDEM')}:{winner}:{sid}:{wid}:{row['id']}:{day}"
+            if len(by_group) > 1:
+                metadata["provenance"][demand_id] = {
+                    "merged_requirements": [
+                        {"group_id": gid, "row_id": r["id"],
+                         "native_min": r["min"], "native_max": r["max"]}
+                        for gid in sorted(by_group, key=int) for r, _ in by_group[gid]
+                    ],
+                    "interpretation": "group-alternatives-v1",
+                }
+            demands.append(
+                Demand(
+                    id=demand_id,
+                    shift_id=shift_id,
+                    position_id=f"sp5:position:{sid}:{wid}",
+                    minimum=row["min"],
+                    maximum=None if row["max"] == -1 else row["max"],
+                    team_ids=team_ids,
+                    source=f"sp5:{row.get('_source', 'SHDEM')}",
+                )
+            )
+    metadata["merged_group_requirements"] = merged_cells
+    if merged_cells:
+        unresolved.append(
+            f"{merged_cells} Bedarfszellen werden von mehreren Teams gefordert. "
+            "Übernommen wird je Dienst, Arbeitsplatz und Tag die höchste Teamanforderung, "
+            "nicht deren Summe; alle fordernden Teams dürfen besetzen. "
+            "Prüfen, ob einzelne Teams dennoch eigenes Personal benötigen."
+        )
     native_restrictions = db.get_restrictions()
     restriction_counts = dict.fromkeys(
         ("outside_employee_scope", "outside_shift_scope", "outside_day_scope",
@@ -725,8 +766,12 @@ def import_snapshot(
                         and shifts[demand.shift_id].segments[0].start.date() == d
                         and positions[demand.position_id].function_id == f"sp5:service:{row['shift_id']}"
                     ]
-                    team_candidates = [demand for demand in date_service_candidates
-                                       if shifts[demand.shift_id].team_id in member_teams]
+                    # Same scope as staffing eligibility: every group stating
+                    # the requirement may fill it, not only the first one.
+                    team_candidates = [
+                        demand for demand in date_service_candidates
+                        if (set(demand.team_ids) or {shifts[demand.shift_id].team_id}) & member_teams
+                    ]
                     workplace_candidates = [demand for demand in team_candidates
                                             if wid in (None, "") or positions[demand.position_id].workplace_id
                                             in {f"sp5:workplace:{wid}", "sp5:workplace:0"}]

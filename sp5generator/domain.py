@@ -115,7 +115,7 @@ def eligibility(snapshot, employee, demand):
                 break
     if not employee.employment_start <= first <= last <= employee.employment_end:
         reasons.append("employment")
-    if shift.team_id not in employee.team_ids:
+    if (set(demand.team_ids) or {shift.team_id}).isdisjoint(employee.team_ids):
         reasons.append("team")
     if shift.kind not in employee.allowed_kinds:
         reasons.append("kind")

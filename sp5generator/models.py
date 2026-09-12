@@ -118,6 +118,9 @@ class Demand(Model):
     position_id: str
     minimum: int = Field(ge=0)
     maximum: int | None = Field(ge=0, description="Null means no upper staffing limit; zero prohibits staffing")
+    # Groups whose source requirements this demand merges; they decide who may
+    # staff it. Empty keeps the shift's own team as the only eligible group.
+    team_ids: list[str] = Field(default_factory=list)
     source: str = 'additional'
 
 class Assignment(Model):

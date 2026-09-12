@@ -333,7 +333,7 @@ def test_reference_can_match_unbound_demand(workplace):
 
 
 @pytest.mark.parametrize("explicit_group", [None, 2])
-def test_multigroup_reference_requires_unique_group_mapping(explicit_group):
+def test_multigroup_requirement_merges_into_one_staffable_demand(explicit_group):
     class Source(ExistingPlanDatabase):
         def get_groups(self):
             return [{"ID": 1}, {"ID": 2}]
@@ -347,16 +347,19 @@ def test_multigroup_reference_requires_unique_group_mapping(explicit_group):
                     for row in super().get_schedule(year, month, **kw)]
     snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6),
                                timezone="UTC", team_ids=["1", "2"])
-    assert len(snapshot.demands) == 2
+    # Both groups state the same duty at the same workplace and day: one
+    # requirement, staffable from either group, so the existing duty maps
+    # without an ambiguous group choice whether or not the source names one.
+    demand, = snapshot.demands
+    assert (demand.minimum, demand.maximum) == (1, 2)
+    assert demand.team_ids == ["sp5:group:1", "sp5:group:2"]
     assert len(snapshot.metadata["reference_schedule"]) == 1
-    if explicit_group is None:
-        assert not snapshot.assignments
-        assert snapshot.metadata["reference_schedule"][0]["resolution"] == "ambiguous"
-    else:
-        assert len(snapshot.assignments) == 1
-        demand = next(d for d in snapshot.demands if d.id == snapshot.assignments[0].demand_id)
-        shift = next(s for s in snapshot.shifts if s.id == demand.shift_id)
-        assert shift.team_id == "sp5:group:2"
+    reference, = snapshot.metadata["reference_schedule"]
+    assert "resolution" not in reference and reference["demand_id"] == demand.id
+    assignment, = snapshot.assignments
+    assert assignment.demand_id == demand.id
+    assert [entry["group_id"] for entry
+            in snapshot.metadata["provenance"][demand.id]["merged_requirements"]] == [1, 2]
 
 
 @pytest.mark.parametrize("maximum", [0, -1, 3])

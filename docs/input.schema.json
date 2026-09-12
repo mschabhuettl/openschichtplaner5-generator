@@ -212,6 +212,13 @@
           "description": "Null means no upper staffing limit; zero prohibits staffing",
           "title": "Maximum"
         },
+        "team_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Team Ids",
+          "type": "array"
+        },
         "source": {
           "default": "additional",
           "title": "Source",
@@ -332,6 +339,19 @@
           "minimum": 0,
           "title": "Target Minutes",
           "type": "integer"
+        },
+        "contractual_weekly_minutes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contractual Weekly Minutes"
         },
         "balance_minutes": {
           "default": 0,
