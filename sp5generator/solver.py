@@ -413,6 +413,10 @@ def solve(snapshot, time_limit=30, partial=False):
                 for day in dates_by_shift[d.shift_id]:
                     if day.weekday() >= 5:
                         period_weekend[day - timedelta(days=day.weekday())].append(x)
+                # Personal context is no staffing choice: it has no position
+                # and satisfies no preference.
+                if d.shift_id in boundary_keys:
+                    continue
                 if e.preferred_kind and e.preferred_kind != s.kind:
                     cost("preferences", x, snapshot.objectives.wishes)
                 if (

@@ -256,3 +256,20 @@ def test_work_without_times_states_exactly_one_day(problem, code):
         work.day = date(2026, 1, 4)
     assert code in {d.code for d in validate(snapshot, []).diagnostics}
     assert solve(snapshot, 5, partial=True).solver_status == "MODEL_INVALID"
+
+
+@pytest.mark.parametrize("preference", ["preferred_kind", "preferred_functions"])
+def test_personal_context_satisfies_no_staffing_preference(preference):
+    """Context is not a demand: it has no position and no preference to miss."""
+    snapshot = convert(boundary_case("rest"))
+    work = snapshot.boundary_work[0]
+    work.in_period = True
+    snapshot.period_start = work.segments[0].start.date()
+    employee = snapshot.employees[0]
+    if preference == "preferred_kind":
+        employee.preferred_kind = "night" if work.kind == "day" else "day"
+    else:
+        employee.preferred_functions = ["sp5:service:other"]
+    result = solve(snapshot, 5, partial=True)
+    assert result.validation.valid
+    assert result.metrics["objective_contributions"].get("preferences", 0) == 0
