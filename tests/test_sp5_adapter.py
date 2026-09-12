@@ -428,7 +428,11 @@ def test_special_detail_matches_only_identical_nominal_time(end):
     snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
     assert bool(snapshot.assignments) == (end == "13:00")
     assert snapshot.metadata["context_schedule"][0]["startend"]
-    assert any(text.startswith("Sonderdienst") for text in snapshot.unresolved) == (end != "13:00")
+    # Only identical nominal time covers the demand; anything else is personal
+    # work with the source's own times, never a silently dropped duty.
+    assert bool(snapshot.boundary_work) == (end != "13:00")
+    assert snapshot.metadata["personal_period_work"] == (0 if end == "13:00" else 1)
+    assert not any(text.startswith("Sonderdienst") for text in snapshot.unresolved)
 
 
 def test_unused_native_time_slot_is_not_imported_as_a_full_day():
@@ -1036,8 +1040,19 @@ def test_explicit_special_boundary_uses_actual_work_not_nominal(outside, actual,
         assert not any(text.startswith("Sonderdienst") for text in snapshot.unresolved)
         assert "boundary_kind" in {d.code for d in input_diagnostics(snapshot)}
     else:
-        assert not snapshot.boundary_work  # Not a bypass for in-period paid work.
-        assert any(text.startswith("Sonderdienst") for text in snapshot.unresolved)
+        # In-period paid work is modelled, not bypassed: the source times and
+        # paid minutes are kept, the person is blocked, and no demand is covered.
+        work, = snapshot.boundary_work
+        assert work.in_period and work.kind == "unknown"
+        assert work.paid_minutes == paid * 60
+        assert sum(b - a for a, b in segments(work)) == elapsed
+        source = snapshot.metadata["provenance"][work.id]
+        assert source["time_source"] == "sp5:SPSHI.STARTEND"
+        assert source["paid_minutes"] == paid * 60
+        assert not any(text.startswith("Sonderdienst") for text in snapshot.unresolved)
+        assert any("als persönliche Arbeit" in text for text in snapshot.unresolved)
+        codes = {d.code for d in input_diagnostics(snapshot)}
+        assert "boundary_kind" in codes and "boundary_period" not in codes
 
 
 @pytest.mark.parametrize("actual,paid", [

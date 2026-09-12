@@ -110,6 +110,12 @@ class BoundaryWork(Model):
     employee_id: str
     segments: list[Interval]
     kind: Literal['day', 'night', 'unknown'] = 'unknown'
+    # Explicit personal work inside the planning period that no staffing demand
+    # describes. It blocks the person like any other duty and contributes its
+    # stated paid minutes to the period target; it never covers a demand.
+    in_period: bool = False
+    paid_minutes: int = Field(default=0, ge=0)
+    holiday: bool = False
     source: str = 'additional'
 
 class Demand(Model):

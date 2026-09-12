@@ -121,6 +121,10 @@ def solve(snapshot, time_limit=30, partial=False):
         best.runtime_seconds = monotonic() - started
         return best
 
+    personal_period_paid = defaultdict(int)
+    for work in snapshot.boundary_work:
+        if work.in_period:
+            personal_period_paid[work.employee_id] += work.paid_minutes
     issues = input_diagnostics(snapshot)
     timings["input_validation"] = monotonic() - started
     if issues:
@@ -590,7 +594,7 @@ def solve(snapshot, time_limit=30, partial=False):
                             <= limit
                         )
         upper = (
-            sum(shifts[d.shift_id].paid_minutes for d, x in entries if d.shift_id not in boundary_keys)
+            sum(shifts[d.shift_id].paid_minutes for d, x in entries)
             + abs(e.balance_minutes)
             + e.credit_minutes
             + e.target_minutes
@@ -927,7 +931,9 @@ def solve(snapshot, time_limit=30, partial=False):
                 <= shift_day[demands[a.demand_id].shift_id]
                 <= snapshot.period_end
             ]
-            paid = sum(s.paid_minutes for s in selected)
+            # Explicit personal work inside the period is worked and paid
+            # time as well; the reported figure must match the objective.
+            paid = sum(s.paid_minutes for s in selected) + personal_period_paid[e.id]
             metrics["employees"][e.id] = {
                 "paid_minutes": paid,
                 "target_minutes": e.target_minutes,
@@ -1149,7 +1155,9 @@ def solve(snapshot, time_limit=30, partial=False):
                 <= shift_day[demands[a.demand_id].shift_id]
                 <= snapshot.period_end
             ]
-            paid = sum(s.paid_minutes for s in selected)
+            # Explicit personal work inside the period is worked and paid
+            # time as well; the reported figure must match the objective.
+            paid = sum(s.paid_minutes for s in selected) + personal_period_paid[e.id]
             metrics["employees"][e.id] = {
                 "paid_minutes": paid,
                 "target_minutes": e.target_minutes,

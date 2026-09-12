@@ -332,7 +332,7 @@ def input_diagnostics(snapshot):
                       employee_id=work.employee_id)
             if work.segments:
                 first = local_day(bounds(work)[0], snapshot.timezone)
-                if snapshot.period_start <= first <= snapshot.period_end:
+                if snapshot.period_start <= first <= snapshot.period_end and not work.in_period:
                     issue("boundary_period", "Randarbeit darf nicht im Planungszeitraum beginnen: " + work.id,
                           employee_id=work.employee_id)
                 # Explicit fixations stay strict; dual representation is not a migration.

@@ -197,7 +197,9 @@ def test_http_time_slots_match_library_for_demand_and_boundary(transport, slot, 
             for s in duty.segments] == expected
     assert day_minutes(duty, snapshot.timezone) == {duty_day: 90}
     if boundary:
-        assert not hasattr(duty, "paid_minutes")
+        # Context outside the period carries no paid time; the nominal catalog
+        # duration is never copied onto it.
+        assert (duty.paid_minutes, duty.in_period) == (0, False)
         assert not snapshot.assignments
         assert duty.kind == "unknown"
         assert snapshot.metadata["provenance"][duty.id]["time_source"] == f"sp5:SHIFT.STARTEND{slot}"
@@ -519,8 +521,14 @@ def test_special_duty_details_use_live_read_only_endpoint_and_never_guess(transp
 
     snapshot = import_api(date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
 
+    # Only fully matching details cover the demand. Usable individual details
+    # become personal work; unusable ones stay an open source question.
+    individual = case in ("longer", "paid_only")
     assert bool(snapshot.assignments) == (case == "nominal")
-    assert any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved) == (case != "nominal")
+    assert bool(snapshot.boundary_work) == individual
+    assert snapshot.metadata["personal_period_work"] == int(individual)
+    assert any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved) == (
+        case not in ("nominal", "longer", "paid_only"))
     assert snapshot.employees[0].approvals == []
     detail_calls = [urlsplit(c.full_url) for c in calls if urlsplit(c.full_url).path == "/api/einsatzplan"]
     assert detail_calls
@@ -674,7 +682,15 @@ def test_in_period_unresolved_special_never_becomes_free_time(transport, plan, r
         "startend": "08:00-14:00", "duration": 4,
     }]
     snapshot = import_api(day, day, "1", "UTC", reference_plan=plan, existing_plan_mode=mode)
-    assert any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved)
+    # A known duty with its own times becomes personal work; an unknown one
+    # stays an open source question. Neither ever turns into free time.
+    if replacement:
+        work, = snapshot.boundary_work
+        assert work.in_period and work.paid_minutes == 240
+        assert any("als persönliche Arbeit" in issue for issue in snapshot.unresolved)
+    else:
+        assert not snapshot.boundary_work
+        assert any(issue.startswith("Sonderdienst") for issue in snapshot.unresolved)
     assert len(snapshot.metadata["context_schedule"]) == 2
     expected = 0 if replacement and plan == "ist" else 1
     assert len(snapshot.metadata["reference_schedule"]) == expected

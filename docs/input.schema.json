@@ -165,6 +165,22 @@
           "title": "Kind",
           "type": "string"
         },
+        "in_period": {
+          "default": false,
+          "title": "In Period",
+          "type": "boolean"
+        },
+        "paid_minutes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Paid Minutes",
+          "type": "integer"
+        },
+        "holiday": {
+          "default": false,
+          "title": "Holiday",
+          "type": "boolean"
+        },
         "source": {
           "default": "additional",
           "title": "Source",

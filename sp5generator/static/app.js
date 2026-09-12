@@ -879,6 +879,20 @@ function renderCalendar(){
  if(key===null||!visibleKeys.has(key))return;
  const touched=new Map();segments.forEach(segment=>{const first=localDay(segment.start),end=localDay(new Date(new Date(segment.end).getTime()-1)),time=`${localTime(segment.start)}–${localTime(segment.end)}${first!==end?' ↪':''}`;for(let day=first<start?start:first;day<=end&&day<=last;day=dayOffset(day,1)){if(!touched.has(day))touched.set(day,[]);touched.get(day).push(time);}});
  touched.forEach((times,day)=>{const cellKey=JSON.stringify([key,day]);if(!indexed.has(cellKey))indexed.set(cellKey,[]);indexed.get(cellKey).push({a,index,shift,position,employee,timeLabel:times.join(' / ')});});});
+ // Personal work inside the period blocks the person without covering a
+ // demand. Showing it explains why someone is not available that day.
+ const personal=new Map();
+ if(!byPosition)for(const work of snapshot.boundary_work??[]){
+  if(!work.in_period||!idx.employees.has(work.employee_id)||!visibleKeys.has(work.employee_id))continue;
+  const origin=snapshot.metadata?.provenance?.[work.id];
+  const label=(origin?.name||'Persönliche Arbeit');
+  const touched=new Map();
+  for(const segment of work.segments){const first=localDay(segment.start),end=localDay(new Date(new Date(segment.end).getTime()-1));
+   const time=`${localTime(segment.start)}–${localTime(segment.end)}${first!==end?' ↪':''}`;
+   for(let day=first<start?start:first;day<=end&&day<=last;day=dayOffset(day,1)){if(!touched.has(day))touched.set(day,[]);touched.get(day).push(time);}}
+  touched.forEach((times,day)=>{const cellKey=JSON.stringify([work.employee_id,day]);
+   if(!personal.has(cellKey))personal.set(cellKey,[]);personal.get(cellKey).push({work,label,timeLabel:times.join(' / ')});});
+ }
  const gaps=new Map();let required=0,filled=0;
  for(const demand of snapshot.demands){const shift=idx.shifts.get(demand.shift_id),position=idx.positions.get(demand.position_id),first=shift?.segments[0]?.start;if(!first)continue;const day=localDay(first);if(day<start||day>last||day<snapshot.period_start||day>snapshot.period_end)continue;
  const staffed=counts.get(demand.id)?.size??0;required+=demand.minimum;filled+=Math.min(demand.minimum,staffed);const gap=Math.max(0,demand.minimum-staffed);
@@ -887,6 +901,8 @@ function renderCalendar(){
  view.items.forEach(row=>{const tr=el('tr',undefined,body);const th=el('th',row.name,tr);th.scope='row';days.forEach(day=>{const td=el('td',undefined,tr);td.dataset.date=day;if(weekends.has(day))td.classList.add('weekend');if(day<snapshot.period_start||day>snapshot.period_end)td.classList.add('outside-period');
  const cellKey=JSON.stringify([rowKey(row),day]);(indexed.get(cellKey)??[]).forEach(x=>{
  const badge=button(td,`${x.a.fixed?'◆ ':''}${byPosition?(x.employee?.name??'Unbekannte Person'):(x.shift?.name??'Dienst')}\n${x.timeLabel}${!byPosition?'\n'+(x.position?.name??''):''}`,()=>focusAssignment(x.index));badge.className='shift-badge '+(x.shift?.kind==='night'?'night':'day');badge.title=`${x.employee?.name??''} · ${x.position?.name??''}${x.a.fixed?' · Fixiert':''}`;});
+ (personal.get(cellKey)??[]).forEach(x=>{const badge=el('span',`◼ ${x.label}\n${x.timeLabel}`,td);badge.className='personal-badge';
+ badge.title=`Persönliche Arbeit aus der Quelle · ${x.work.paid_minutes} bezahlte Minuten · deckt keinen Bedarf, sperrt aber die Person.`;});
  (gaps.get(cellKey)??[]).forEach(({demand,gap})=>{const badge=button(td,`${gap} offen`,()=>{const state=pageState('demands',40);state.query=demand.id;state.page=0;navigate('rules');const details=$('demands').closest('details');if(details)details.open=true;renderDemands();$('demands').scrollIntoView({block:'center',behavior:'smooth'});});badge.className='vacancy-badge';badge.title=demandLabel(demand);});});});
  if(!view.total)el('p','Keine passenden Personen oder Dienste. Suche anpassen.',view.content);
  else if(!assignments.length)el('p','Noch keine Einteilungen. Berechnen oder Einteilungen im Detailbereich ergänzen.',view.content);

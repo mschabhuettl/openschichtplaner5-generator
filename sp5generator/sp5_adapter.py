@@ -328,6 +328,7 @@ def import_snapshot(
             "DADEM: Verhältnis zum Schichtbedarf und Zeitfenster noch zu klären."
         )
         metadata["unresolved_native"]["daily_requirements"] = daily
+    personal_period_work = 0
     special_cells = {}
     for row in checked_staffing_rows(specials, "SPDEM", "special_requirements"):
         if any(row.get(k) is None for k in ("group_id", "shift_id", "workplace_id", "min", "max")):
@@ -708,6 +709,7 @@ def import_snapshot(
             kind = row.get("kind")
             special_windows = None
             special_paid = None
+            personal_in_period = False
             if kind == "shift" and (row.get("employee_id"), d) in replaced_rows:
                 # Preserve raw context above; unknown special times still block.
                 continue
@@ -724,8 +726,13 @@ def import_snapshot(
                             kind = "shift"
                         else:
                             nominal = _parse_native_windows(native_shifts[row["shift_id"]].get(f"STARTEND{idx}"))
-                            if actual == nominal and actual_paid == _minutes(native_shifts[row["shift_id"]].get(f"DURATION{idx}")):
-                                kind = "shift"
+                            kind = "shift"
+                            if actual != nominal or actual_paid != _minutes(native_shifts[row["shift_id"]].get(f"DURATION{idx}")):
+                                # Individual times and paid minutes: real work no
+                                # nominal staffing demand describes. Keep it as
+                                # personal work instead of dropping the hours.
+                                special_windows, special_paid = actual, actual_paid
+                                personal_in_period = True
                 except ValueError:
                     pass
             if kind == "absence":
@@ -751,7 +758,7 @@ def import_snapshot(
                 except ValueError as exc:
                     unresolved.append(f"ABSEN {eid} {d}: {exc}")
             elif kind == "shift" and row.get("shift_id") in native_shifts:
-                if period_start <= d <= period_end:
+                if period_start <= d <= period_end and not personal_in_period:
                     # A baseline must reference actual demand, never create it.
                     member_teams = set(employee_map[eid].team_ids) & {
                         f"sp5:group:{g}" for g in scope
@@ -856,8 +863,13 @@ def import_snapshot(
                         employee_id=eid,
                         segments=segments,
                         kind="unknown",
+                        in_period=personal_in_period,
+                        paid_minutes=special_paid if personal_in_period else 0,
+                        holiday=d in holidays,
                         source="sp5:existing",
                     )
+                    if personal_in_period:
+                        personal_period_work += 1
                 except ValueError as exc:
                     unresolved.append(f"Bestehender Dienst {eid} {d}: {exc}")
             else:
@@ -865,6 +877,14 @@ def import_snapshot(
                     f"Sonderdienst {eid} {d}: individuelle Zeit-/Stundenabweichung oder fehlende eindeutige Detailzuordnung; gezielt ergänzen."
                 )
         month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+    metadata["personal_period_work"] = personal_period_work
+    if personal_period_work:
+        unresolved.append(
+            f"{personal_period_work} Sonderdienste im Planungszeitraum haben eigene Zeiten und "
+            "bezahlte Minuten aus der Quelle. Sie werden als persönliche Arbeit übernommen: Sie "
+            "sperren die Person wie jeder andere Dienst und zählen auf das Periodensoll, decken "
+            "aber keinen Besetzungsbedarf. Zuordnung und Dienstart fachlich prüfen."
+        )
     # The source selects start dates, while context contains complete intervals.
     # Extending that envelope does not certify coverage of unqueried dates.
     for work in [*shifts.values(), *boundary_work.values()]:
