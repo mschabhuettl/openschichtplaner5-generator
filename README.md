@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.10.0** stellt den Ablauf vom Import bis zum geprüften Plan wieder her: Widersprüche zwischen zwei bestehenden Quelldiensten machen nicht mehr jeden Plan unlösbar, sondern werden benannt. Fordern mehrere Teams denselben Dienst am selben Arbeitsplatz und Tag, gilt die höchste Teamanforderung statt deren Summe, und alle fordernden Teams dürfen besetzen. Sammelbefehle für Vorschläge, offene Importangaben und die 11/36-Ruhevorgaben stehen sichtbar über der jeweiligen Liste; sichtbare Datumsangaben lauten TT.MM.JJJJ. Die [Releasehinweise](docs/release-0.10.0.md) trennen Prüfstand und offene Grenzen. Harte Regeln bleiben unverändert, Freigaben und Bedarfe werden nicht ergänzt, und ein Team-CSV-Export ist nicht enthalten.
+**Version 0.11.0** ergänzt 0.10.0: Das geladene Team lässt sich als CSV für Excel herunterladen und bearbeitet wieder einlesen – geprüft, mit Vorschau, und ohne dass jemand angelegt oder gelöscht wird; Freigaben, Qualifikationen und Einteilungen bleiben unberührt. Besetzungsengpässe werden zusätzlich je Dienst zusammengefasst und zeigen, ob eine Freigabe fehlt oder ein Kapazitätskonflikt vorliegt. Die [Releasehinweise](docs/release-0.11.0.md) trennen Prüfstand und offene Grenzen. Harte Regeln, Freigaben und Bedarfe bleiben unverändert.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -53,7 +53,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.10.0-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.11.0-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
