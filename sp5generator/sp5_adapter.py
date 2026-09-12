@@ -960,6 +960,30 @@ def import_snapshot(
             "sperren die Person wie jeder andere Dienst und zählen auf das Periodensoll, decken "
             "aber keinen Besetzungsbedarf. Zuordnung und Dienstart fachlich prüfen."
         )
+    missing_services = set()
+    missing_slots = 0
+    if metadata["reference_schedule"]:
+        required_demands = [demand for demand in demands if demand.minimum > 0]
+        reference_services = {
+            f"sp5:service:{row['shift_id']}" for row in metadata["reference_schedule"]
+        }
+        missing_services = {
+            positions[demand.position_id].function_id for demand in required_demands
+        } - reference_services
+        missing_slots = sum(
+            demand.minimum for demand in required_demands
+            if positions[demand.position_id].function_id in missing_services
+        )
+    metadata["demanded_without_reference"] = {
+        "services": len(missing_services), "slots": missing_slots,
+    }
+    if missing_services:
+        unresolved.append(
+            f"{len(missing_services)} geforderte Dienstarten mit {missing_slots} Pflichtplätzen "
+            "kommen im Vergleichsplan des Zeitraums nicht vor. Bedarf und tatsächliches "
+            "Dienstgeschehen weichen dort voneinander ab, was offene Stellen erklären kann. "
+            "Es wird kein Bedarf geändert und keine Freigabe erteilt."
+        )
     # The source selects start dates, while context contains complete intervals.
     # Extending that envelope does not certify coverage of unqueried dates.
     for work in [*shifts.values(), *boundary_work.values()]:

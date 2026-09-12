@@ -325,6 +325,54 @@ class ExistingPlanDatabase(SyntheticDatabase):
                  "shift_id": 201, "workplace_id": 301}]
 
 
+@pytest.mark.parametrize(
+    "reference_services,services,slots",
+    [([201, 202], 0, 0), ([204], 2, 6), ([202], 1, 3), ([], 0, 0)],
+    ids=["matching", "missing", "partly_matching", "empty"],
+)
+def test_demanded_without_reference_counts_services_and_required_slots(
+    reference_services, services, slots
+):
+    class Source(SyntheticDatabase):
+        def get_shifts(self, **kw):
+            shift = super().get_shifts()[0]
+            return [{**shift, "ID": service, "NAME": f"Testdienst {service}"}
+                    for service in (201, 202, 203, 204)]
+
+        def get_workplaces(self, **kw):
+            return super().get_workplaces() + [{"ID": 302, "NAME": "Arbeitsplatz 2"}]
+
+        def get_staffing_requirements(self):
+            row = super().get_staffing_requirements()["shift_requirements"][0]
+            return {"shift_requirements": [
+                row,
+                {**row, "id": 402, "workplace_id": 302, "min": 2},
+                {**row, "id": 403, "shift_id": 202, "min": 3, "max": 3},
+                {**row, "id": 404, "shift_id": 203, "min": 0, "max": 4},
+            ]}
+
+        def get_schedule(self, year, month, **kw):
+            if (year, month) != (2026, 1):
+                return []
+            return [{"employee_id": 101, "date": "2026-01-06", "kind": "shift",
+                     "shift_id": service, "workplace_id": 301}
+                    for service in reference_services]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert [row["shift_id"] for row in snapshot.metadata["reference_schedule"]] == reference_services
+    assert snapshot.metadata["demanded_without_reference"] == {"services": services, "slots": slots}
+    messages = [message for message in snapshot.unresolved if "geforderte Dienstarten" in message]
+    assert len(messages) == (1 if services else 0)
+    if services:
+        assert messages[0].startswith(
+            f"{services} geforderte Dienstarten mit {slots} Pflichtplätzen "
+            "kommen im Vergleichsplan des Zeitraums nicht vor."
+        )
+        assert "Testdienst" not in messages[0] and "Testperson" not in messages[0]
+    assert sorted((d.minimum, d.maximum) for d in snapshot.demands) == [(0, 4), (1, 2), (2, 2), (3, 3)]
+    assert not snapshot.employees[0].approvals
+
+
 @pytest.mark.parametrize("mode,fixed", [("reference", False), ("fixed", True)])
 def test_existing_plan_maps_actual_demand_without_duplicate_staffing(mode, fixed):
     snapshot = import_snapshot(ExistingPlanDatabase(), date(2026, 1, 1), date(2026, 1, 31),
