@@ -55,7 +55,8 @@
  function preview(snapshot,rule){
   suggest({times:[]},rule.start,rule.end,rule.minimum);
   const rows=groups(snapshot).filter(g=>g.pending).map(group=>({group,proposal:suggest(group,rule.start,rule.end,rule.minimum)}));
-  const pending=snapshot.shifts.filter(s=>s.kind==='unconfirmed').length+(snapshot.boundary_work??[]).filter(w=>w.kind==='unknown').length;
+  // Work without source times has no day or night to confirm: it is not open.
+  const pending=snapshot.shifts.filter(s=>s.kind==='unconfirmed').length+(snapshot.boundary_work??[]).filter(w=>w.kind==='unknown'&&w.segments.length).length;
   let day=0,night=0;
   for(const {group,proposal} of rows)if(proposal?.kind==='day')day+=group.pending;else if(proposal?.kind==='night')night+=group.pending;
   return {rows,pending,day,night,skipped:pending-day-night};

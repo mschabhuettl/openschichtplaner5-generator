@@ -170,6 +170,19 @@
           "title": "In Period",
           "type": "boolean"
         },
+        "day": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Day"
+        },
         "paid_minutes": {
           "default": 0,
           "minimum": 0,

@@ -329,6 +329,8 @@ def import_snapshot(
         )
         metadata["unresolved_native"]["daily_requirements"] = daily
     personal_period_work = 0
+    untimed_period_work = 0
+    untimed_context_work = 0
     special_cells = {}
     for row in checked_staffing_rows(specials, "SPDEM", "special_requirements"):
         if any(row.get(k) is None for k in ("group_id", "shift_id", "workplace_id", "min", "max")):
@@ -758,6 +760,47 @@ def import_snapshot(
                 except ValueError as exc:
                     unresolved.append(f"ABSEN {eid} {d}: {exc}")
             elif kind == "shift" and row.get("shift_id") in native_shifts:
+                native = native_shifts[row["shift_id"]]
+                idx = calc.day_index(d, holidays)
+                try:
+                    untimed = not _parse_native_windows(native.get(f"STARTEND{idx}"))
+                except ValueError:
+                    untimed = False
+                if period_start <= d <= period_end and untimed and not personal_in_period:
+                    # A service the source gives no times for states no staffing
+                    # demand either. The duty is still the person's real work:
+                    # keep its day and its paid minutes instead of losing both.
+                    sid = (f"sp5:context:{row['employee_id']}:{d}:{row['shift_id']}"
+                           f":workplace:{row.get('workplace_id') or 'unresolved'}"
+                           f":group:{row.get('group_id') or 'unresolved'}:untimed")
+                    if sid in boundary_work:
+                        continue
+                    try:
+                        paid = _minutes(native.get(f"DURATION{idx}"))
+                    except ValueError as exc:
+                        unresolved.append(f"Bestehender Dienst {eid} {d}: {exc}")
+                        continue
+                    metadata["provenance"][sid] = {
+                        "function_id": f"sp5:service:{row['shift_id']}",
+                        "name": native.get("NAME", ""),
+                        "schedule_group_id": row.get("group_id"),
+                        "workplace_id": row.get("workplace_id"),
+                        "time_source": f"sp5:SHIFT.STARTEND{idx} ohne Zeitangabe",
+                        "paid_source": f"sp5:SHIFT.DURATION{idx}",
+                        "paid_minutes": paid,
+                    }
+                    boundary_work[sid] = BoundaryWork(
+                        id=sid,
+                        employee_id=eid,
+                        segments=[],
+                        day=d,
+                        in_period=True,
+                        paid_minutes=paid,
+                        holiday=d in holidays,
+                        source="sp5:existing",
+                    )
+                    untimed_period_work += 1
+                    continue
                 if period_start <= d <= period_end and not personal_in_period:
                     # A baseline must reference actual demand, never create it.
                     member_teams = set(employee_map[eid].team_ids) & {
@@ -815,8 +858,12 @@ def import_snapshot(
                                 f"Bestehender Dienst {eid} {d}: keine eindeutige Zuordnung zum tatsächlichen Besetzungsbedarf."
                             )
                     continue
-                native = native_shifts[row["shift_id"]]
-                idx = calc.day_index(d, holidays)
+                if special_windows is None and untimed:
+                    # Outside the period only times inform rest. A service the
+                    # source gives none for has nothing to place there; report
+                    # the group once instead of every duty as a defect.
+                    untimed_context_work += 1
+                    continue
                 try:
                     windows = special_windows if special_windows is not None else _parse_native_windows(
                         str(native.get(f"STARTEND{idx}") or "")
@@ -877,6 +924,22 @@ def import_snapshot(
                     f"Sonderdienst {eid} {d}: individuelle Zeit-/Stundenabweichung oder fehlende eindeutige Detailzuordnung; gezielt ergänzen."
                 )
         month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+    metadata["untimed_period_work"] = untimed_period_work
+    metadata["untimed_context_work"] = untimed_context_work
+    if untimed_period_work:
+        unresolved.append(
+            f"{untimed_period_work} bestehende Dienste im Planungszeitraum gehören zu Dienstarten, "
+            "für die die Quelle keine Uhrzeiten angibt. Sie werden als persönliche Arbeit ohne "
+            "Zeiten übernommen: Sie halten den Tag frei von weiteren Einteilungen und zählen mit "
+            "ihren bezahlten Minuten auf das Periodensoll, decken aber keinen Besetzungsbedarf. Eine "
+            "Ruhezeit zum Vortag oder Folgetag lässt sich ohne Zeiten nicht prüfen."
+        )
+    if untimed_context_work:
+        unresolved.append(
+            f"{untimed_context_work} bestehende Dienste außerhalb des Planungszeitraums gehören zu "
+            "Dienstarten ohne Uhrzeiten in der Quelle. Sie bleiben ohne Zeiten und können keine "
+            "Ruhezeit vor oder nach dem Planungszeitraum belegen."
+        )
     metadata["personal_period_work"] = personal_period_work
     if personal_period_work:
         unresolved.append(
@@ -888,6 +951,10 @@ def import_snapshot(
     # The source selects start dates, while context contains complete intervals.
     # Extending that envelope does not certify coverage of unqueried dates.
     for work in [*shifts.values(), *boundary_work.values()]:
+        if not work.segments:
+            # A day stated without times widens nothing beyond its own date.
+            context_start, context_end = min(context_start, work.day), max(context_end, work.day)
+            continue
         start, end = work_bounds(work)
         context_start = min(context_start, local_day(start, timezone))
         context_end = max(context_end, local_day(end - 1, timezone))

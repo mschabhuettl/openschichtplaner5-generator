@@ -21,6 +21,7 @@ from .timeutils import (
     bounds,
     local_day,
     day_minutes,
+    day_of,
     dates,
     segments,
     midnight,
@@ -177,6 +178,7 @@ def solve(snapshot, time_limit=30, partial=False):
         "qualification": "zusätzlicher Qualifikationsnachweis",
         "restriction": "Dienstsperre",
         "absence": "Abwesenheit",
+        "personal_work": "persönliche Arbeit ohne Zeitangabe an diesem Tag",
         "availability": "Verfügbarkeitsfenster",
         "context": "außerhalb des Planungszeitraums ohne Fixierung",
     }
@@ -304,7 +306,7 @@ def solve(snapshot, time_limit=30, partial=False):
         boundary_keys.add(key)
         shifts[key] = work
         dates_by_shift[key] = day_minutes(work, snapshot.timezone)
-        shift_day[key] = local_day(bounds(work)[0], snapshot.timezone)
+        shift_day[key] = day_of(work, snapshot.timezone)
         by_employee[work.employee_id].append((SimpleNamespace(shift_id=key), 1))
 
     # One conflict edge per pair of duties and rule-profile set. Position

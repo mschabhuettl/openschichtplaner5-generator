@@ -89,7 +89,15 @@ def overlap(a, b):
     return a[0] < b[1] and b[0] < a[1]
 
 
+def day_of(work, zone):
+    """Local day the work falls on; stated directly when it carries no times."""
+    return local_day(bounds(work)[0], zone) if work.segments else work.day
+
+
 def day_minutes(shift, zone):
+    # A day the source states without times occupies no clock minutes.
+    if not shift.segments:
+        return {shift.day: 0}
     out = {}
     for a, b in segments(shift):
         for day in dates(local_day(a, zone), local_day(b - 1, zone)):

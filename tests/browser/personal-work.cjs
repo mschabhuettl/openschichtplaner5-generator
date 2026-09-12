@@ -28,8 +28,21 @@ module.exports=async function personalWork({page,base}){
  assert.equal(await page.evaluate(()=>assignments.length),0,'Personal work is context, never an assignment');
  assert.match(await page.locator('.coverage-summary').first().innerText(),/0 \/ \d+ erforderliche Plätze besetzt/);
 
+ // Work the source states without times shows its day and says so, instead
+ // of a time the source never gave.
+ await page.evaluate(day=>{
+  const work=snapshot.boundary_work[0];
+  work.segments=[];work.day=day;work.kind='unknown';work.paid_minutes=480;
+  renderPlan();
+ },setup.day);
+ const untimed=page.locator('.personal-badge').first();
+ await untimed.waitFor();
+ assert.equal(await untimed.textContent(),'\u25fc Ausbildung\nohne Zeitangabe');
+ assert.match(await untimed.getAttribute('title'),/480 bezahlte Minuten/);
+ assert.equal(await page.locator('.personal-badge').count(),1,'One day, one badge');
+
  // Context outside the period keeps its previous behaviour and stays hidden.
  await page.evaluate(()=>{snapshot.boundary_work[0].in_period=false;renderPlan();});
  assert.equal(await page.locator('.personal-badge').count(),0);
- console.log('Personal work: in-period duty is visible with its paid minutes and covers nothing.');
+ console.log('Personal work: in-period duty is visible with its paid minutes and covers nothing, with or without source times.');
 };

@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.12.0** modelliert persönliche Arbeit im Planungszeitraum: Ein Sonderdienst mit eigenen Zeiten und eigener bezahlter Dauer wird nicht mehr verworfen, sondern übernommen – er sperrt die Person und zählt auf das Periodensoll, deckt aber keinen Besetzungsbedarf und erzeugt keine Einteilung. Der Plankalender zeigt ihn als eigenes Feld. Die [Releasehinweise](docs/release-0.12.0.md) trennen Prüfstand und offene Grenzen. Harte Regeln, Freigaben und Bedarfe bleiben unverändert.
+**Version 0.13.0** verliert keine Arbeit mehr, für die die Quelle keine Uhrzeiten angibt: Backoffice-, Homeoffice-, Fortbildungs- und Dienstreisedienste im Planungszeitraum halten ihren Tag frei und zählen mit ihren bezahlten Minuten auf das Periodensoll, ohne einen Besetzungsbedarf zu decken und ohne erfundene Zeiten. Außerhalb des Zeitraums nennt der Import dafür einmal den tatsächlichen Grund statt eines Defekts je Dienst. Die [Releasehinweise](docs/release-0.13.0.md) trennen Prüfstand und offene Grenzen. Harte Regeln, Freigaben und Bedarfe bleiben unverändert.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 

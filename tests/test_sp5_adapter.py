@@ -1154,3 +1154,75 @@ def test_imported_special_boundary_enforces_actual_time_in_solver_and_validator(
     # Counterfactual proves that dropping the actual work loses this protection.
     without_context = snapshot.model_copy(update={"boundary_work": []})
     assert validate(without_context, proposed).complete
+
+
+class UntimedServiceDatabase(SyntheticDatabase):
+    """A catalog service the source states paid hours but no times for."""
+
+    def get_shifts(self, **kw):
+        return super().get_shifts(**kw) + [{
+            "ID": 202,
+            "NAME": "Backoffice",
+            **{f"STARTEND{i}": "" for i in range(8)},
+            **{f"DURATION{i}": 8 for i in range(8)},
+        }]
+
+    def get_schedule(self, year, month, **kw):
+        if (year, month) != (2026, 1):
+            return []
+        return [{"employee_id": 101, "date": day, "kind": "shift",
+                 "shift_id": 202, "workplace_id": 301, "spshi_type": 0}
+                for day in self.days]
+
+
+def test_untimed_service_inside_the_period_stays_personal_work():
+    from sp5generator.domain import input_diagnostics
+
+    source = UntimedServiceDatabase()
+    source.days = ["2026-01-06"]
+    snapshot = import_snapshot(source, date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    work, = snapshot.boundary_work
+    assert work.day == date(2026, 1, 6) and not work.segments
+    assert work.in_period and work.paid_minutes == 8 * 60 and work.holiday
+    origin = snapshot.metadata["provenance"][work.id]
+    assert origin["time_source"] == "sp5:SHIFT.STARTEND7 ohne Zeitangabe"
+    assert origin["paid_source"] == "sp5:SHIFT.DURATION7"
+    assert snapshot.metadata["untimed_period_work"] == 1
+    assert not snapshot.assignments  # Never invent a demand for personal work.
+    assert any("keine Uhrzeiten angibt" in text for text in snapshot.unresolved)
+    assert not any(text.startswith("Bestehender Dienst") for text in snapshot.unresolved)
+    # Without times there is no day or night to confirm and no invalid interval.
+    codes = {d.code for d in input_diagnostics(snapshot)}
+    assert not codes & {"boundary_kind", "boundary_period", "interval"}
+
+
+def test_untimed_service_outside_the_period_is_reported_once():
+    source = UntimedServiceDatabase()
+    source.days = ["2026-01-02", "2026-01-03", "2026-01-05"]
+    snapshot = import_snapshot(source, date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    assert not snapshot.boundary_work  # No times, nothing to place in the context.
+    assert snapshot.metadata["untimed_context_work"] == 3
+    assert snapshot.metadata["untimed_period_work"] == 0
+    assert sum("Ruhezeit vor oder nach" in text for text in snapshot.unresolved) == 1
+    assert not any(text.startswith("Bestehender Dienst") for text in snapshot.unresolved)
+
+
+def test_missing_day_window_of_a_timed_service_stays_an_open_note():
+    """Only a service without any times is personal work; a gap stays a gap."""
+    class Source(UntimedServiceDatabase):
+        def get_shifts(self, **kw):
+            rows = super().get_shifts(**kw)
+            rows[-1].update({f"STARTEND{i}": "08:00-16:00" for i in range(7)})
+            return rows
+
+    source = Source()
+    source.days = ["2026-01-05", "2026-01-06"]
+    snapshot = import_snapshot(source, date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    # 05.01. is a Monday the catalog states times for; 06.01. uses the holiday
+    # index, which it does not. Each day keeps the shape its own source has.
+    timed, = [w for w in snapshot.boundary_work if w.segments]
+    untimed, = [w for w in snapshot.boundary_work if not w.segments]
+    assert timed.day is None and not timed.in_period
+    assert untimed.day == date(2026, 1, 6) and untimed.in_period
+    assert snapshot.metadata["untimed_period_work"] == 1
+    assert snapshot.metadata["untimed_context_work"] == 0

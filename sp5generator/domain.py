@@ -160,6 +160,13 @@ def eligibility(snapshot, employee, demand):
         for i in employee.unavailable
     ):
         reasons.append("absence")
+    # Personal work the source states without times occupies its whole day.
+    if any(
+        work.day in day_minutes(shift, snapshot.timezone)
+        for work in snapshot.boundary_work
+        if work.day is not None and work.employee_id == employee.id
+    ):
+        reasons.append("personal_work")
     if employee.availability:
         windows = []
         for day in dates(first - timedelta(days=1), last):
@@ -327,7 +334,15 @@ def input_diagnostics(snapshot):
         for work in snapshot.boundary_work:
             if work.employee_id not in employee_ids:
                 issue("boundary_reference", "Unbekannte Person für Randarbeit: " + work.id)
-            if work.kind == "unknown":
+            if (work.day is None) == (not work.segments):
+                issue("interval", "Randarbeit braucht entweder Zeiten oder einen Tag: " + work.id)
+            if work.day is not None and not (
+                snapshot.period_start <= work.day <= snapshot.period_end
+            ):
+                issue("boundary_period", "Randarbeit ohne Zeiten muss im Planungszeitraum liegen: " + work.id,
+                      employee_id=work.employee_id)
+            # Without times there is no day or night to confirm.
+            if work.kind == "unknown" and work.segments:
                 issue("boundary_kind", "Tag-/Nachtart der Randarbeit bestätigen: " + work.id,
                       employee_id=work.employee_id)
             if work.segments:
@@ -339,7 +354,8 @@ def input_diagnostics(snapshot):
                 if (work.employee_id, tuple(segments(work))) in fixed_spans:
                     issue("boundary_duplicate", "Randarbeit ist bereits als Fixierung vorhanden: " + work.id,
                           employee_id=work.employee_id)
-        for s in [*snapshot.shifts, *snapshot.boundary_work]:
+        for s in [*snapshot.shifts,
+                  *(w for w in snapshot.boundary_work if w.day is None)]:
             spans = segments(s)
             if (
                 not spans
@@ -429,6 +445,10 @@ def input_diagnostics(snapshot):
 
 def pair_conflict(snapshot, employee, left, right):
     ls, rs = segments(left), segments(right)
+    # Work the source states without times makes no statement about rest. Its
+    # day is kept free through eligibility, not through an invented interval.
+    if not ls or not rs:
+        return None
     if any(overlap(a, b) for a in ls for b in rs):
         return "overlap"
     la, lb = bounds(left)

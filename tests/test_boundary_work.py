@@ -197,3 +197,62 @@ def test_night_block_context_bridge(bridge):
         assert "night_block" in {d.code for d in checked.diagnostics}
     result = solve(snapshot, 5)
     assert result.solver_status == ("OPTIMAL" if bridge else "INFEASIBLE")
+
+
+def untimed_case():
+    """Personal work the source states for a day, without any clock time."""
+    snapshot = convert(boundary_case("rest"))
+    snapshot.boundary_work = [BoundaryWork(
+        id="untimed", employee_id="e0", segments=[], day=snapshot.period_start,
+        in_period=True, paid_minutes=480,
+    )]
+    return snapshot
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_work_without_times_blocks_its_day_and_keeps_its_paid_minutes(partial):
+    from sp5generator.domain import eligibility
+
+    snapshot = untimed_case()
+    new_id, = {d.id for d in snapshot.demands}
+    assert "personal_work" in eligibility(
+        snapshot, snapshot.employees[0], snapshot.demands[0]
+    )
+    result = solve(snapshot, 5, partial=partial)
+    assert result.solver_status == ("OPTIMAL" if partial else "INFEASIBLE")
+    assert not result.assignments
+    assert result.vacancies == {new_id: 1}
+    if partial:
+        assert result.metrics["employees"]["e0"]["paid_minutes"] == 480
+    assert "personal_work" in {
+        d.code for d in validate(
+            snapshot, [Assignment(employee_id="e0", demand_id=new_id)]
+        ).diagnostics
+    }
+
+
+def test_work_without_times_states_no_rest():
+    """Missing times must neither certify nor deny a rest gap."""
+    from sp5generator.domain import pair_conflict
+
+    snapshot = convert(boundary_case("rest"))
+    employee, new_shift = snapshot.employees[0], snapshot.shifts[0]
+    assert pair_conflict(snapshot, employee, snapshot.boundary_work[0], new_shift) == "rest"
+    untimed = untimed_case().boundary_work[0]
+    assert pair_conflict(snapshot, employee, untimed, new_shift) is None
+
+
+@pytest.mark.parametrize("problem,code", [
+    ("both", "interval"), ("neither", "interval"), ("outside", "boundary_period"),
+])
+def test_work_without_times_states_exactly_one_day(problem, code):
+    snapshot = untimed_case()
+    work = snapshot.boundary_work[0]
+    if problem == "both":
+        work.segments = snapshot.shifts[0].segments
+    elif problem == "neither":
+        work.day = None
+    else:
+        work.day = date(2026, 1, 4)
+    assert code in {d.code for d in validate(snapshot, []).diagnostics}
+    assert solve(snapshot, 5, partial=True).solver_status == "MODEL_INVALID"

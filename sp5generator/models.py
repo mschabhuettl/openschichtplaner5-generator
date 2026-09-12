@@ -114,6 +114,10 @@ class BoundaryWork(Model):
     # describes. It blocks the person like any other duty and contributes its
     # stated paid minutes to the period target; it never covers a demand.
     in_period: bool = False
+    # A calendar day of personal work the source states without clock times.
+    # Set instead of segments: it blocks that day, carries its paid minutes and
+    # makes no rest statement, rather than inventing times the source lacks.
+    day: date | None = None
     paid_minutes: int = Field(default=0, ge=0)
     holiday: bool = False
     source: str = 'additional'

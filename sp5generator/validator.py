@@ -22,6 +22,7 @@ from .timeutils import (
     midnight,
     dates,
     day_minutes,
+    day_of,
     longest_free,
 )
 
@@ -243,7 +244,8 @@ def _validate(snapshot, assignments, input_errors=None):
                     e.id,
                     a.demand_id if a else None,
                 )
-        ordered = sorted(entries, key=lambda item: bounds(item[1])[0])
+        ordered = sorted(entries, key=lambda item: midnight(
+            day_of(item[1], snapshot.timezone), snapshot.timezone))
         for (a, left), (b, right) in zip(ordered, ordered[1:]):
             if night_block_conflict(snapshot, e, left, right):
                 add(
@@ -257,7 +259,7 @@ def _validate(snapshot, assignments, input_errors=None):
         daily = defaultdict(int)
         spans = []
         for a, s in entries:
-            day = local_day(bounds(s)[0], snapshot.timezone)
+            day = day_of(s, snapshot.timezone)
             dm = day_minutes(s, snapshot.timezone)
             for d, n in dm.items():
                 daily[d] += n
