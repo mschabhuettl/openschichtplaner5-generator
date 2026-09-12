@@ -690,6 +690,50 @@ $('file').onchange=()=>runAction($('file'),async()=>{
  try{const file=$('file').files[0];if(!file)return;if(file.size>16*1024*1024)throw Error('Projektdatei überschreitet die Grenze von 16 MiB.');const checked=await readProject(await file.text());if(canReplace())load(checked);}
  finally{$('file').value='';}
 });
+let teamTransferReport=null,teamTransferVersion=-1;
+action('teamExport',()=>{
+ if(!snapshot)throw Error('Zuerst ein Projekt öffnen.');
+ download(new Blob([TeamTransfer.toCsv(currentSnapshot())],{type:'text/csv;charset=utf-8'}),
+  `team-${snapshot.period_start}-${snapshot.period_end}.csv`);
+ notice(`${snapshot.employees.length} Personen als CSV heruntergeladen. Nur vorhandene Personen sind bearbeitbar.`);
+});
+$('teamImport').onchange=()=>runAction($('teamImport'),async()=>{
+ try{
+  const file=$('teamImport').files[0];if(!file)return;
+  if(!snapshot)throw Error('Zuerst ein Projekt öffnen.');
+  if(file.size>16*1024*1024)throw Error('Die Datei überschreitet die Grenze von 16 MiB.');
+  teamTransferReport=TeamTransfer.preview(currentSnapshot(),await file.text());
+  teamTransferVersion=changeVersion;
+  renderTeamTransfer();
+ } finally {$('teamImport').value='';}
+});
+function renderTeamTransfer(){
+ const box=$('teamTransferPreview');box.replaceChildren();
+ const report=teamTransferReport;if(!report)return;
+ const stale=teamTransferVersion!==changeVersion;
+ el('strong',`${report.rows} Zeilen gelesen · ${report.changes.length} Personen zu ändern · `
+  +`${report.unchanged} unverändert · ${report.errors.length} zu korrigieren`,box);
+ if(report.missing)el('p',`${report.missing} geladene Personen kommen in der Datei nicht vor und bleiben unverändert. Es wird niemand gelöscht.`,box).className='helper-text';
+ for(const message of report.errors.slice(0,50))el('p',message,el('div',undefined,box)).className='inline-warning';
+ if(report.errors.length>50)el('p',`… und ${report.errors.length-50} weitere Meldungen.`,box).className='helper-text';
+ const draw=()=>{const view=collection(list,'teamTransfer',report.changes,{label:'Änderungen',size:20,search:c=>`${c.name} ${c.id}`,redraw:draw});
+  const body=table(view.content,['Person','Feld','Neuer Wert']);
+  for(const change of view.items)for(const [key,value] of Object.entries(change.update)){
+   const tr=el('tr',undefined,body);el('td',change.name,tr);el('td',key,tr);
+   el('td',Array.isArray(value)?value.join(', '):String(value??'(leer)'),tr);
+  }};
+ const list=el('div',undefined,box);list.className='scroll';
+ if(report.changes.length)draw();
+ if(stale){el('p','Das Projekt hat sich seit der Vorschau geändert. Datei erneut prüfen.',box).className='inline-warning';return;}
+ if(!report.changes.length||report.errors.length)return;
+ const confirm=button(box,`${report.changes.length} Personen aus der Tabelle übernehmen`,()=>{
+  if(teamTransferVersion!==changeVersion){renderTeamTransfer();throw Error('Projekt seit der Vorschau geändert. Datei erneut prüfen.');}
+  const count=TeamTransfer.apply(snapshot,teamTransferReport);
+  teamTransferReport=null;invalidateResult();render();
+  notice(`${count} Personen aus der Tabelle übernommen. Freigaben, Qualifikationen und Einteilungen bleiben erhalten. Projekt speichern.`);
+ });
+ confirm.id='teamTransferApply';confirm.className='primary';
+}
 function download(content,name){const url=URL.createObjectURL(content),a=el('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 action('backup',()=>{
  checkPeopleReady();
