@@ -193,6 +193,7 @@ def import_snapshot(
     timezone: str = "Europe/Vienna", team_ids: list[str] | None = None,
     existing_plan_mode: str = "reference",
     reference_plan: str = "ist",
+    demand_source: str = "requirements",
 ) -> Snapshot:
     """Read from an explicitly supplied library database; never writes or opens a default source.
 
@@ -209,6 +210,8 @@ def import_snapshot(
         raise ValueError("Bestehender Plan: Modus muss reference oder fixed sein.")
     if reference_plan not in ("ist", "soll"):
         raise ValueError("Referenzplansicht muss ist oder soll sein.")
+    if demand_source not in ("requirements", "observed"):
+        raise ValueError("Bedarfsquelle muss requirements oder observed sein.")
     zone = ZoneInfo(timezone)
     groups = db.get_groups() if hasattr(db, "get_groups") else [{"ID": int(str(team_id).removeprefix("sp5:group:"))}]
     scope = resolve_group_selection(groups, team_id, team_ids)
@@ -230,6 +233,7 @@ def import_snapshot(
         "existing_plan_mode": existing_plan_mode,
         "reference_schedule": [],
         "reference_plan": reference_plan,
+        "demand_source": demand_source,
         "context_plan": "ist",
         "availability_plan": "ist",
         "special_shift_plan": "ist",
@@ -299,7 +303,7 @@ def import_snapshot(
                             for field in ("group_id", "shift_id", "workplace_id")
                             if row.get(field) is not None}}
 
-    requirements = db.get_staffing_requirements()
+    requirements = db.get_staffing_requirements() if demand_source == "requirements" else {}
     requirements = {**requirements, "shift_requirements": list(checked_staffing_rows(
         requirements.get("shift_requirements", []), "SHDEM", "regular_requirements"
     ))}
@@ -307,7 +311,7 @@ def import_snapshot(
         metadata["workplaces"].append({"id": "sp5:workplace:0", "name": "Ohne feste Arbeitsplatzbindung"})
     specials = _unique_rows(
         row for gid in scope for row in db.get_special_staffing(group_id=gid)
-    )
+    ) if demand_source == "requirements" else []
     daily = []
     for row in requirements.get("daily_requirements", []):
         # DADEM remains raw and uninterpreted. A malformed team identifier
@@ -447,6 +451,90 @@ def import_snapshot(
     shifts, positions, demands, restrictions, assignments = {}, {}, [], [], []
     demand_cells = {}
     boundary_work = {}
+    observed_schedule = {}
+    if demand_source == "observed":
+        observed_cells = {}
+        selected_teams = {f"sp5:group:{gid}" for gid in scope}
+        month = period_start.replace(day=1)
+        while month <= period_end:
+            schedule = _reference_schedule(
+                db, scope, month.year, month.month, period_start, period_end, reference_plan
+            )
+            observed_schedule[month] = schedule
+            # Ersetzte reguläre Ist-Dienste gehören auch im Vergleich nicht zur Besetzung.
+            replaced_days = {
+                (row.get("employee_id"), calc.to_date(row.get("date")))
+                for row in schedule
+                if reference_plan == "ist" and row.get("kind") == "special_shift"
+                and row.get("shift_id") not in (None, 0, "", "0")
+            }
+            for row in schedule:
+                day = calc.to_date(row.get("date"))
+                eid = f"sp5:employee:{row.get('employee_id')}"
+                if (row.get("kind") != "shift" or row.get("shift_id") not in native_shifts
+                        or day is None or not period_start <= day <= period_end
+                        or eid not in employee_map
+                        or (row.get("employee_id"), day) in replaced_days):
+                    continue
+                key = (row["shift_id"], row.get("workplace_id"), day)
+                people, teams = observed_cells.setdefault(key, (set(), set()))
+                people.add(eid)
+                teams.update({f"sp5:group:{row.get('group_id')}"} & selected_teams)
+            month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+        skipped = 0
+        for (sid, wid, day), (people, teams) in sorted(observed_cells.items(), key=lambda item: str(item[0])):
+            if not teams:
+                teams = {team for eid in people for team in employee_map[eid].team_ids} & selected_teams
+            if not teams:
+                skipped += 1
+                continue
+            native = native_shifts[sid]
+            idx = calc.day_index(day, holidays)
+            try:
+                windows = _parse_native_windows(native.get(f"STARTEND{idx}"))
+                if not windows:
+                    skipped += 1
+                    continue
+                segments = [
+                    Interval(
+                        start=_local(day, a, zone),
+                        end=_local(day, b + (1440 if b <= a else 0), zone),
+                    )
+                    for a, b in windows
+                ]
+                demand_teams = sorted(teams, key=lambda team: int(team.rsplit(":", 1)[1]))
+                shift_id = f"sp5:shift:{sid}:{day}"
+                shifts.setdefault(shift_id, Shift(
+                    id=shift_id, name=native.get("NAME", ""), kind="unconfirmed",
+                    team_id=demand_teams[0], segments=segments,
+                    paid_minutes=_minutes(native.get(f"DURATION{idx}")),
+                    holiday=day in holidays, source="sp5:SHIFT",
+                ))
+                position_id = f"sp5:position:{sid}:{wid}"
+                positions[position_id] = Position(
+                    id=position_id, name=native.get("NAME", ""),
+                    function_id=f"sp5:service:{sid}", workplace_id=f"sp5:workplace:{wid}",
+                    qualifications_required=False,
+                )
+                demands.append(Demand(
+                    id=f"sp5:demand:OBSERVED:{sid}:{wid}:{day}",
+                    shift_id=shift_id, position_id=position_id,
+                    minimum=len(people), maximum=len(people), team_ids=demand_teams,
+                    source="sp5:OBSERVED",
+                ))
+            except ValueError as exc:
+                skipped += 1
+                unresolved.append(f"SHIFT {sid} {day}: {exc}")
+        metadata["observed_demand"] = {
+            "cells": len(demands), "slots": sum(demand.minimum for demand in demands),
+            "skipped": skipped,
+        }
+        unresolved.append(
+            "Der Besetzungsbedarf wurde aus dem beobachteten Plan des Zeitraums abgeleitet "
+            "und stammt nicht aus der Bedarfstabelle der Quelle. Die beobachtete Besetzung "
+            "gilt je Dienst, Arbeitsplatz und Tag als Unter- und Obergrenze. Fachlich prüfen, "
+            "ob der beobachtete Plan dem gewünschten Bedarf entspricht."
+        )
     rows = _unique_rows(list(requirements.get("shift_requirements", [])) + [values[0] for values in special_cells.values() if len(values) == 1])
     for row in rows:
         gid = row.get("group_id")
@@ -665,9 +753,12 @@ def import_snapshot(
     month = source_start.replace(day=1)
     seen_schedule = set()
     while month <= source_end:
-        schedule = _reference_schedule(
-            db, scope, month.year, month.month, period_start, period_end, reference_plan
-        )
+        # Vorab geladene Vergleichszeilen unverändert für Kontext und persönliche Arbeit nutzen.
+        schedule = observed_schedule.get(month)
+        if schedule is None:
+            schedule = _reference_schedule(
+                db, scope, month.year, month.month, period_start, period_end, reference_plan
+            )
         # Library replacement is person-day-wide, independent of TYPE/workplace.
         # Normalize Ist work and references, never replace Soll target duties.
         replaced_days = {
@@ -815,16 +906,19 @@ def import_snapshot(
                     continue
                 if period_start <= d <= period_end and not personal_in_period:
                     # A baseline must reference actual demand, never create it.
+                    observed_reference = demand_source == "observed" and row.get("kind") == "shift"
                     member_teams = set(employee_map[eid].team_ids) & {
                         f"sp5:group:{g}" for g in scope
                     }
                     explicit_group = row.get("group_id")
-                    if explicit_group not in (None, 0, "", "0"):
+                    if explicit_group not in (None, 0, "", "0") and (
+                        not observed_reference or f"sp5:group:{explicit_group}" in selected_teams
+                    ):
                         member_teams &= {f"sp5:group:{explicit_group}"}
                     wid = row.get("workplace_id")
                     date_service_candidates = [
                         demand for demand in demands
-                        if demand.source in ("sp5:SHDEM", "sp5:SPDEM")
+                        if demand.source in ("sp5:SHDEM", "sp5:SPDEM", "sp5:OBSERVED")
                         and shifts[demand.shift_id].segments[0].start.date() == d
                         and positions[demand.position_id].function_id == f"sp5:service:{row['shift_id']}"
                     ]
@@ -834,9 +928,14 @@ def import_snapshot(
                         demand for demand in date_service_candidates
                         if (set(demand.team_ids) or {shifts[demand.shift_id].team_id}) & member_teams
                     ]
-                    workplace_candidates = [demand for demand in team_candidates
-                                            if wid in (None, "") or positions[demand.position_id].workplace_id
-                                            in {f"sp5:workplace:{wid}", "sp5:workplace:0"}]
+                    # Beobachtete Zellen behalten auch bei Arbeitsplatz 0 ihre genaue Zuordnung.
+                    workplace_candidates = [
+                        demand for demand in team_candidates
+                        if (positions[demand.position_id].workplace_id == f"sp5:workplace:{wid}"
+                            if observed_reference else
+                            wid in (None, "") or positions[demand.position_id].workplace_id
+                            in {f"sp5:workplace:{wid}", "sp5:workplace:0"})
+                    ]
                     candidates = [demand for demand in workplace_candidates if demand.maximum != 0]
                     reference = {**safe, "candidate_demand_ids": [v.id for v in candidates]}
                     if row.get("kind") == "special_shift":

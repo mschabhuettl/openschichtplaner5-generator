@@ -325,6 +325,246 @@ class ExistingPlanDatabase(SyntheticDatabase):
                  "shift_id": 201, "workplace_id": 301}]
 
 
+def test_requirements_demand_source_matches_the_default():
+    default = import_snapshot(
+        ExistingPlanDatabase(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC"
+    )
+    explicit = import_snapshot(
+        ExistingPlanDatabase(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC",
+        demand_source="requirements",
+    )
+    assert explicit.model_dump(exclude={"created_at"}) == default.model_dump(exclude={"created_at"})
+    assert default.metadata["demand_source"] == "requirements"
+    assert "observed_demand" not in default.metadata
+
+
+@pytest.mark.parametrize("demand_source", ["unknown", "", "Observed", None, 1])
+def test_invalid_demand_source_is_rejected(demand_source):
+    with pytest.raises(ValueError, match="requirements.*observed"):
+        import_snapshot(
+            SyntheticDatabase(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC",
+            demand_source=demand_source,
+        )
+
+
+@pytest.mark.parametrize("days", [["2026-01-06"], ["2026-01-05", "2026-01-06"]])
+def test_observed_demand_counts_distinct_people_per_day_and_uses_catalog_times(days):
+    class Source(ExistingPlanDatabase):
+        def get_employees(self, **kw):
+            employee = super().get_employees(**kw)[0]
+            return [employee, {**employee, "ID": 102, "NAME": "Testperson 002"}]
+
+        def get_group_members(self, g):
+            return [101, 102]
+
+        def get_shifts(self, **kw):
+            return [{**row, "STARTEND7": "06:00-09:00 10:00-12:00", "DURATION7": 4.5}
+                    for row in super().get_shifts(**kw)]
+
+        def get_staffing_requirements(self):
+            data = super().get_staffing_requirements()
+            data["shift_requirements"][0].update(min=9, max=10)
+            return data
+
+        def get_schedule(self, year, month, **kw):
+            rows = super().get_schedule(year, month, **kw)
+            if not rows:
+                return []
+            return [
+                {**rows[0], "date": day, "employee_id": employee, "group_id": group}
+                for day in days for employee, group in [(101, None), (101, 1), (102, 1)]
+            ]
+
+    baseline = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 7), "1", "UTC")
+    snapshot = import_snapshot(
+        Source(), date(2026, 1, 5), date(2026, 1, 7), "1", "UTC", demand_source="observed"
+    )
+    assert len(snapshot.demands) == len(days)
+    assert len({demand.id for demand in snapshot.demands}) == len(days)
+    assert {demand.shift_id for demand in snapshot.demands} == {
+        f"sp5:shift:201:{day}" for day in days
+    }
+    for demand in snapshot.demands:
+        assert (demand.minimum, demand.maximum) == (2, 2)
+        assert demand.position_id == "sp5:position:201:301"
+        assert demand.team_ids == ["sp5:group:1"]
+    position, = snapshot.positions
+    assert position.function_id == "sp5:service:201"
+    assert position.workplace_id == "sp5:workplace:301"
+    assert not position.qualifications_required
+    for shift in snapshot.shifts:
+        holiday = shift.segments[0].start.date() == date(2026, 1, 6)
+        assert shift.holiday is holiday
+        assert [(segment.start.hour, segment.end.hour) for segment in shift.segments] == (
+            [(6, 9), (10, 12)] if holiday else [(8, 10), (11, 13)]
+        )
+        assert shift.paid_minutes == (270 if holiday else 240)
+    assert snapshot.metadata["demand_source"] == "observed"
+    assert snapshot.metadata["observed_demand"] == {
+        "cells": len(days), "slots": 2 * len(days), "skipped": 0,
+    }
+    messages = [message for message in snapshot.unresolved if message not in baseline.unresolved]
+    assert len(messages) == 1
+    message = messages[0].lower()
+    assert all(word in message for word in (
+        "beobachtet", "zeitraum", "abgeleitet", "bedarfstabelle", "quelle",
+        "dienst", "arbeitsplatz", "tag", "unter-", "obergrenze", "prüfen",
+    ))
+    assert all(person.name not in messages[0] for person in snapshot.employees)
+    assert snapshot.employees == baseline.employees
+    assert snapshot.profiles == baseline.profiles
+    assert snapshot.boundary_work == baseline.boundary_work
+    assert len(snapshot.assignments) == 2 * len(days)
+    assert not any(assignment.fixed for assignment in snapshot.assignments)
+
+
+@pytest.mark.parametrize(
+    "row_groups,person_groups,expected_groups",
+    [([1, 2], [1, 2, 99], [1, 2]), ([2, 99], [1, 99], [2]),
+     ([None, 99], [1, 99], [1]), ([None, 99], [99], [])],
+)
+def test_observed_demand_uses_selected_row_groups_then_person_groups(
+    row_groups, person_groups, expected_groups
+):
+    class Source(ExistingPlanDatabase):
+        def get_groups(self):
+            return [{"ID": group} for group in (1, 2, 99)]
+
+        def get_employee_groups(self, e):
+            return person_groups
+
+        def get_schedule(self, year, month, **kw):
+            return [{**row, "group_id": group}
+                    for row in super().get_schedule(year, month, **kw) for group in row_groups]
+
+    snapshot = import_snapshot(
+        Source(), date(2026, 1, 6), date(2026, 1, 6), timezone="UTC",
+        team_ids=["1", "2"], demand_source="observed",
+    )
+    assert snapshot.metadata["observed_demand"] == {
+        "cells": int(bool(expected_groups)), "slots": int(bool(expected_groups)),
+        "skipped": int(not expected_groups),
+    }
+    if expected_groups:
+        demand, = snapshot.demands
+        assert demand.team_ids == [f"sp5:group:{group}" for group in expected_groups]
+        assert (demand.minimum, demand.maximum) == (1, 1)
+    else:
+        assert not snapshot.demands
+
+
+def test_observed_references_match_their_exact_workplace_cell():
+    class Source(ExistingPlanDatabase):
+        def get_employees(self, **kw):
+            employee = super().get_employees(**kw)[0]
+            return [employee, {**employee, "ID": 102, "NAME": "Testperson 002"}]
+
+        def get_group_members(self, g):
+            return [101, 102]
+
+        def get_schedule(self, year, month, **kw):
+            return [{**row, "employee_id": employee, "workplace_id": workplace}
+                    for row in super().get_schedule(year, month, **kw)
+                    for employee, workplace in [(101, 0), (102, 301)]]
+
+    snapshot = import_snapshot(
+        Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC", demand_source="observed"
+    )
+    demands = {demand.position_id: demand for demand in snapshot.demands}
+    assert set(demands) == {"sp5:position:201:0", "sp5:position:201:301"}
+    assert all((demand.minimum, demand.maximum) == (1, 1) for demand in demands.values())
+    references = snapshot.metadata["reference_schedule"]
+    assert len(references) == 2
+    for reference in references:
+        demand = demands[f"sp5:position:201:{reference['workplace_id']}"]
+        assert reference["candidate_demand_ids"] == [demand.id]
+        assert reference["demand_id"] == demand.id
+        assert "resolution" not in reference
+    assert {(assignment.employee_id, assignment.demand_id) for assignment in snapshot.assignments} == {
+        ("sp5:employee:101", demands["sp5:position:201:0"].id),
+        ("sp5:employee:102", demands["sp5:position:201:301"].id),
+    }
+
+
+def test_observed_reference_maps_using_person_team_when_row_group_is_outside_selection():
+    class Source(ExistingPlanDatabase):
+        def get_schedule(self, year, month, **kw):
+            return [{**row, "group_id": 99}
+                    for row in super().get_schedule(year, month, **kw)]
+
+    snapshot = import_snapshot(
+        Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC", demand_source="observed"
+    )
+    demand, = snapshot.demands
+    assert demand.team_ids == snapshot.employees[0].team_ids == ["sp5:group:1"]
+    reference, = snapshot.metadata["reference_schedule"]
+    assert reference["group_id"] == 99
+    assert reference["candidate_demand_ids"] == [demand.id]
+    assert reference["demand_id"] == demand.id
+    assert "resolution" not in reference
+    assignment, = snapshot.assignments
+    assert assignment.employee_id == "sp5:employee:101"
+    assert assignment.demand_id == demand.id
+
+
+@pytest.mark.parametrize("plan,expected_day", [("ist", "2026-01-06"), ("soll", "2026-01-07")])
+def test_observed_demand_uses_the_selected_reference_plan(plan, expected_day):
+    class Source(ExistingPlanDatabase):
+        def get_schedule(self, year, month, *, plan, **kw):
+            return [{**row, "date": "2026-01-06" if plan == "ist" else "2026-01-07"}
+                    for row in super().get_schedule(year, month, **kw)]
+
+    snapshot = import_snapshot(
+        Source(), date(2026, 1, 6), date(2026, 1, 7), "1", "UTC",
+        reference_plan=plan, demand_source="observed",
+    )
+    demand, = snapshot.demands
+    assert demand.shift_id == f"sp5:shift:201:{expected_day}"
+    assert snapshot.metadata["reference_schedule"][0]["demand_id"] == demand.id
+
+
+@pytest.mark.parametrize("plan,cells", [("ist", 0), ("soll", 1)])
+def test_observed_demand_preserves_special_replacement_and_personal_work(plan, cells):
+    class Source(ExistingPlanDatabase):
+        def get_schedule(self, year, month, **kw):
+            rows = super().get_schedule(year, month, **kw)
+            return rows + [{**row, "kind": "special_shift", "spshi_type": 0,
+                            "startend": "09:00-11:00", "duration": 2} for row in rows]
+
+    baseline = import_snapshot(
+        Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC", reference_plan=plan
+    )
+    snapshot = import_snapshot(
+        Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC",
+        reference_plan=plan, demand_source="observed",
+    )
+    assert snapshot.metadata["observed_demand"] == {"cells": cells, "slots": cells, "skipped": 0}
+    assert len(snapshot.demands) == cells
+    assert snapshot.boundary_work == baseline.boundary_work
+    assert snapshot.metadata["personal_period_work"] == baseline.metadata["personal_period_work"] == 1
+    assert snapshot.metadata["context_schedule"] == baseline.metadata["context_schedule"]
+
+
+def test_observed_demand_does_not_invent_cells_without_reference_duties():
+    class Source(ExistingPlanDatabase):
+        def get_schedule(self, year, month, **kw):
+            return [
+                changed for row in super().get_schedule(year, month, **kw)
+                for changed in [row | {"date": "2026-01-05"}, row | {"shift_id": 999},
+                                row | {"kind": "absence", "interval": 0}]
+            ]
+
+    baseline = import_snapshot(Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    snapshot = import_snapshot(
+        Source(), date(2026, 1, 6), date(2026, 1, 6), "1", "UTC", demand_source="observed"
+    )
+    assert not snapshot.demands
+    assert snapshot.metadata["observed_demand"] == {"cells": 0, "slots": 0, "skipped": 0}
+    assert snapshot.employees == baseline.employees
+    assert snapshot.boundary_work == baseline.boundary_work
+    assert len([message for message in snapshot.unresolved if "abgeleitet" in message]) == 1
+
+
 @pytest.mark.parametrize(
     "reference_services,services,slots",
     [([201, 202], 0, 0), ([204], 2, 6), ([202], 1, 3), ([], 0, 0)],
@@ -1264,6 +1504,22 @@ class UntimedServiceDatabase(SyntheticDatabase):
         return [{"employee_id": 101, "date": day, "kind": "shift",
                  "shift_id": 202, "workplace_id": 301, "spshi_type": 0}
                 for day in self.days]
+
+
+def test_observed_demand_skips_untimed_cells_and_preserves_personal_work():
+    source = UntimedServiceDatabase()
+    source.days = ["2026-01-05", "2026-01-06", "2026-01-06"]
+    baseline = import_snapshot(source, date(2026, 1, 6), date(2026, 1, 6), "1", "UTC")
+    snapshot = import_snapshot(
+        source, date(2026, 1, 6), date(2026, 1, 6), "1", "UTC", demand_source="observed"
+    )
+    assert not snapshot.demands
+    assert snapshot.metadata["observed_demand"] == {"cells": 0, "slots": 0, "skipped": 1}
+    assert snapshot.boundary_work == baseline.boundary_work
+    assert snapshot.employees == baseline.employees
+    assert snapshot.metadata["untimed_period_work"] == baseline.metadata["untimed_period_work"] == 1
+    assert snapshot.metadata["untimed_context_work"] == baseline.metadata["untimed_context_work"] == 1
+    assert len([message for message in snapshot.unresolved if "abgeleitet" in message]) == 1
 
 
 def test_untimed_service_inside_the_period_stays_personal_work():
