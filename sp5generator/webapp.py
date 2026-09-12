@@ -33,6 +33,7 @@ class ApiImportRequest(BaseModel):
     auto_history: bool = False
     history_min_days: int = Field(default=3, ge=2, le=1097)
     existing_plan_mode: Literal['reference', 'fixed'] = 'reference'
+    demand_source: Literal['requirements', 'observed'] = 'requirements'
     history_start: date | None = None
     history_end: date | None = None
 

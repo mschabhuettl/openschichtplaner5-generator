@@ -1357,6 +1357,7 @@ def import_directory(
     team_ids=None,
     existing_plan_mode="reference",
     reference_plan="ist",
+    demand_source="requirements",
 ):
     """Explicit local directory import with change detection and matrix suggestions."""
     if not 0 <= (period_end - period_start).days < MAX_PLANNING_DAYS:
@@ -1366,6 +1367,7 @@ def import_directory(
     snapshot = import_snapshot(
         db, period_start, period_end, team_id, timezone, team_ids=team_ids,
         existing_plan_mode=existing_plan_mode, reference_plan=reference_plan,
+        demand_source=demand_source,
     )
     history_end = history_end or period_start - timedelta(days=1)
     history_start = history_start or history_end - timedelta(days=89)

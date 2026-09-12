@@ -420,3 +420,34 @@ def test_reference_selection_request_validates_and_passes_independently(tmp_path
         assert seen[0]['existing_plan_mode'] == 'reference'
         assert client.post(endpoint, json={**payload, 'reference_plan': 'both'}).status_code == 422
         assert len(seen) == 1
+
+
+@pytest.mark.parametrize('endpoint,module', [('/api/import', 'sp5_adapter'), ('/api/remote-import', 'api_adapter')])
+def test_demand_source_request_validates_and_passes(tmp_path, monkeypatch, endpoint, module):
+    from sp5generator.demo import make_demo
+    from types import SimpleNamespace
+    import importlib
+    adapter = importlib.import_module('sp5generator.' + module)
+    seen = []
+    def importer(*args, **kwargs):
+        seen.append(kwargs)
+        return make_demo()
+    monkeypatch.setattr(adapter, 'import_snapshot', importer)
+    monkeypatch.setattr(adapter, 'historical_matrix', lambda *args: [])
+    db = SimpleNamespace(get_groups=lambda: [{'ID': 1}], get_group_members=lambda group_id: [],
+                         get_employees=lambda: [])
+    payload = {'period_start': '2026-01-05', 'period_end': '2026-01-18', 'team_id': '1', 'timezone': 'UTC'}
+    if module == 'sp5_adapter':
+        payload['directory'] = 'synthetic'
+        monkeypatch.setattr(adapter, '_source_database', lambda directory: (db, {}))
+    else:
+        monkeypatch.setattr(adapter, 'APIClient', lambda: SimpleNamespace(authorize=lambda: None,
+                                                                         verify=lambda: 'synthetic'))
+        monkeypatch.setattr(adapter, '_Database', lambda *args: db)
+    with TestClient(create_app(str(tmp_path), start_worker=False)) as client:
+        assert client.post(endpoint, json=payload).status_code == 200
+        assert seen[0]['demand_source'] == 'requirements'
+        assert client.post(endpoint, json={**payload, 'demand_source': 'observed'}).status_code == 200
+        assert seen[1]['demand_source'] == 'observed'
+        assert client.post(endpoint, json={**payload, 'demand_source': 'invalid'}).status_code == 422
+        assert len(seen) == 2
