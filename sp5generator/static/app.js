@@ -414,6 +414,7 @@ function invalidateResult(){
 function renderProfiles(){
  const box=$('profiles');box.replaceChildren();
  el('h3','Verbindliche Regelprofile',box);
+ renderRestDefaults(box);
  const bulk=el('fieldset',undefined,box);el('legend','Regelprofil gesammelt zuordnen',bulk);
  el('p','Ein bestätigtes Profil Personen ohne individuelles Profil zuordnen. Importprofile mit bereits eingetragenen Höchstgrenzen bleiben zugeordnet und müssen gezielt geprüft werden. Bestehende Ruhevorgaben werden nicht abgeschwächt oder auf einen anderen Bezug umgestellt; individuelle Zuordnungen bleiben erhalten.',bulk);
  let chosen='',team='';
@@ -467,6 +468,40 @@ function renderProfiles(){
   el('p','Bestätigung ersetzt keine fachliche Prüfung. Änderungen dauerhaft speichern; offene Importangaben separat klären.',content);
   };
  });
+}
+// The agreed 11/36 standard: 660 minutes between duties and 2160 minutes of
+// connected rest per calendar week, daily rest included.
+const REST_DEFAULTS={min_rest_minutes:660,weekly_rest_minutes:2160,weekly_rest_frame:'calendar_week',weekly_rest_add_daily:false};
+const carriesRestDefaults=p=>Object.entries(REST_DEFAULTS).every(([key,value])=>p[key]===value);
+function unconfirmedProfileState(){
+ const used=new Set(snapshot.employees.flatMap(e=>e.profile_ids));
+ const open=snapshot.profiles.filter(p=>used.has(p.id)&&!p.confirmed);
+ const ready=open.filter(carriesRestDefaults);
+ const people=snapshot.employees.filter(e=>!e.profile_ids.length
+  ||e.profile_ids.some(id=>!snapshot.profiles.find(p=>p.id===id)?.confirmed));
+ return {open,ready,review:open.filter(p=>!carriesRestDefaults(p)),people};
+}
+function renderRestDefaults(box){
+ const {ready,review,people}=unconfirmedProfileState();
+ if(!people.length)return;
+ const bar=el('div',undefined,box);bar.className='bulk-approve';bar.id='restDefaults';
+ bar.dataset.pending=String(ready.length);
+ const text=el('div',undefined,bar);
+ el('strong',`${people.length} Personen ohne bestätigtes Regelprofil`,text).id='restDefaultsTitle';
+ const note=el('small',undefined,text);note.id='restDefaultsNote';
+ note.textContent=ready.length
+  ?`${ready.length} zugeordnete Profile enthalten bereits die vereinbarten 11 Stunden täglicher Ruhe (660 Minuten) und 36 Stunden zusammenhängender Wochenruhe je Kalenderwoche (2160 Minuten, tägliche Ruhe eingeschlossen). Bestätigen übernimmt genau diese Werte. Höchstgrenzen, Gültigkeiten und individuelle Zuordnungen bleiben unverändert.`
+  +(review.length?` ${review.length} weitere Profile weichen davon ab und bleiben zur Einzelprüfung offen.`:'')
+  :`Die zugeordneten Profile weichen von den vereinbarten 11/36-Ruhevorgaben ab und bleiben zur Einzelprüfung offen.`;
+ const confirm=button(bar,`Vereinbarte 11/36-Ruhevorgaben für ${ready.length} Profile bestätigen`,()=>{
+  const {ready:current}=unconfirmedProfileState();
+  if(!current.length){notice('Keine Profile mit den vereinbarten 11/36-Ruhevorgaben offen.');return;}
+  if(!window.confirm(`${current.length} Regelprofile mit 11 Stunden täglicher Ruhe und 36 Stunden Wochenruhe ausdrücklich bestätigen? Abweichende Profile bleiben offen.`))return;
+  current.forEach(p=>p.confirmed=true);
+  invalidateResult();renderRules();
+  notice(`${current.length} Regelprofile bestätigt. Abweichende Profile und alle Höchstgrenzen bleiben unverändert. Projekt speichern.`);
+ });
+ confirm.id='confirmRestDefaults';confirm.className='primary';confirm.disabled=!ready.length;
 }
 function renderPlan(){renderCalendar();if($('assignmentDetails').open)renderAssignments();}
 function assignmentRows(){return assignments.map((a,index)=>({a,index}));}
