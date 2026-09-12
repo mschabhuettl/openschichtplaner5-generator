@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.11.0** ergänzt 0.10.0: Das geladene Team lässt sich als CSV für Excel herunterladen und bearbeitet wieder einlesen – geprüft, mit Vorschau, und ohne dass jemand angelegt oder gelöscht wird; Freigaben, Qualifikationen und Einteilungen bleiben unberührt. Besetzungsengpässe werden zusätzlich je Dienst zusammengefasst und zeigen, ob eine Freigabe fehlt oder ein Kapazitätskonflikt vorliegt. Die [Releasehinweise](docs/release-0.11.0.md) trennen Prüfstand und offene Grenzen. Harte Regeln, Freigaben und Bedarfe bleiben unverändert.
+**Version 0.12.0** modelliert persönliche Arbeit im Planungszeitraum: Ein Sonderdienst mit eigenen Zeiten und eigener bezahlter Dauer wird nicht mehr verworfen, sondern übernommen – er sperrt die Person und zählt auf das Periodensoll, deckt aber keinen Besetzungsbedarf und erzeugt keine Einteilung. Der Plankalender zeigt ihn als eigenes Feld. Die [Releasehinweise](docs/release-0.12.0.md) trennen Prüfstand und offene Grenzen. Harte Regeln, Freigaben und Bedarfe bleiben unverändert.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -53,7 +53,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.11.0-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.12.0-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
