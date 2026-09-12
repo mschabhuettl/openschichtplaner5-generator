@@ -914,6 +914,10 @@ action('transpose',()=>{transposed=!transposed;$('transpose').setAttribute('aria
 function pendingHistoryApprovals(){
  const pairs=[],seen=new Set(),employees=dataIndex().employees;
  for(const row of snapshot?.metadata?.history_matrix??[]){const employee=employees.get(row.employee_id);if(!employee)continue;
+  // Ohne Überschneidung von Beschäftigung und Planungszeitraum ist kein Einsatz möglich.
+  const start=snapshot.period_start>employee.employment_start?snapshot.period_start:employee.employment_start;
+  const end=snapshot.period_end<employee.employment_end?snapshot.period_end:employee.employment_end;
+  if(start>end)continue;
   for(const proposal of row.suggested_approvals??[]){const key=JSON.stringify([employee.id,proposal.function_id,proposal.workplace_id]);
    if(seen.has(key)||approved(employee,proposal))continue;seen.add(key);pairs.push([employee,proposal]);
   }

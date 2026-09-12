@@ -12,6 +12,8 @@ module.exports=async function allProposals({page,base}){
     const proposals=Array.from({length:20},(_,j)=>({function_id:`service-${j}`,workplace_id:'*'}));
     snapshot.metadata.history_matrix.push({employee_id:e.id,suggested_approvals:proposals});
    }
+   snapshot.employees[32].employment_start=dayOffset(snapshot.period_start,-30);
+   snapshot.employees[32].employment_end=dayOffset(snapshot.period_start,-1);
    snapshot.metadata.services=Array.from({length:20},(_,j)=>({function_id:`service-${j}`,name:`Synthetic service ${j}`}));
    const e=snapshot.employees[34];
    e.approvals=[{function_id:'service-19',workplace_id:'*',valid_from:snapshot.period_start,valid_until:snapshot.period_end,supervised:true},
@@ -30,15 +32,17 @@ module.exports=async function allProposals({page,base}){
    {inBanner:true,beforeMatrix:true,inFooter:false,primary:true},'Bulk approval stays prominent above the matrix');
   assert(placement.top<placement.viewport&&placement.top<placement.matrixTop,
    'Bulk approval is visible without scrolling and sits above the matrix');
-  assert.match(await page.locator('#historyBulkTitle').textContent(),/^700 historische Vorschläge offen$/);
+  // 700 minus 20 Vorschläge der vor Planungsbeginn ausgeschiedenen Person ergibt 680.
+  assert.match(await page.locator('#historyBulkTitle').textContent(),/^680 historische Vorschläge offen$/);
   await page.fill('#matrixSearch','Synthetic person 0');
-  assert.equal(await page.locator('#confirmHistory').textContent(),'Alle 700 historischen Vorschläge übernehmen');
+  assert.equal(await page.locator('#confirmHistory').textContent(),'Alle 680 historischen Vorschläge übernehmen');
   const before=await page.evaluate(()=>structuredClone(snapshot.employees[34].approvals));
   page.once('dialog',dialog=>dialog.dismiss());await page.click('#confirmHistory');
   assert.deepEqual(await page.evaluate(()=>snapshot.employees[34].approvals),before,'Cancel leaves offscreen proposals unchanged');
-  page.once('dialog',async dialog=>{assert.match(dialog.message(),/Alle 700/);await dialog.accept();});
+  page.once('dialog',async dialog=>{assert.match(dialog.message(),/Alle 680/);await dialog.accept();});
   await page.click('#confirmHistory');
   const result=await page.evaluate(()=>structuredClone(snapshot.employees));
+  assert.equal(result[32].approvals.length,0,'Die vor Planungsbeginn ausgeschiedene Person erhält keine Freigaben');
   assert.equal(result[0].approvals.length,20);assert.equal(result[33].approvals.length,20);
   assert.deepEqual(result[34].approvals.slice(0,2),before,'Existing approvals retained exactly');
   assert(result[34].approvals.some(a=>a.function_id==='service-18'&&a.valid_until>before[1].valid_until&&a.supervised),'Partial supervision preserved');
