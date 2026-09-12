@@ -16,6 +16,7 @@ from sp5generator.models import (
     Qualification,
     Availability,
     Objectives,
+    BoundaryWork,
 )
 from sp5generator.solver import solve
 from sp5generator.validator import validate, weekly_windows
@@ -59,6 +60,78 @@ def test_partial_plan_keeps_shared_candidate_shortage():
     assert sum(result.vacancies.values()) == 1
     assert sum(d.code == "shared_candidate_shortage" for d in result.validation.diagnostics) == 1
     assert not any(d.code == "candidate_shortage" for d in result.validation.diagnostics)
+
+
+@pytest.mark.parametrize("mode", ["full", "partial", "warm"])
+def test_target_unreachable_is_informational_once_per_employee(monkeypatch, mode):
+    snapshot = case()
+    snapshot.employees[0].target_minutes = 481
+    snapshot.employees[1].target_minutes = 960
+    if mode == "warm":
+        from ortools.sat.python import cp_model
+
+        snapshot.assignments = [assignment()]
+        original = cp_model.CpSolver.solve
+
+        def stop_after_certificate(self, model, *args, **kwargs):
+            if self.parameters.fix_variables_to_their_hinted_value:
+                return original(self, model, *args, **kwargs)
+            return cp_model.UNKNOWN
+
+        monkeypatch.setattr(cp_model.CpSolver, "solve", stop_after_certificate)
+    result = solve(snapshot, time_limit=5, partial=mode != "full")
+    assert result.validation.valid and result.validation.complete
+    assert validate(snapshot, result.assignments).complete
+    hints = [d for d in result.validation.diagnostics if d.code == "target_unreachable"]
+    assert sorted(d.employee_id for d in hints) == ["e0", "e1"]
+    assert all("strukturell" in d.message for d in hints)
+    assert all(e.name not in d.message for e in snapshot.employees for d in hints)
+    assert result.metrics["separation_rounds"] == 0
+    assert all(m["reachable_minutes"] == 480 for m in result.metrics["employees"].values())
+
+
+@pytest.mark.parametrize("target", [0, 479, 480])
+def test_reachable_target_has_no_diagnostic(target):
+    snapshot = case()
+    snapshot.employees[0].target_minutes = target
+    snapshot.employees[1].approvals = []
+    result = solve(snapshot, time_limit=5)
+    assert result.validation.valid and result.validation.complete
+    assert not any(d.code == "target_unreachable" for d in result.validation.diagnostics)
+
+
+@pytest.mark.parametrize("maximum", [None, 3])
+def test_reachable_minutes_include_only_eligible_period_demands_and_personal_work(maximum):
+    snapshot = case(shifts=[
+        shift("required", 5, 8, 8), shift("optional", 6, 8, 8),
+        shift("zero", 7, 8, 8), shift("blocked", 8, 8, 8),
+        shift("context", 4, 8, 8),
+    ])
+    snapshot.shifts[0].paid_minutes = 120
+    snapshot.shifts[1].paid_minutes = 180
+    snapshot.demands[1].minimum = 0
+    snapshot.demands[1].maximum = maximum
+    snapshot.demands[2].minimum = snapshot.demands[2].maximum = 0
+    snapshot.demands[3].minimum = 0
+    snapshot.restrictions = [Restriction(employee_id="e0", shift_id="blocked", level=2)]
+    snapshot.assignments = [Assignment(employee_id="e0", demand_id="context", fixed=True)]
+    snapshot.employees[0].target_minutes = 390
+    snapshot.employees[1].approvals = []
+    snapshot.boundary_work = [
+        BoundaryWork(
+            id=f"personal-{day}", employee_id="e0",
+            segments=shift(f"personal-{day}", day, 8, 2).segments,
+            kind="day", paid_minutes=minutes, in_period=in_period,
+        )
+        for day, minutes, in_period in [(9, 60, True), (10, 30, True), (3, 999, False)]
+    ]
+    result = solve(snapshot, time_limit=5)
+    assert result.validation.valid and result.validation.complete
+    assert {eid: m["reachable_minutes"] for eid, m in result.metrics["employees"].items()} == {
+        "e0": 390, "e1": 0,
+    }
+    assert result.metrics["employees"]["e0"]["paid_minutes"] == 390
+    assert not any(d.code == "target_unreachable" for d in result.validation.diagnostics)
 
 
 def case(n=2, shifts=None):

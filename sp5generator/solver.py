@@ -167,6 +167,7 @@ def solve(snapshot, time_limit=30, partial=False):
                "eligible_required_demands": 0, "exclusions": Counter()}
         for e in snapshot.employees
     }
+    reachable_minutes = {e.id: personal_period_paid[e.id] for e in snapshot.employees}
     exclusion_labels = {
         "employment": "Beschäftigungszeitraum",
         "team": "Teamzugehörigkeit",
@@ -203,6 +204,7 @@ def solve(snapshot, time_limit=30, partial=False):
                     if not reasons:
                         stats["eligible_demands"] += 1
                         stats["eligible_required_demands"] += int(d.minimum > 0)
+                        reachable_minutes[e.id] += shifts[d.shift_id].paid_minutes
             if reasons:
                 exclusions[d.id].update(reasons)
                 if (e.id, d.id) in fixed:
@@ -233,6 +235,17 @@ def solve(snapshot, time_limit=30, partial=False):
     # Publish candidate facts only after the entire scan, never a timed-out
     # prefix. These are informational metrics, not relaxed validation rules.
     employee_candidates = candidate_stats
+    for e in snapshot.employees:
+        if e.target_minutes > 0 and e.target_minutes > reachable_minutes[e.id]:
+            diagnostics.append(
+                Diagnostic(
+                    code="target_unreachable",
+                    message="Das Periodensoll übersteigt die im gewählten Zuschnitt überhaupt "
+                    "erreichbare Arbeitszeit; der Rückstand ist strukturell und nicht durch "
+                    "Planung behebbar.",
+                    employee_id=e.id,
+                )
+            )
     # The standalone contract and independent checker accept at most this
     # many assignments, including fixed context. Extra optional staffing must
     # not drive the optimizer outside that supported result envelope.
@@ -943,6 +956,7 @@ def solve(snapshot, time_limit=30, partial=False):
             metrics["employees"][e.id] = {
                 "paid_minutes": paid,
                 "target_minutes": e.target_minutes,
+                "reachable_minutes": reachable_minutes[e.id],
                 "contractual_weekly_minutes": e.contractual_weekly_minutes,
                 "credit_minutes": e.credit_minutes,
                 "balance_minutes": e.balance_minutes,
@@ -988,6 +1002,7 @@ def solve(snapshot, time_limit=30, partial=False):
             for key, terms in weighted_components.items()
         }
         parameters["first_feasible_seconds"] = monotonic() - started
+        checked.diagnostics.extend(diagnostics)
         best = result(
             "FEASIBLE",
             plan,
@@ -1167,6 +1182,7 @@ def solve(snapshot, time_limit=30, partial=False):
             metrics["employees"][e.id] = {
                 "paid_minutes": paid,
                 "target_minutes": e.target_minutes,
+                "reachable_minutes": reachable_minutes[e.id],
                 "contractual_weekly_minutes": e.contractual_weekly_minutes,
                 "credit_minutes": e.credit_minutes,
                 "balance_minutes": e.balance_minutes,
