@@ -358,16 +358,30 @@ function renderReferenceImport(){
  };
  details.addEventListener('toggle',()=>{if(details.open)render();});
 }
-function renderUnresolved(){
- const box=$('unresolved');
- if(!snapshot.unresolved.length){box.replaceChildren();el('p','Keine offenen Importangaben.',box);return;}
- const entries=snapshot.unresolved.map((message,index)=>{
+// Leading words before the first identifier, date or number; groups repeated notes.
+function unresolvedCategory(message){const head=[];
+ for(const raw of String(message??'').split(/\s+/)){const word=raw.replace(/[.,;:]+$/,'');
+  if(!word||/[\d:]/.test(word))break;head.push(word);if(head.length>=4)break;}
+ return head.join(' ')||'Sonstige Angabe';}
+const unresolvedHaystack=entry=>`${entry.message} ${entry.label}`;
+function unresolvedEntries(){
+ return snapshot.unresolved.map((message,index)=>{
   const reference=/^Bestehender Dienst (sp5:employee:\S+) (\d{4}-\d{2}-\d{2}):/.exec(message);
   const person=reference?dataIndex().employees.get(reference[1]):null;
   const label=person?`Bestehender Dienst ${person.name} ${message.slice(`Bestehender Dienst ${reference[1]} `.length)}`:message;
   return {message,index,reference,person,label:dayTextInMessage(label)};
  });
- const view=collection(box,'unresolved',entries,{label:'Offene Angaben',size:10,search:entry=>`${entry.message} ${entry.label}`,redraw:renderUnresolved});
+}
+function unresolvedShown(){
+ const query=fold(pageState('unresolved',10).query.trim()),entries=unresolvedEntries();
+ return query?entries.filter(entry=>fold(unresolvedHaystack(entry)).includes(query)):entries;
+}
+function renderUnresolved(){
+ const box=$('unresolved'),bar=$('unresolvedBulk');
+ if(!snapshot.unresolved.length){box.replaceChildren();el('p','Keine offenen Importangaben.',box);bar.hidden=true;return;}
+ const entries=unresolvedEntries();
+ const view=collection(box,'unresolved',entries,{label:'Offene Angaben',size:10,search:unresolvedHaystack,redraw:renderUnresolved});
+ updateUnresolvedBulk(view.items,entries.length);
  if(!view.total)el('p','Keine passenden Angaben. Suchbegriff ändern; andere offene Angaben bleiben erhalten.',view.content);
  for(const {index,reference,person,label} of view.items){const row=el('div',undefined,view.content);row.className='card';el('span',label,row);
   if(reference&&!person)el('p','Die Person ist im aktuellen Projekt nicht vorhanden. Import und Personenzuordnung prüfen.',row).className='helper-text';
@@ -478,6 +492,27 @@ function focusAssignment(index){
 }
 const diagnosticTitles={candidate_shortage:'Zu wenige geeignete Personen',shared_candidate_shortage:'Gemeinsamer Kandidatenengpass',vacancy:'Offene Stellen',maximum:'Höchstbesetzung',fixed:'Fixierte Einteilungen',duplicate:'Doppelte Einteilungen',reference:'Ungültige Verweise',context_assignment:'Planungszeitraum',interval_mismatch:'Dienstzeiten',unresolved:'Offene Angaben',profile:'Regelprofile',qualification:'Qualifikationen',approval:'Freigaben',rest:'Ruhezeiten',overlap:'Überlappende Dienste',interleaving:'Geteilte Dienste',availability:'Verfügbarkeit',kind:'Dienstart',boundary_kind:'Tag-/Nachtart der Randarbeit',boundary_period:'Randarbeit im Planungszeitraum',boundary_duplicate:'Doppelt erfasste Randarbeit',weekend:'Wochenenden',holiday:'Feiertage',employment:'Beschäftigungszeitraum',team:'Teamzuordnung',restriction:'Dienstsperren',absence:'Abwesenheiten',night_block:'Ruhe nach Nachtblock',daily_limit:'Tägliche Höchstzeit',weekly_limit:'Wöchentliche Höchstzeit',period_limit:'Höchstzeit im Planungszeitraum',work_days:'Höchstens erlaubte Arbeitstage',nights:'Höchstens erlaubte Nächte',weekends:'Höchstens erlaubte Wochenenden',consecutive_work:'Aufeinanderfolgende Arbeitstage',consecutive_nights:'Aufeinanderfolgende Nächte',weekly_rest:'Zusammenhängende Wochenruhe',context:'Angrenzende Dienste und Zeiträume',mentoring:'Erforderliche Betreuung',size_limit:'Planungsgröße',numeric_range:'Zahlenbereich',date_range:'Datumsbereich',created_at:'Datenstand',empty_id:'Fehlende Kennungen',duplicate_id:'Doppelte Kennungen',interval:'Dienstzeiten',demand:'Besetzungsbedarf',validity:'Gültigkeitszeitraum',assignment_reference:'Einteilungen',input:'Eingabedaten'};
 const eligibilityMessages={employment:'Der Dienst liegt außerhalb des Beschäftigungszeitraums.',team:'Die Person gehört nicht zum Team dieses Dienstes.',kind:'Diese Dienstart ist für die Person nicht erlaubt.',weekend:'Wochenenddienste sind für diese Person nicht erlaubt.',holiday:'Feiertagsdienste sind für diese Person nicht erlaubt.',approval:'Eine gültige Freigabe für diesen Dienst oder Arbeitsplatz fehlt.',qualification:'Ein gültiger Qualifikationsnachweis für diesen Dienst fehlt.',restriction:'Eine bestätigte Dienstsperre verhindert diese Einteilung.',absence:'Der Dienst überschneidet sich mit einer Abwesenheit.',availability:'Der vollständige Dienst liegt nicht innerhalb der erlaubten Zeitfenster.'};
+function updateUnresolvedBulk(shown,total){
+ const bar=$('unresolvedBulk');bar.hidden=false;bar.dataset.pending=String(shown.length);
+ const counts=new Map();for(const entry of shown){const key=unresolvedCategory(entry.message);counts.set(key,(counts.get(key)??0)+1);}
+ const breakdown=[...counts].sort((a,b)=>b[1]-a[1]).map(([key,n])=>`${n}× ${key}`).join(' · ');
+ $('unresolvedBulkTitle').textContent=shown.length===total
+  ?`${total} offene Importangaben`
+  :`${shown.length} von ${total} offenen Importangaben angezeigt`;
+ $('unresolvedBulkBreakdown').textContent=(breakdown?breakdown+'. ':'')
+  +'Markieren bestätigt die Angaben ausdrücklich als geprüft. Es werden keine Bedarfe, Freigaben oder Quellwerte geändert. Suchbegriff eingrenzen, um eine Kategorie einzeln zu bestätigen.';
+ $('confirmUnresolved').textContent=`Alle ${shown.length} angezeigten Angaben als geprüft markieren`;
+ $('confirmUnresolved').disabled=!shown.length;
+}
+action('confirmUnresolved',()=>{
+ const shown=new Set(unresolvedShown().map(entry=>entry.message));
+ if(!shown.size){notice('Keine angezeigten Importangaben.');return;}
+ if(!window.confirm(`${shown.size} angezeigte Importangaben ausdrücklich als geprüft markieren? Die Angaben verschwinden aus der Liste; Bedarfe, Freigaben und Quellwerte bleiben unverändert.`))return;
+ const before=snapshot.unresolved.length;
+ snapshot.unresolved=snapshot.unresolved.filter(message=>!shown.has(message));
+ invalidateResult();renderRules();
+ notice(`${before-snapshot.unresolved.length} Importangaben als geprüft markiert. ${snapshot.unresolved.length} bleiben offen. Änderungen speichern.`);
+});
 function diagnosticMessage(d){return dayTextInMessage(rawDiagnosticMessage(d));}
 function rawDiagnosticMessage(d){
  const person=snapshot&&d.employee_id?dataIndex().employees.get(d.employee_id):null;

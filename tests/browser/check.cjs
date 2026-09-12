@@ -1019,7 +1019,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.uncheck('#partial');
     await require('./product-flows.cjs')({page,base,navigate,reveal,uploadProject,root,state,delay});
     // Own page: both suites drive their own dialogs and project state.
-    for(const suite of ['./weekly-contract.cjs','./all-proposals.cjs']){
+    for(const suite of ['./weekly-contract.cjs','./all-proposals.cjs','./import-issues.cjs']){
       const isolated=await page.context().browser().newPage();isolated.setDefaultTimeout(30000);
       try{await require(suite)({page:isolated,base});}finally{await isolated.close();}
     }
