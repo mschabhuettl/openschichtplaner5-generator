@@ -1,7 +1,6 @@
 # Arbeitsanweisungen für dieses Repository
 
-Gilt für jede Änderung, für Tests und für jede
-Veröffentlichung.
+Gilt für jede Änderung, für Tests und für jede Veröffentlichung.
 
 ## Befehle
 
