@@ -1102,6 +1102,7 @@ def test_reference_reason_explains_first_failed_filter_without_creating_demand(r
 def test_new_import_defaults_isolated_days_to_1000():
     snapshot = import_snapshot(SyntheticDatabase(), date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
     assert snapshot.objectives.isolated_days == 1000
+    assert snapshot.objectives.split_weekends == 200
 
 
 def test_loading_snapshot_without_isolated_days_keeps_zero_weight():

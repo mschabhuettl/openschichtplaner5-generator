@@ -483,6 +483,18 @@ def solve(snapshot, time_limit=30, partial=False):
             model.add_max_equality(v, choices)
             wev[week] = v
         worked_vars[e.id], nights_vars[e.id], weekend_vars[e.id] = wv, nv, wev
+        if snapshot.objectives.split_weekends:
+            for week in sorted({day - timedelta(days=day.weekday())
+                                for day in wv if day.weekday() >= 5}):
+                sat, sun = week + timedelta(days=5), week + timedelta(days=6)
+                # Ohne Arbeitsmöglichkeit an beiden Tagen gibt es nichts zu koppeln.
+                if sat not in wv or sun not in wv:
+                    continue
+                if sat < snapshot.period_start or sun > snapshot.period_end:
+                    continue
+                split = model.new_bool_var("split_weekend:" + e.id + ":" + str(week))
+                model.add_abs_equality(split, wv[sat] - wv[sun])
+                cost("split_weekends", split, snapshot.objectives.split_weekends)
         # Reuse actual local worked-day variables (including split/overnight
         # duties and fixed boundary assignments). Minimize fragmentation, not
         # a hard block length. Include both edges of the planning period.

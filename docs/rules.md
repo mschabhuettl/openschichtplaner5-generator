@@ -216,3 +216,12 @@ damit unverändert. Der Ergebnisbericht weist den ungewichteten und gewichteten 
 unter `isolated_days` aus. Das Ziel bleibt weich und garantiert keine
 Mindestblocklänge; harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich
 dadurch nicht.
+
+`objectives.split_weekends` gewichtet die Anzahl der Wochenenden, an denen eine
+Person genau am Samstag oder genau am Sonntag arbeitet. Ein Wochenende zählt nur,
+wenn für die Person an beiden Tagen eine Arbeitsmöglichkeit besteht und beide Tage
+vollständig im Planungszeitraum liegen. Neue Importe und Projektanlagen beginnen
+mit Gewicht 200; beim Laden älterer Projekte ohne dieses Feld gilt 0 (deaktiviert).
+Gespeicherte Projekte bleiben damit unverändert. Der Ergebnisbericht weist den
+ungewichteten und gewichteten Beitrag unter `split_weekends` aus. Das Ziel bleibt
+weich; harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich dadurch nicht.
