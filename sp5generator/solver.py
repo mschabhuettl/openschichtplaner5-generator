@@ -461,6 +461,14 @@ def solve(snapshot, time_limit=30, partial=False):
                 transition = model.new_bool_var("workday_transition:" + e.id + ":" + str(day))
                 model.add_abs_equality(transition, wv.get(day, 0) - wv.get(day - timedelta(days=1), 0))
                 cost("workday_transitions", transition, snapshot.objectives.workday_transitions)
+        if snapshot.objectives.isolated_days:
+            for day in dates(snapshot.period_start, snapshot.period_end + timedelta(days=1)):
+                isolated = model.new_bool_var("isolated_day:" + e.id + ":" + str(day))
+                model.add_max_equality(isolated, [
+                    0, wv.get(day, 0) - wv.get(day - timedelta(days=1), 0)
+                    - wv.get(day + timedelta(days=1), 0),
+                ])
+                cost("isolated_days", isolated, snapshot.objectives.isolated_days)
         for p in snapshot.profiles:
             if p.id not in e.profile_ids:
                 continue

@@ -807,6 +807,87 @@ def test_legacy_objectives_and_explicit_profiles_are_not_migrated():
     assert restored.profiles == s.profiles
 
 
+def isolated_days_choice_case():
+    s = case(n=1, shifts=[shift(f'd{day}', day, 8, 8) for day in [5, 6, 7]])
+    s.demands[1].minimum = s.demands[2].minimum = 0
+    s.profiles[0].max_period_minutes = 960
+    s.employees[0].target_minutes = 960
+    s.assignments = [assignment(d='d5'), assignment(d='d7')]
+    # Zwei Dienste erfüllen das Stundenziel; bisher werden die Einzeltage beibehalten.
+    s.objectives = Objectives(hours=100, nights=0, weekends=0, holidays=0,
+                              wishes=0, changes=1)
+    return s
+
+
+@pytest.mark.parametrize('explicit_weight', [False, True])
+def test_isolated_days_zero_preserves_legacy_solution(explicit_weight):
+    original = isolated_days_choice_case().model_dump(mode='json')
+    if explicit_weight:
+        original['objectives']['isolated_days'] = 0
+    else:
+        original['objectives'].pop('isolated_days', None)
+    s = Snapshot.model_validate(original)
+    assert s.objectives.isolated_days == 0
+    result = solve(s, time_limit=5)
+    assert result.solver_status == 'OPTIMAL'
+    assert validate(s, result.assignments).complete
+    assert {(a.employee_id, a.demand_id) for a in result.assignments} == {
+        ('e0', 'd5'), ('e0', 'd7'),
+    }
+    assert result.metrics['objective_contributions'] == {'hours': 0, 'changes': 0}
+    assert result.metrics['weighted_objective_contributions'] == {'hours': 0, 'changes': 0}
+
+
+def test_isolated_days_high_weight_chooses_two_day_block():
+    s = isolated_days_choice_case()
+    s.objectives.isolated_days = 1000
+    result = solve(s, time_limit=5)
+    assert result.solver_status == 'OPTIMAL'
+    assert validate(s, result.assignments).complete
+    assert {(a.employee_id, a.demand_id) for a in result.assignments} == {
+        ('e0', 'd5'), ('e0', 'd6'),
+    }
+    assert result.metrics['objective_contributions']['isolated_days'] == 0
+    assert result.metrics['weighted_objective_contributions']['isolated_days'] == 0
+
+
+@pytest.mark.parametrize(('days', 'expected'), [
+    ((5,), 1),
+    ((5, 7), 2),
+    ((5, 6), 0),
+    ((5, 6, 7), 0),
+    ((4, 5), 0),
+    ((11,), 1),
+    ((11, 12), 0),
+    ((5, 12), 2),
+    ((5, 12, 13), 1),
+])
+def test_isolated_days_counts_neighbors_and_period_edges(days, expected):
+    s = case(n=1, shifts=[shift(f'd{day}', day, 8, 8) for day in days])
+    s.assignments = [
+        Assignment(employee_id='e0', demand_id=f'd{day}', fixed=True)
+        for day in days if day < 5 or day > 11
+    ]
+    s.objectives = Objectives(hours=0, nights=0, weekends=0, holidays=0,
+                              wishes=0, changes=0, isolated_days=7)
+    result = solve(s, time_limit=5)
+    assert result.solver_status == 'OPTIMAL'
+    assert validate(s, result.assignments).complete
+    assert result.metrics['objective_contributions']['isolated_days'] == expected
+    assert result.metrics['weighted_objective_contributions']['isolated_days'] == 7 * expected
+
+
+@pytest.mark.parametrize('day', [5, 11])
+def test_isolated_days_uses_both_worked_days_of_overnight_shift(day):
+    s = case(n=1, shifts=[shift('night', day, 22, 8, 'night')])
+    s.objectives = Objectives(hours=0, nights=0, weekends=0, holidays=0,
+                              wishes=0, changes=0, isolated_days=7)
+    result = solve(s, time_limit=5)
+    assert result.solver_status == 'OPTIMAL'
+    assert validate(s, result.assignments).complete
+    assert result.metrics['objective_contributions']['isolated_days'] == 0
+
+
 def test_36_hour_calendar_rest_includes_daily_rest_unless_explicitly_added():
     s = case(n=1, shifts=[shift(f'd{day}', day, 0, 12) for day in range(5, 11)])
     p = s.profiles[0]

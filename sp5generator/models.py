@@ -154,6 +154,8 @@ class Wish(Model):
 class Objectives(Model):
     # Old saved projects retain their objective unless explicitly enabled.
     workday_transitions: int = Field(default=0, ge=0)
+    # Einzelne Arbeitstage nur bei aktiviertem Gewicht bestrafen.
+    isolated_days: int = Field(default=0, ge=0)
     hours: int = Field(default=1, ge=0)
     nights: int = Field(default=10, ge=0)
     weekends: int = Field(default=10, ge=0)
