@@ -85,13 +85,16 @@ def main():
     targets = list(collect(args.paths))
     if args.range:
         targets += [p for p in changed_paths(args.range) if p.is_file()]
+    # Name the scope that was skipped: a mistyped option lands in --paths and
+    # would otherwise leave the scan silently narrower than it claims to be.
+    skipped = "".join(f", {p} skipped (not found)" for p in args.paths if not p.exists())
     if not targets:
-        print("privacy scan: nothing to check")
+        print("privacy scan: nothing to check" + skipped)
         return 0
 
     findings = {path: hits for path in sorted(set(targets)) if (hits := scan(path, names))}
     print(f"privacy scan: {len(targets)} files checked, "
-          f"{len(names)} private names loaded, {len(findings)} files with hits")
+          f"{len(names)} private names loaded, {len(findings)} files with hits" + skipped)
     for path, hits in findings.items():
         print(f"  {path}: " + ", ".join(f"{rule}×{count}" for rule, count in hits))
     return 1 if findings else 0

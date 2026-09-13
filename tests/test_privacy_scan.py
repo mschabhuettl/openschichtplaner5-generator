@@ -20,8 +20,8 @@ def test_reports_planted_findings_without_echoing_them(tmp_path):
     (tmp_path / "leak.py").write_text(f'api_key = "{secret}"\nhost = "10.0.0.1"\n')
     (tmp_path / "roster.csv").write_text("day;service\n")
     names = tmp_path / "names.txt"
-    names.write_text("Erika Mustermann\n")
-    (tmp_path / "note.md").write_text("Erika Mustermann arbeitet Nachtdienst.\n")
+    names.write_text("Beispielperson Musterfall\n")
+    (tmp_path / "note.md").write_text("Beispielperson Musterfall arbeitet Nachtdienst.\n")
 
     result = run("--paths", str(tmp_path), "--names", str(names))
 
@@ -29,7 +29,7 @@ def test_reports_planted_findings_without_echoing_them(tmp_path):
     assert "credential" in result.stdout and "private_host" in result.stdout
     assert "blocked_suffix" in result.stdout and "private_name_list" in result.stdout
     assert secret not in result.stdout
-    assert "Erika" not in result.stdout
+    assert "Beispielperson" not in result.stdout
 
 
 def test_accepts_clean_content(tmp_path):
@@ -50,3 +50,16 @@ def test_directory_walk_skips_git_ignored_files(tmp_path):
     collected = list(privacy_scan.collect([tmp_path]))
 
     assert not any(path.name == "dump.csv" for path in collected)
+
+
+def test_names_swallowed_by_paths_is_reported_as_skipped(tmp_path):
+    """A mistyped option lands in --paths; the scan must not look complete."""
+    (tmp_path / "clean.py").write_text("wert = 1\n")
+    names = tmp_path / "names.txt"
+    names.write_text("Beispielperson Musterfall\n")
+
+    result = run("--paths", str(tmp_path / "clean.py"), f"--names {names}")
+
+    assert result.returncode == 0
+    assert "0 private names loaded" in result.stdout
+    assert "skipped (not found)" in result.stdout
