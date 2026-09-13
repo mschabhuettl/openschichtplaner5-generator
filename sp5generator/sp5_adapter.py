@@ -355,6 +355,7 @@ def import_snapshot(
             metadata["unresolved_native"].setdefault("special_requirements", []).extend({k: v for k, v in r.items() if not k.startswith("_")} for r in values)
     employees = []
     not_employed_in_period = 0
+    without_weekly_contract = 0
     parents = {int(g["id"]): int(g["parent_id"]) for g in metadata["group_tree"]}
     metadata["direct_group_memberships"] = {}
     for e in source_employees:
@@ -383,8 +384,6 @@ def import_snapshot(
             )
         employment_start = calc.to_date(e.get("EMPSTART")) or date.min
         employment_end = calc.to_date(e.get("EMPEND")) or date.max
-        if employment_end < period_start or employment_start > period_end:
-            not_employed_in_period += 1
         employees.append(
             Employee(
                 id=eid,
@@ -403,6 +402,10 @@ def import_snapshot(
                 ),
             )
         )
+        if employment_end < period_start or employment_start > period_end:
+            not_employed_in_period += 1
+        elif employees[-1].contractual_weekly_minutes is None:
+            without_weekly_contract += 1
         metadata["provenance"][eid] = {
             "table": "EMPL",
             "id": e["ID"],
@@ -437,11 +440,21 @@ def import_snapshot(
                 )),
             })
     metadata["not_employed_in_period"] = not_employed_in_period
+    metadata["without_weekly_contract"] = without_weekly_contract
     if not_employed_in_period:
         unresolved.append(
             f"{not_employed_in_period} der importierten Personen sind im Planungszeitraum nicht "
             "beschäftigt. Sie bleiben wegen ihres früheren Dienstkontexts erhalten, können "
             "aber keinen Bedarf decken."
+        )
+    if without_weekly_contract:
+        wen = ("eine Person" if without_weekly_contract == 1
+               else f"{without_weekly_contract} Personen")
+        unresolved.append(
+            f"Für {wen} nennt die Quelle keine Vertragswochenstunden. "
+            "Das weiche Ziel zur Verteilung über die Kalenderwochen wirkt für sie nicht; eine "
+            "Obergrenze entsteht dadurch nicht und wird auch nicht angenommen. Wer eine Grenze "
+            "braucht, hinterlegt sie ausdrücklich im Regelprofil."
         )
     unresolved.append(
         ("Sollbuchungen nicht verfügbar; " if nominal_bookings is None else "")

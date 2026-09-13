@@ -145,6 +145,50 @@ def test_not_employed_in_period_is_reported_once_without_dropping_people(
         assert all(person.name not in messages[0] for person in snapshot.employees)
 
 
+@pytest.mark.parametrize(
+    "employee_changes,expected_weekly_minutes,expected_count",
+    [
+        ([{}], [None], 1),
+        ([{"CALCBASE": 1}], [2400], 0),
+        ([{"CALCBASE": 1, "HRSWEEK": 0}], [0], 0),
+        ([{"CALCBASE": 1, "HRSWEEK": None}], [None], 1),
+        ([{"EMPEND": "2026-01-04"}], [None], 0),
+        ([{"EMPSTART": "2026-01-07"}], [None], 0),
+        ([{"EMPEND": "2026-01-05"}], [None], 1),
+        ([{"EMPSTART": "2026-01-06"}], [None], 1),
+        ([{}, {}], [None, None], 2),
+    ],
+)
+def test_without_weekly_contract_is_reported_once_for_employed_people(
+    employee_changes, expected_weekly_minutes, expected_count
+):
+    class Source(SyntheticDatabase):
+        def get_employees(self, **kw):
+            employee = super().get_employees(**kw)[0]
+            return [
+                {**employee, "ID": 101 + index, **changes}
+                for index, changes in enumerate(employee_changes)
+            ]
+
+        def get_group_members(self, g):
+            return [101 + index for index in range(len(employee_changes))]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+    assert snapshot.metadata["without_weekly_contract"] == expected_count
+    assert [person.contractual_weekly_minutes for person in snapshot.employees] == expected_weekly_minutes
+    assert snapshot.profiles[0].max_weekly_minutes is None
+    messages = [message for message in snapshot.unresolved if "keine Vertragswochenstunden" in message]
+    assert len(messages) == (1 if expected_count else 0)
+    if expected_count:
+        wen = ("eine Person" if expected_count == 1 else f"{expected_count} Personen")
+        assert messages[0].startswith(f"Für {wen} nennt")
+        assert "weiche Ziel zur Verteilung über die Kalenderwochen wirkt für sie nicht" in messages[0]
+        assert "Obergrenze entsteht dadurch nicht und wird auch nicht angenommen" in messages[0]
+        assert "ausdrücklich im Regelprofil" in messages[0]
+        assert all(person.name not in messages[0] for person in snapshot.employees)
+
+
 def test_native_24_hour_window_paid_duration_and_nominal_week_are_distinct():
     from sp5generator.timeutils import day_minutes
 
