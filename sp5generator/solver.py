@@ -771,6 +771,8 @@ def solve(snapshot, time_limit=30, partial=False):
                 )
                 count_bounds[e.id] = len({shift_day[d.shift_id] for d, x in eligible})
             elif category == "weekends":
+                # Der Zähler zählt Wochen, daher muss auch der Nenner Wochen zählen.
+                opportunities[e.id] = len(weekend_vars[e.id]) * e.employment_fraction
                 count = sum(weekend_vars[e.id].values())
                 count_bounds[e.id] = len(weekend_vars[e.id])
             else:
