@@ -204,3 +204,14 @@ kein exaktes Maximierungsmodell für die längste Freizeit in Minuten. Auch
 Maximalität. Der Ergebnisbericht weist den ungewichteten und gewichteten
 Beitrag unter `workday_transitions` aus. Fehlende Randinformationen bleiben
 Einrichtungsfehler, nicht automatisch freie Tage.
+
+`objectives.isolated_days` gewichtet die Anzahl der Arbeitstage, deren Vortag und
+Folgetag beide frei sind. Es ergänzt `workday_transitions`, das für einen Block
+unabhängig von dessen Länge zwei Wechsel zählt, um eine gezielte Strafe für
+Einzeltage. Für Randtage gelten dieselben Tagesvariablen wie bei
+`workday_transitions`, einschließlich bekannter Dienste unmittelbar vor und nach
+dem Zeitraum. Die Vorgabe ist 0 (deaktiviert); gespeicherte Projekte bleiben damit
+unverändert. Der Ergebnisbericht weist den ungewichteten und gewichteten Beitrag
+unter `isolated_days` aus. Das Ziel bleibt weich und garantiert keine
+Mindestblocklänge; harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich
+dadurch nicht.
