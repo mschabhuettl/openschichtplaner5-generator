@@ -754,6 +754,76 @@ def test_result_interval_comparison_uses_actual_instant_during_dst_fold():
     assert validate(s, [proposal]).complete
 
 
+@pytest.mark.parametrize('warm', [False, True])
+@pytest.mark.parametrize(('days', 'boundary_days', 'expected'), [
+    ((5, 6), (), {'blocks': 1, 'single_days': 0, 'average_length': 2.0, 'longest': 2}),
+    ((5, 7), (), {'blocks': 2, 'single_days': 2, 'average_length': 1.0, 'longest': 1}),
+    ((5, 6, 8, 10), (), {'blocks': 3, 'single_days': 2, 'average_length': 1.33, 'longest': 2}),
+    ((5,), (4,), {'blocks': 1, 'single_days': 0, 'average_length': 2.0, 'longest': 2}),
+    ((11,), (12,), {'blocks': 1, 'single_days': 0, 'average_length': 2.0, 'longest': 2}),
+    ((5,), (1, 2, 13, 14), {'blocks': 1, 'single_days': 1, 'average_length': 1.0, 'longest': 1}),
+    ((4, 5), (), {'blocks': 1, 'single_days': 0, 'average_length': 2.0, 'longest': 2}),
+])
+def test_duty_blocks_metrics_count_calendar_blocks(monkeypatch, warm, days, boundary_days, expected):
+    s = case(n=2, shifts=[shift(f'd{day}', day, 8, 8) for day in days])
+    s.employees[1].approvals = []
+    s.assignments = [
+        Assignment(employee_id='e0', demand_id=f'd{day}', fixed=True)
+        for day in days if day < 5 or day > 11
+    ]
+    s.boundary_work = [
+        BoundaryWork(id=f'b{day}', employee_id='e0', kind='day',
+                     segments=shift(f'b{day}', day, 8, 8).segments)
+        for day in boundary_days
+    ]
+    s.boundary_work.append(BoundaryWork(
+        id='other', employee_id='e1', kind='day', segments=shift('other', 3, 8, 8).segments,
+    ))
+    if warm:
+        from ortools.sat.python import cp_model
+
+        s.assignments += [assignment(d=f'd{day}') for day in days if 5 <= day <= 11]
+        original = cp_model.CpSolver.solve
+
+        def stop_after_certificate(self, model, *args, **kwargs):
+            if self.parameters.fix_variables_to_their_hinted_value:
+                return original(self, model, *args, **kwargs)
+            return cp_model.UNKNOWN
+
+        monkeypatch.setattr(cp_model.CpSolver, 'solve', stop_after_certificate)
+    result = solve(s, time_limit=5, partial=warm)
+    assert result.validation.valid and result.validation.complete
+    assert {a.demand_id for a in result.assignments} == {d.id for d in s.demands}
+    assert result.solver_status == ('FEASIBLE' if warm else 'OPTIMAL')
+    assert result.metrics['employees']['e0']['duty_blocks'] == expected
+    assert result.metrics['employees']['e1']['duty_blocks'] == {
+        'blocks': 0, 'single_days': 0, 'average_length': 0.0, 'longest': 0,
+    }
+
+
+@pytest.mark.parametrize('source', ['night', 'split', 'boundary', 'untimed'])
+def test_duty_blocks_metrics_use_occupied_calendar_days(source):
+    s = case(n=1, shifts=[shift('s', 5, 20, 2)])
+    expected = {'blocks': 1, 'single_days': 0, 'average_length': 2.0, 'longest': 2}
+    if source == 'night':
+        s.shifts[0] = shift('s', 5, 22, 8, 'night')
+    elif source == 'split':
+        s.shifts[0].segments += shift('later', 7, 20, 2).segments
+        expected = {'blocks': 2, 'single_days': 2, 'average_length': 1.0, 'longest': 1}
+    elif source == 'boundary':
+        s.boundary_work = [BoundaryWork(
+            id='before', employee_id='e0', kind='night',
+            segments=shift('before', 4, 22, 8, 'night').segments,
+        )]
+    else:
+        s.boundary_work = [BoundaryWork(
+            id='personal', employee_id='e0', segments=[], day=date(2026, 1, 6), in_period=True,
+        )]
+    result = solve(s, time_limit=5)
+    assert result.validation.valid and result.validation.complete
+    assert result.metrics['employees']['e0']['duty_blocks'] == expected
+
+
 def test_soft_block_goal_reuses_workdays_and_preserves_hard_limits():
     s = case(shifts=[shift(f'd{day}', day, 8, 8) for day in range(5, 12)])
     s.profiles[0].max_work_days = 4

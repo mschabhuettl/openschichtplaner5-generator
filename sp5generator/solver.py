@@ -160,6 +160,36 @@ def solve(snapshot, time_limit=30, partial=False):
     shift_day = {
         s.id: local_day(bounds(s)[0], snapshot.timezone) for s in snapshot.shifts
     }
+
+    def duty_blocks(employee_id, plan):
+        worked_days = {
+            day
+            for a in plan if a.employee_id == employee_id
+            for day in dates_by_shift[demands[a.demand_id].shift_id]
+        }
+        worked_days.update(
+            day
+            for work in snapshot.boundary_work if work.employee_id == employee_id
+            for day in dates_by_shift[("boundary", work.id)]
+        )
+        blocks = []
+        for day in sorted(worked_days):
+            if blocks and day == blocks[-1][1] + timedelta(days=1):
+                blocks[-1] = (blocks[-1][0], day)
+            else:
+                blocks.append((day, day))
+        # Randtage verlängern berührende Blöcke; reine Kontextblöcke zählen nicht.
+        lengths = [
+            (end - start).days + 1 for start, end in blocks
+            if start <= snapshot.period_end and end >= snapshot.period_start
+        ]
+        return {
+            "blocks": len(lengths),
+            "single_days": lengths.count(1),
+            "average_length": round(sum(lengths) / len(lengths), 2) if lengths else 0.0,
+            "longest": max(lengths, default=0),
+        }
+
     diagnostics = []
     exclusions = defaultdict(Counter)
     candidate_stats = {
@@ -965,6 +995,7 @@ def solve(snapshot, time_limit=30, partial=False):
             # time as well; the reported figure must match the objective.
             paid = sum(s.paid_minutes for s in selected) + personal_period_paid[e.id]
             metrics["employees"][e.id] = {
+                "duty_blocks": duty_blocks(e.id, plan),
                 "paid_minutes": paid,
                 "target_minutes": e.target_minutes,
                 "reachable_minutes": reachable_minutes[e.id],
@@ -1191,6 +1222,7 @@ def solve(snapshot, time_limit=30, partial=False):
             # time as well; the reported figure must match the objective.
             paid = sum(s.paid_minutes for s in selected) + personal_period_paid[e.id]
             metrics["employees"][e.id] = {
+                "duty_blocks": duty_blocks(e.id, assignments),
                 "paid_minutes": paid,
                 "target_minutes": e.target_minutes,
                 "reachable_minutes": reachable_minutes[e.id],
