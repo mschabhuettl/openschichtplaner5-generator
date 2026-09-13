@@ -1121,7 +1121,7 @@ def import_snapshot(
         shifts=list(shifts.values()),
         demands=demands,
         profiles=[profile],
-        objectives=Objectives(workday_transitions=100),
+        objectives=Objectives(workday_transitions=100, isolated_days=1000),
         restrictions=restrictions,
         assignments=assignments,
         boundary_work=list(boundary_work.values()),

@@ -237,7 +237,7 @@ def create_project(data: ProjectCreateRequest) -> Snapshot:
         context_complete=data.context_duty_free_confirmed,
         rule_version='project-rules:1', source='json', employees=people, positions=positions,
         shifts=shifts, demands=demands, profiles=[profile],
-        objectives=Objectives(workday_transitions=100),
+        objectives=Objectives(workday_transitions=100, isolated_days=1000),
         metadata={
             'project_name': data.project_name,
             'created_with': 'project-setup',

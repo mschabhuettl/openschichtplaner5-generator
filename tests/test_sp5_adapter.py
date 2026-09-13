@@ -1055,6 +1055,22 @@ def test_reference_reason_explains_first_failed_filter_without_creating_demand(r
     assert len(snapshot.demands) == (0 if reason == 'missing_demand' else 2 if reason == 'ambiguous' else 1)
 
 
+def test_new_import_defaults_isolated_days_to_1000():
+    snapshot = import_snapshot(SyntheticDatabase(), date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
+    assert snapshot.objectives.isolated_days == 1000
+
+
+def test_loading_snapshot_without_isolated_days_keeps_zero_weight():
+    from sp5generator.models import Snapshot
+
+    snapshot = import_snapshot(SyntheticDatabase(), date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
+    original = snapshot.model_dump(mode='json')
+    del original['objectives']['isolated_days']
+    restored = Snapshot.model_validate(original)
+    assert restored.objectives.isolated_days == 0
+    assert restored.objectives.workday_transitions == 100
+
+
 def test_new_import_proposes_authorized_rest_defaults_without_confirming_setup():
     from sp5generator.domain import input_diagnostics
     s = import_snapshot(SyntheticDatabase(), date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')

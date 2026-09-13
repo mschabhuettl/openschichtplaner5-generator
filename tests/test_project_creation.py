@@ -211,6 +211,11 @@ def test_project_factory_api_creates_then_allows_normal_save(tmp_path):
         assert client.post('/api/projects/new', json=data).status_code == 422
 
 
+def test_new_project_defaults_isolated_days_to_1000():
+    created = build(project_payload())
+    assert created.objectives.isolated_days == 1000
+
+
 def test_new_setup_defaults_and_explicit_weekly_rest_are_distinct():
     payload = project_payload()
     del payload['rules']['weekly_rest_hours']
