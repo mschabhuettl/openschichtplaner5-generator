@@ -851,6 +851,33 @@ def test_isolated_days_high_weight_chooses_two_day_block():
     assert result.metrics['weighted_objective_contributions']['isolated_days'] == 0
 
 
+def test_isolated_days_skips_days_without_work_opportunities():
+    s = case(n=2, shifts=[shift(f'd{day}', day, 8, 8) for day in [5, 7]])
+    s.employees[1].approvals = []
+    s.objectives = Objectives(hours=0, nights=0, weekends=0, holidays=0,
+                              wishes=0, changes=0, isolated_days=7)
+    without_person = solve(s.model_copy(update={'employees': s.employees[:1]}), time_limit=5)
+    result = solve(s, time_limit=5)
+    assert result.solver_status == without_person.solver_status == 'OPTIMAL'
+    assert result.validation.valid and result.validation.complete
+    assert without_person.validation.valid and without_person.validation.complete
+    assert result.assignments == without_person.assignments
+    assert result.vacancies == without_person.vacancies == {}
+    assert result.objective_value == without_person.objective_value == 14
+    for key, expected in [
+        ('objective_contributions', 2),
+        ('weighted_objective_contributions', 14),
+    ]:
+        assert result.metrics[key] == without_person.metrics[key] == {'isolated_days': expected}
+
+    s.objectives.isolated_days = 0
+    disabled = solve(s, time_limit=5)
+    assert disabled.solver_status == 'OPTIMAL'
+    # Nur die zwei einsetzbaren Tage erzeugen zusätzliche Variablen und Constraints.
+    assert result.parameters['model_variables'] == disabled.parameters['model_variables'] + 2
+    assert result.parameters['model_constraints'] == disabled.parameters['model_constraints'] + 2
+
+
 @pytest.mark.parametrize(('days', 'expected'), [
     ((5,), 1),
     ((5, 7), 2),

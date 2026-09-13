@@ -463,6 +463,9 @@ def solve(snapshot, time_limit=30, partial=False):
                 cost("workday_transitions", transition, snapshot.objectives.workday_transitions)
         if snapshot.objectives.isolated_days:
             for day in dates(snapshot.period_start, snapshot.period_end + timedelta(days=1)):
+                # Ohne Arbeitsmöglichkeit am Tag selbst ist der Term konstant null.
+                if day not in wv:
+                    continue
                 isolated = model.new_bool_var("isolated_day:" + e.id + ":" + str(day))
                 model.add_max_equality(isolated, [
                     0, wv.get(day, 0) - wv.get(day - timedelta(days=1), 0)
