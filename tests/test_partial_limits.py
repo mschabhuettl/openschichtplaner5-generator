@@ -10,10 +10,10 @@ import pytest
 from ortools.sat.python import cp_model
 
 from sp5generator import solver
-from sp5generator.models import Assignment, Interval
+from sp5generator.models import Assignment, Interval, Objectives
 from sp5generator.timeutils import localize
 from sp5generator.validator import validate
-from test_core_rules import case, shift
+from test_core_rules import case, isolated_days_choice_case, shift
 
 
 def plan(snapshot):
@@ -596,6 +596,72 @@ def test_vacancy_variable_equals_actual_shortage_without_optimality(monkeypatch,
     assert result.solver_status == 'UNKNOWN' and not result.assignments
 
 
+@pytest.mark.parametrize("mode", ["full", "partial", "warm"])
+@pytest.mark.parametrize(("target", "balance", "credit", "deviation", "hours_cost"), [
+    (480, 0, 0, 0, 0),
+    (2880, 0, 0, -2400, 0),
+    (600, 60, 60, 0, 0),
+    (3000, 60, 60, -2400, 0),
+    (480, -600, 60, -540, 0),
+    (480, 600, 60, 660, 660),
+])
+def test_hours_target_keeps_contractual_report(
+    monkeypatch, mode, target, balance, credit, deviation, hours_cost,
+):
+    snapshot = case(n=1)
+    employee = snapshot.employees[0]
+    employee.target_minutes = target
+    employee.balance_minutes = balance
+    employee.credit_minutes = credit
+    snapshot.objectives = Objectives(hours=1, nights=0, weekends=0, holidays=0,
+                                     wishes=0, changes=0)
+    if mode == "warm":
+        snapshot.assignments = [Assignment(employee_id="e0", demand_id="s")]
+        original = cp_model.CpSolver.solve
+
+        def stop_after_certificate(self, model, *args, **kwargs):
+            if self.parameters.fix_variables_to_their_hinted_value:
+                return original(self, model, *args, **kwargs)
+            return cp_model.UNKNOWN
+
+        monkeypatch.setattr(cp_model.CpSolver, "solve", stop_after_certificate)
+    result = solver.solve(snapshot, time_limit=5, partial=mode != "full")
+    assert result.validation.valid and result.validation.complete
+    assert [(a.employee_id, a.demand_id) for a in result.assignments] == [("e0", "s")]
+    report = result.metrics["employees"]["e0"]
+    assert report["paid_minutes"] == report["reachable_minutes"] == 480
+    assert report["target_minutes"] == target
+    assert report["balance_minutes"] == balance
+    assert report["credit_minutes"] == credit
+    assert report["deviation_minutes"] == deviation
+    if mode == "warm":
+        assert result.metrics["objective_phase"] == "vacancies"
+    else:
+        assert result.solver_status == "OPTIMAL"
+        assert result.objective_value == hours_cost
+
+
+@pytest.mark.parametrize(('target', 'objective'), [(960, 2), (3360, 48002)])
+def test_hours_target_cap_preserves_competing_block_choice(target, objective):
+    s = isolated_days_choice_case()
+    s.employees[0].target_minutes = target
+    s.objectives.isolated_days = 1000
+    result = solver.solve(s, time_limit=5)
+    assert result.solver_status == 'OPTIMAL'
+    assert result.validation.valid and result.validation.complete
+    # Die Kappung entfernt einen konstanten Rückstand; die Blockwahl bleibt gleich.
+    assert {(a.employee_id, a.demand_id) for a in result.assignments} == {
+        ('e0', 'd5'), ('e0', 'd6'),
+    }
+    report = result.metrics['employees']['e0']
+    assert report['paid_minutes'] == 960
+    assert report['reachable_minutes'] == 1440
+    assert report['target_minutes'] == target
+    assert report['deviation_minutes'] == 960 - target
+    assert report['duty_blocks']['single_days'] == 0
+    assert result.objective_value == pytest.approx(objective)
+
+
 def test_linear_hours_target_can_tie_while_block_goal_concentrates_work():
     from sp5generator.models import Objectives
 
@@ -617,11 +683,11 @@ def test_linear_hours_target_can_tie_while_block_goal_concentrates_work():
     assert result.solver_status == "OPTIMAL" and result.validation.complete
     assert len({a.employee_id for a in result.assignments}) == 1
     costs = result.metrics["objective_contributions"]
-    # All people remain below target: total L1 shortfall is identical.
-    assert costs["hours"] == 3 * (2400 - 480) == 5760
+    # Die Verteilung ändert die L1-Summe gegen das gekappte Soll (1440) nicht.
+    assert costs["hours"] == 3 * (1440 - 480) == 2880
     # One three-day block has two transitions; three one-day blocks have six.
     assert costs["workday_transitions"] == 2
-    assert result.objective_value == 5760 + 2 * 100
+    assert result.objective_value == 2880 + 2 * 100
     assert sum(d["reason"] == "not_selected_with_candidates" for d in result.metrics["planning_diagnostics"]["employees"].values()) == 2
 
 

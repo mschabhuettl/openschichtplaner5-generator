@@ -659,10 +659,16 @@ def solve(snapshot, time_limit=30, partial=False):
             + e.credit_minutes
             + e.target_minutes
         )
+        # Ein nachweislich unerreichbares Soll darf die übrigen Ziele nicht verdrängen;
+        # berichtet wird weiterhin gegen das vertragliche Soll.
+        optimization_target = min(
+            e.target_minutes,
+            reachable_minutes[e.id] + e.balance_minutes + e.credit_minutes,
+        )
         deviation = model.new_int_var(0, upper, "hours:" + e.id)
         model.add_abs_equality(
             deviation,
-            sum(paid) + e.balance_minutes + e.credit_minutes - e.target_minutes,
+            sum(paid) + e.balance_minutes + e.credit_minutes - optimization_target,
         )
         cost("hours", deviation, snapshot.objectives.hours)
         if e.contractual_weekly_minutes is not None and snapshot.objectives.hours:
