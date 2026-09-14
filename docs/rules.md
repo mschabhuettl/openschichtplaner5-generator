@@ -222,6 +222,19 @@ Maximalität. Der Ergebnisbericht weist den ungewichteten und gewichteten
 Beitrag unter `workday_transitions` aus. Fehlende Randinformationen bleiben
 Einrichtungsfehler, nicht automatisch freie Tage.
 
+`metrics.free_time` berichtet die Freizeitstruktur als Summen und Mittelwerte
+ohne personenbezogene Angaben: Anzahl der Freizeitblöcke (`blocks`), einzelner
+freier Tage (`single_days`) und Blöcke ab drei Tagen (`three_or_more`), mittlere
+Blocklänge auf zwei Nachkommastellen (`mean_length`), längster Block (`longest`),
+vollständig freie Person-Wochenenden (`free_weekends`) und berücksichtigte Personen
+(`people`). Grundlage sind dieselben belegten Kalendertage wie bei `duty_blocks`,
+einschließlich persönlicher Randarbeit. Freie Ketten zählen innerhalb des
+Planungszeitraums vollständig, auch an dessen Rändern; bei Wochenenden müssen
+Samstag und Sonntag im Zeitraum liegen und beide frei sein. Personen ohne Arbeit
+im Zeitraum bleiben außer Betracht. Die Kennzahlen gelten auch für Teilpläne;
+ohne berücksichtigte Personen sind sie null. Sie dienen ausschließlich dem Bericht
+und ändern weder Optimierungsziele noch harte Regeln, Validierung oder Suche.
+
 `objectives.isolated_days` gewichtet die Anzahl der Arbeitstage, deren Vortag und
 Folgetag beide frei sind. Es ergänzt `workday_transitions`, das für einen Block
 unabhängig von dessen Länge zwei Wechsel zählt, um eine gezielte Strafe für

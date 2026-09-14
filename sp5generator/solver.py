@@ -40,6 +40,39 @@ SEARCH_WORKERS = 1
 LAENGENKOSTEN = {1: 55, 2: 7, 3: 0, 4: 42, 5: 206, 6: 316}
 
 
+def _free_time_metrics(period_start, period_end, worked_days_by_person):
+    lengths = []
+    people = free_weekends = 0
+    period_days = None
+    for worked_days in worked_days_by_person:
+        if not any(period_start <= day <= period_end for day in worked_days):
+            continue
+        people += 1
+        if period_days is None:
+            period_days = set(dates(period_start, period_end))
+        free_days = period_days - worked_days
+        previous = None
+        for day in sorted(free_days):
+            if previous is not None and day == previous + timedelta(days=1):
+                lengths[-1] += 1
+            else:
+                lengths.append(1)
+            previous = day
+        free_weekends += sum(
+            day.weekday() == 5 and day + timedelta(days=1) in free_days
+            for day in free_days
+        )
+    return {
+        "blocks": len(lengths),
+        "single_days": lengths.count(1),
+        "three_or_more": sum(length >= 3 for length in lengths),
+        "mean_length": round(sum(lengths) / len(lengths), 2) if lengths else 0.0,
+        "longest": max(lengths, default=0),
+        "free_weekends": free_weekends,
+        "people": people,
+    }
+
+
 def solve(snapshot, time_limit=30, partial=False, _repair=True):
     if not isfinite(time_limit):
         raise ValueError('Zeitlimit muss eine endliche Zahl in Sekunden sein.')
@@ -52,6 +85,8 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
     phase_deadline = started + phase_limit
     timings = {}
     employee_candidates = None
+    demands = {d.id: d for d in snapshot.demands}
+    dates_by_shift = {}
     parameters = {
         "time_limit": time_limit,
         "partial": partial,
@@ -64,8 +99,29 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
         "search_trace": [],
     }
 
+    def worked_days(employee_id, plan):
+        days = {
+            day
+            for a in plan if a.employee_id == employee_id
+            for day in dates_by_shift[demands[a.demand_id].shift_id]
+        }
+        for work in snapshot.boundary_work:
+            if work.employee_id == employee_id:
+                key = ("boundary", work.id)
+                # Early results may precede the model's boundary-work setup.
+                days.update(dates_by_shift[key] if key in dates_by_shift
+                            else day_minutes(work, snapshot.timezone))
+        return days
+
     def result(status, assignments=None, validation=None, **kwargs):
         assignments = assignments or []
+        kwargs.setdefault("metrics", {})["free_time"] = _free_time_metrics(
+            snapshot.period_start,
+            snapshot.period_end,
+            # Invalid input has no usable calendar on which to report a plan.
+            (worked_days(e.id, assignments) for e in snapshot.employees)
+            if status != "MODEL_INVALID" else (),
+        )
         counts = defaultdict(int)
         for a in assignments:
             counts[a.demand_id] += 1
@@ -254,7 +310,6 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
     model = cp_model.CpModel()
     employees = {e.id: e for e in snapshot.employees}
     shifts = {s.id: s for s in snapshot.shifts}
-    demands = {d.id: d for d in snapshot.demands}
     positions = {p.id: p for p in snapshot.positions}
     fixed = {(a.employee_id, a.demand_id) for a in snapshot.assignments if a.fixed}
     prior = {(a.employee_id, a.demand_id) for a in snapshot.assignments}
@@ -267,18 +322,8 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
     }
 
     def duty_blocks(employee_id, plan):
-        worked_days = {
-            day
-            for a in plan if a.employee_id == employee_id
-            for day in dates_by_shift[demands[a.demand_id].shift_id]
-        }
-        worked_days.update(
-            day
-            for work in snapshot.boundary_work if work.employee_id == employee_id
-            for day in dates_by_shift[("boundary", work.id)]
-        )
         blocks = []
-        for day in sorted(worked_days):
+        for day in sorted(worked_days(employee_id, plan)):
             if blocks and day == blocks[-1][1] + timedelta(days=1):
                 blocks[-1] = (blocks[-1][0], day)
             else:
