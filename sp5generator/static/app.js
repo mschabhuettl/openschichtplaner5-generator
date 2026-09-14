@@ -4,6 +4,7 @@ let groups=[], checkedTeams=new Set(), transposed=false, planMonth="", solving=f
 let dirty=false, jsonDirty=false, changeVersion=0, activePanel='projects', projectBusy=false, personDraft=false;
 let indexVersion=-1, indexes=null, matrixCache=null, stateFrame=null, jsonVersion=-1;
 const renderedPanels=new Map(), collections=new Map();
+let originalDemands=new Map(), createdDemands=new Set();
 let savedRequest=0,jobsRequest=0;
 let readinessVersion=-1,readinessPending=-1,readinessRequest=0,readinessSummary=null;
 const fold=value=>String(value??'').toLocaleLowerCase('de-DE');
@@ -57,6 +58,7 @@ function renderActivePanel(force=false){
  if(!force&&renderedPanels.get(activePanel)===changeVersion)return;
  if(activePanel==='team'){renderMatrix();if(detailsVisible('people'))renderPeople();renderHistory();}
  if(activePanel==='rules')renderRules();
+ if(activePanel==='demand')renderDemandBoard();
  if(activePanel==='plan')renderPlan();
  renderedPanels.set(activePanel,changeVersion);syncJson();updateJobButtons();
 }
@@ -89,7 +91,7 @@ function updateJobButtons(){
  for(const id of switchIds)$(id).disabled=busy||(id==='restore'&&!$('saved').value)||(id==='restoreJob'&&!$('savedJobs').value);
  $('save').disabled=busy;$('saveDraft').disabled=busy;if($('addPerson'))$('addPerson').disabled=busy;
  for(const id of ['solve','recompute'])$(id).disabled=busy||$(id).dataset.busy==='true';
- const editing='#setupReview, #serviceGroups, #matrix, #people, #details, #history, #shifts, #positions, #demands, #profiles, #unresolved, #weights, #contextConfirmation, #plan';
+ const editing='#setupReview, #serviceGroups, #matrix, #people, #details, #history, #shifts, #positions, #demands, #demandBoard, #profiles, #unresolved, #weights, #contextConfirmation, #plan';
  const regions=[...document.querySelectorAll(editing)];for(const region of regions)region.inert=busy;
  $('json').readOnly=busy;
  const controls=[$('confirmHistory'),$('refreshJson')];
@@ -137,7 +139,9 @@ function load(s,persisted=false){
  new Intl.DateTimeFormat('de-DE',{timeZone:s.timezone}).format();if(s.period_start>s.period_end)throw Error('Planungsbeginn muss vor dem Planungsende liegen.');
  clearTimeout(timer);timer=null;jobId=null;previous=[];$('cancel').disabled=true;$('job').textContent='';$('result').replaceChildren();$('validation').textContent='';$('validationSummary')?.remove();
  snapshot=s;personDraft=false;assignments=structuredClone(s.assignments);changeVersion++;dirty=!persisted;jsonDirty=false;jsonVersion=-1;indexes=null;matrixCache=null;renderedPanels.clear();collections.clear();
- for(const id of ['details','people','history','shifts','positions','demands','profiles','plan','calendar','matrix'])$(id).replaceChildren();
+ // Reset is local to the opened project; no extra fields enter the snapshot.
+ originalDemands=new Map(s.demands.map(d=>[d.id,{minimum:d.minimum,maximum:d.maximum,source:d.source}]));createdDemands=new Set();
+ for(const id of ['details','people','history','shifts','positions','demands','demandBoard','demandSummary','profiles','plan','calendar','matrix'])$(id).replaceChildren();
  $('json').value='';updateSaveStatus();updateJobButtons();$('planView').querySelector('[value=positions]').textContent=serviceMatrix()?'Einsatzplan · Dienste':'Einsatzplan · Funktionen / Arbeitsplätze';
  $('start').value=s.period_start;$('end').value=s.period_end;$('timezone').value=s.timezone;$('matrixSearch').value='';
  if(s.metadata.history_period){$('historyStart').value=s.metadata.history_period.start;$('historyEnd').value=s.metadata.history_period.end;}else historyDefaults();
@@ -260,6 +264,131 @@ function renderPositions(){
 function renderDemands(){
  const view=collection($('demands'),'demands',snapshot.demands,{label:'Bedarfe',size:40,search:d=>demandLabel(d)+' '+d.id,redraw:renderDemands});
  const body=table(view.content,['Dienst und Zeit','Mindestens Personen','Höchstens Personen','Details']);view.items.forEach(d=>{const tr=el('tr',undefined,body);el('td',demandLabel(d),tr);const min=field(el('td',undefined,tr),'Min',d.minimum,v=>d.minimum=v,'number');min.min='0';min.step='1';const maxInput=field(el('td',undefined,tr),'Max (leer = unbegrenzt)',d.maximum,v=>d.maximum=v,'number');maxInput.min='0';maxInput.step='1';maxInput.placeholder='Unbegrenzt';const details=el('details',undefined,el('td',undefined,tr));el('summary','Technische Details',details);el('p',d.id,details);el('p',d.source,details);el('p',workplaceName(dataIndex().positions.get(d.position_id)?.workplace_id??''),details);});
+}
+function demandBoardRows(){
+ const idx=dataIndex(),rows=new Map(),patterns=new Map(),used=new Set();
+ for(const shift of snapshot.shifts){
+  if(!shift.segments.length)continue;
+  const day=localDay(shift.segments[0].start);if(day<snapshot.period_start||day>snapshot.period_end)continue;
+  const offset=value=>(Date.parse(localDay(value))-Date.parse(day))/86400000;
+  const times=shift.segments.map(s=>[offset(s.start),localTime(s.start),offset(s.end),localTime(s.end)]);
+  patterns.set(shift.id,{day,times,signature:JSON.stringify([times,shift.paid_minutes])});
+ }
+ const add=(shift,position,demand=null)=>{
+  const pattern=patterns.get(shift.id);if(!pattern)return;
+  // Same local segment offsets, service and paid duration as ServiceGroups.
+  const key=JSON.stringify([position?.function_id??['unassigned',shift.name],pattern.times,shift.paid_minutes]);
+  if(!rows.has(key))rows.set(key,{key,name:shift.name,times:pattern.times,signature:pattern.signature,cells:new Map(),templates:[],position});
+  const row=rows.get(key);if(!row.cells.has(pattern.day))row.cells.set(pattern.day,{shifts:[],demands:[]});
+  const cell=row.cells.get(pattern.day);if(!cell.shifts.some(s=>s.id===shift.id))cell.shifts.push(shift);
+  if(demand){cell.demands.push(demand);row.templates.push(demand);}return row;
+ };
+ for(const demand of snapshot.demands){const shift=idx.shifts.get(demand.shift_id);if(!shift)continue;used.add(shift.id);add(shift,idx.positions.get(demand.position_id),demand);}
+ // A missing demand does not make an existing occurrence disappear. Only
+ // infer its service from an unambiguous matching pattern or position.
+ for(const shift of snapshot.shifts){
+  const pattern=patterns.get(shift.id);if(!pattern||used.has(shift.id))continue;
+  const matches=[...rows.values()].filter(row=>row.name===shift.name&&row.signature===pattern.signature);
+  if(matches.length===1){const row=matches[0];if(!row.cells.has(pattern.day))row.cells.set(pattern.day,{shifts:[],demands:[]});row.cells.get(pattern.day).shifts.push(shift);}
+  else{const positions=snapshot.positions.filter(p=>p.name===shift.name),position=positions.length===1?positions[0]:snapshot.positions.length===1?snapshot.positions[0]:null;add(shift,position);}
+ }
+ return [...rows.values()];
+}
+function demandCreation(row,cell){
+ if(!cell?.shifts.length)return null;
+ for(const shift of cell.shifts){
+  const compatible=row.templates.filter(d=>{const team=dataIndex().shifts.get(d.shift_id)?.team_id;return team===shift.team_id||(d.team_ids??[]).includes(shift.team_id);});
+  const templates=compatible.length?compatible:row.templates;
+  const positions=new Set(templates.map(d=>d.position_id));
+  if(positions.size>1)continue;
+  const template=templates[0];
+  if(template)return {shift,position_id:template.position_id,team_ids:compatible.length?[...(template.team_ids??[])]:[],maximum:template.maximum};
+  if(row.position)return {shift,position_id:row.position.id,team_ids:[],maximum:null};
+ }
+ return null;
+}
+function demandTotal(cell){return cell.demands.reduce((sum,d)=>sum+d.minimum,0);}
+function setDemandMinimum(row,cell,value){
+ if(!cell.demands.length){
+  const template=demandCreation(row,cell);if(!template)return false;
+  const demand={id:'demand-'+projectId(),shift_id:template.shift.id,position_id:template.position_id,minimum:0,maximum:template.maximum,team_ids:template.team_ids,source:'override'};
+  snapshot.demands.push(demand);createdDemands.add(demand.id);cell.demands.push(demand);row.templates.push(demand);
+ }
+ // Stable original weights avoid moving staffing between workplaces when a
+ // total is lowered and then raised again. Largest remainders keep integers.
+ const shares=cell.demands.map(d=>({d,weight:originalDemands.get(d.id)?.minimum??d.minimum})).sort((a,b)=>a.d.id.localeCompare(b.d.id));
+ let total=shares.reduce((sum,item)=>sum+item.weight,0);
+ if(!total){const permitted=shares.some(({d})=>d.maximum!==0);for(const item of shares)item.weight=permitted&&item.d.maximum===0?0:1;total=shares.reduce((sum,item)=>sum+item.weight,0);}
+ for(const item of shares){const exact=value*item.weight/total;item.minimum=Math.floor(exact);item.remainder=exact-item.minimum;}
+ let remaining=value-shares.reduce((sum,item)=>sum+item.minimum,0);
+ for(const item of [...shares].sort((a,b)=>b.remainder-a.remainder||a.d.id.localeCompare(b.d.id))){if(remaining--<=0)break;item.minimum++;}
+ for(const {d,minimum} of shares){d.minimum=minimum;if(d.maximum!==null&&d.maximum<minimum)d.maximum=minimum;d.source='override';}
+ return true;
+}
+function renderDemandSummary(){
+ const box=$('demandSummary');box.replaceChildren();
+ const minimum=snapshot.demands.reduce((sum,d)=>{const shift=dataIndex().shifts.get(d.shift_id),day=shift?.segments[0]&&localDay(shift.segments[0].start);return sum+(day>=snapshot.period_start&&day<=snapshot.period_end?d.minimum*shift.paid_minutes:0);},0);
+ const target=snapshot.employees.reduce((sum,e)=>sum+(e.target_minutes??0),0);
+ const ratio=target>0?minimum/target*100:null,balance=ratio===null?'no-target':ratio<80?'low':ratio>120?'high':'balanced';
+ box.dataset.balance=balance;box.classList.toggle('warning',balance==='low'||balance==='high');
+ const metrics=el('dl',undefined,box);metrics.className='demand-metrics';
+ const number=value=>value.toLocaleString('de-DE',{maximumFractionDigits:1});
+ for(const [id,label,value,raw] of [['demandMinimumHours','Mindestbedarf',number(minimum/60)+' h',minimum/60],['demandContractHours','Vertragssoll im Zeitraum',number(target/60)+' h',target/60],['demandRatio','Bedarf / Vertragssoll',ratio===null?'—':number(ratio)+' %',ratio]]){
+  const metric=el('div',undefined,metrics);el('dt',label,metric);const amount=el('dd',value,metric);amount.id=id;if(raw!==null)amount.dataset.value=String(raw);
+ }
+ const messages={low:'Zu wenig Bedarf: Personen bleiben trotz Vertragssoll unbeschäftigt. Prüfen Sie, ob Bedarf fehlt oder Arbeit außerhalb dieser Gruppen anfällt.',high:'Zu viel Bedarf: Stellen bleiben offen, wenn die verfügbaren Vertragsstunden nicht ausreichen.',balanced:'Bedarf und Vertragssoll liegen zwischen 80 und 120 Prozent. Freigaben und persönliche Vorgaben entscheiden zusätzlich über die Besetzbarkeit.','no-target':'Kein Vertragssoll im Zeitraum erfasst; ein Verhältnis lässt sich nicht berechnen.'};
+ el('p',messages[balance],box).id='demandBalanceNote';
+}
+function renderDemandBoard(){
+ renderDemandSummary();const box=$('demandBoard'),scroll=[box.scrollLeft,box.scrollTop];box.replaceChildren();
+ const days=[];for(let day=snapshot.period_start;day<=snapshot.period_end;day=dayOffset(day,1))days.push(day);
+ const weekend=day=>[0,6].includes(new Date(day+'T12:00:00Z').getUTCDay());
+ const weekday=new Intl.DateTimeFormat('de-DE',{weekday:'short',timeZone:'UTC'});
+ const t=el('table',undefined,box);t.className='demand-table';el('caption','Mindestbesetzung nach Dienstmuster und Kalendertag',t).className='sr-only';
+ const head=el('tr',undefined,el('thead',undefined,t));const corner=el('th','Dienstmuster / Sammelbearbeitung',head);corner.scope='col';corner.className='demand-row';
+ for(const day of days){const th=el('th',undefined,head);th.scope='col';th.dataset.demandDay=day;th.classList.toggle('weekend',weekend(day));el('span',weekday.format(new Date(day+'T12:00:00Z')),th);el('small',dayText(day),th);}
+ const body=el('tbody',undefined,t),rows=demandBoardRows();
+ for(const row of rows){
+  const tr=el('tr',undefined,body);tr.dataset.demandRow=row.key;
+  const heading=el('th',undefined,tr);heading.scope='row';heading.className='demand-row';el('strong',row.name,heading);
+  const times=row.times.map(([a,start,b,end])=>`${start}–${end}${b!==a?' (Folgetag)':''}`).join(' / ');el('small',times,heading);
+  const bulkLabel=el('label','Zeilenwert',heading),bulk=el('input',undefined,bulkLabel);bulk.type='number';bulk.min='0';bulk.step='1';bulk.className='demand-bulk-value';bulk.setAttribute('aria-label',`${row.name} · ${times}: Wert für Sammelbearbeitung`);
+  const actions=el('div',undefined,heading);actions.className='demand-row-actions';
+  const controls=new Map();
+  const changed=()=>{invalidateResult();renderDemandSummary();for(const refresh of controls.values())refresh();renderedPanels.set('demand',changeVersion);};
+  const read=input=>{input.setCustomValidity('');if(input.value===''||!input.checkValidity()||!Number.isSafeInteger(Number(input.value))){input.setCustomValidity('Eine ganze Zahl ab 0 eingeben.');input.reportValidity();return null;}return Number(input.value);};
+  for(const [label,filter] of [['Alle Tage',()=>true],['Nur Werktage',day=>!weekend(day)],['Nur Wochenenden',weekend]])button(actions,label,()=>{
+   const value=read(bulk);if(value===null)return;let count=0,skipped=0;
+   for(const day of days.filter(filter)){const cell=row.cells.get(day);if(cell&&(cell.demands.length||demandCreation(row,cell))){if(setDemandMinimum(row,cell,value))count++;}else skipped++;}
+   if(count)changed();notice(`${count} Tage für „${row.name}“ überschrieben.${skipped?` ${skipped} Tage ohne eindeutig passenden Dienst ausgelassen.`:''}`);
+  });
+  bulk.oninput=()=>bulk.setCustomValidity('');
+  button(actions,'Zeile zurücksetzen',()=>{
+   const removed=new Set();let count=0;
+   for(const cell of row.cells.values())for(const demand of cell.demands){if(createdDemands.has(demand.id)){removed.add(demand.id);createdDemands.delete(demand.id);count++;}else{const original=originalDemands.get(demand.id);if(original){Object.assign(demand,original);count++;}}}
+   if(!count)return;
+   snapshot.demands=snapshot.demands.filter(d=>!removed.has(d.id));
+   // A newly created demand may have acquired assignments before reset.
+   assignments=assignments.filter(a=>!removed.has(a.demand_id));snapshot.assignments=snapshot.assignments.filter(a=>!removed.has(a.demand_id));previous=previous.filter(a=>!removed.has(a.demand_id));
+   invalidateResult();renderDemandBoard();renderedPanels.set('demand',changeVersion);notice(`„${row.name}“ auf den Stand beim Öffnen des Projekts zurückgesetzt.`);
+  });
+  for(const day of days){
+   const cell=row.cells.get(day),td=el('td',undefined,tr);td.className='demand-cell';td.dataset.demandDay=day;td.classList.toggle('weekend',weekend(day));
+   const input=el('input',undefined,td);input.type='number';input.min='0';input.step='1';input.className='demand-value';input.setAttribute('aria-label',`${row.name} · ${times} · ${dayText(day)}: Mindestbesetzung`);
+   const status=el('small',undefined,td);
+   if(!cell||(!cell.demands.length&&!demandCreation(row,cell))){input.disabled=true;td.classList.add('unavailable');status.textContent=cell?'Zuordnung unklar':'Kein Dienst';input.title=cell?'Keine eindeutige Position für diesen Dienst vorhanden.':'An diesem Tag existiert kein passender Dienst.';continue;}
+   const refresh=()=>{const overridden=cell.demands.some(d=>d.source==='override');input.value=cell.demands.length?demandTotal(cell):'';input.required=!!cell.demands.length;input.setCustomValidity('');td.classList.toggle('overridden',overridden);td.dataset.source=overridden?'override':cell.demands[0]?.source??'';status.textContent=overridden?'Überschrieben':cell.demands.length>1?`${cell.demands.length} Bedarfe`:'';input.title=cell.demands.length>1?'Summe mehrerer Bedarfe; Änderungen werden im Verhältnis der ursprünglichen Mindestbesetzung verteilt.':'Mindestbesetzung direkt eingeben; 0 bedeutet kein Mindestbedarf.';};
+   controls.set(day,refresh);refresh();
+   input.oninput=()=>{
+    input.setCustomValidity('');if(input.value===''&&!cell.demands.length)return;
+    if(input.value===''||!input.checkValidity()||!Number.isSafeInteger(Number(input.value))){input.setCustomValidity('Eine ganze Zahl ab 0 eingeben; zum Aufheben des Mindestbedarfs 0 verwenden.');return;}
+    const value=Number(input.value);if(cell.demands.length&&value===demandTotal(cell))return;
+    if(setDemandMinimum(row,cell,value))changed();
+   };
+  }
+ }
+ if(!rows.length)el('p','Im Planungszeitraum sind noch keine Dienste vorhanden.',box);
+ box.scrollTo(...scroll);
 }
 function openDemandReview(query){
  const state=pageState('demands',40);state.query=query;state.page=0;navigate('rules');
@@ -959,7 +1088,7 @@ window.PlannerApp={
  openSavedProject,openJob,
  refreshProjects:saved,refreshJobs:savedJobs
 };
-window.addEventListener('planner:navigate',event=>{const panel=event.detail?.panel;if(!['projects','team','rules','calculate','plan'].includes(panel))return;activePanel=panel;renderActivePanel();refreshAutomaticReadiness();});
+window.addEventListener('planner:navigate',event=>{const panel=event.detail?.panel;if(!['projects','team','rules','demand','calculate','plan'].includes(panel))return;activePanel=panel;renderActivePanel();refreshAutomaticReadiness();});
 window.addEventListener('planner:open-project',event=>openSavedProject(event.detail?.id).catch(error=>notice(error.message,true)));
 window.addEventListener('planner:open-job',event=>openJob(event.detail?.id).catch(error=>notice(error.message,true)));
 window.addEventListener('planner:rename',event=>{

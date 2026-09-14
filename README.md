@@ -20,8 +20,9 @@ Im Browser [http://127.0.0.1:8080](http://127.0.0.1:8080) öffnen. Compose verwe
 1. **Neues Projekt** wählen und Zeitraum, Personen, Funktionen und wiederkehrende Schichten anlegen.
 2. Unter **Team & Freigaben** festlegen, wer welche Funktion übernehmen darf. Dienstwünsche, Arbeitszeit und Verfügbarkeit bearbeiten.
 3. Unter **Regeln & Bedarf** Besetzung und Ruheprofile prüfen und bestätigen.
-4. **Berechnen** starten. Die Berechnung läuft im Hintergrund weiter, wenn der Browser geschlossen wird.
-5. Im **Dienstplan** das Ergebnis ansehen, Einteilungen bei Bedarf ändern oder fixieren, erneut prüfen und als Excel, CSV oder JSON exportieren.
+4. Unter **Bedarf** die Mindestbesetzung in der Tagesmatrix anpassen und die Bedarfsstunden mit den Vertragssollstunden abgleichen.
+5. **Berechnen** starten. Die Berechnung läuft im Hintergrund weiter, wenn der Browser geschlossen wird.
+6. Im **Dienstplan** das Ergebnis ansehen, Einteilungen bei Bedarf ändern oder fixieren, erneut prüfen und als Excel, CSV oder JSON exportieren.
 
 Zum Kennenlernen gibt es ein ausschließlich synthetisches Demoprojekt. Für eigene Projekte ist kein SP5-Bestand erforderlich. Vorhandene Projektdateien und SP5-Daten lassen sich über **Vorhandene Daten importieren** laden.
 
@@ -30,12 +31,21 @@ Zum Kennenlernen gibt es ein ausschließlich synthetisches Demoprojekt. Für eig
 - **Projekte:** gespeicherte Projekte und Berechnungen wieder öffnen, eigene Projekte anlegen und vorhandene Daten importieren.
 - **Team & Freigaben:** Personenmatrix mit Suche und vertauschbaren Achsen; persönliche Vorgaben und zeitlich begrenzte Freigaben bearbeiten.
 - **Regeln & Bedarf:** Schichten, Funktionen, Besetzungsbedarf, Ruheprofile und Optimierungswünsche verwalten. Ungeklärte Angaben bleiben sichtbar.
+- **Bedarf:** eine Zeile je Dienstmuster, eine Spalte je Zeitraumtag. Wie bei `ServiceGroups` werden Dienste derselben Funktionskennung mit gleichen lokalen Zeitsegmenten und bezahlten Minuten zusammengefasst. Mindestbesetzung direkt oder gesammelt für alle Tage, Werktage (Mo–Fr) oder Wochenenden (Sa–So) überschreiben; Bedarfsstunden und Vertragssollstunden vergleichen.
 - **Berechnen:** Vollplanung oder ausdrücklich gekennzeichnete Teilplanung, begrenzte Rechenzeit und Abbruch laufender Aufträge.
 - **Dienstplan:** Monatsansicht nach Personen oder Funktionen, manuelle Einteilungen, Fixierungen, unabhängige Prüfung und Exporte.
 
 Größere Listen werden seitenweise dargestellt. Ausgeblendete Detailtabellen entstehen erst beim Öffnen. Die Monatsansicht zeigt pro Seite bis zu 30 Zeilen; die Einteilungsliste bis zu 40. Das vollständige Projekt bleibt erhalten und wird vollständig berechnet und exportiert.
 
 Gespeicherte Projekte und Ergebnisse liegen im Zustandsverzeichnis. Eine Projektsicherung enthält den aktuellen Entwurf einschließlich Regeln und Fixierungen und kann wieder eingelesen werden. Ungespeicherte Änderungen werden beim Projektwechsel nicht stillschweigend verworfen.
+
+Im Bereich **Bedarf** legt eine Zahl in einer leeren Zelle einen Bedarf für den passenden Dienst an. Ohne passenden Dienst an diesem Tag oder ohne eindeutig zuordenbaren Arbeitsplatz bleibt die Zelle gesperrt; auch Sammeländerungen überspringen sie. Überschriebene Bedarfe tragen `source: "override"` und sind sichtbar markiert. Jede Änderung macht ein bisheriges Berechnungsergebnis ungültig.
+
+Eine Zelle mit mehreren Bedarfen zeigt deren gesamte Mindestbesetzung. Änderungen verteilen diese Summe nach den Mindestwerten beim Öffnen des Projekts auf die vorhandenen Bedarfe; Kennungen und Arbeitsplätze bleiben erhalten. Die Anteile werden zunächst abgerundet, übrige Stellen den größten Nachkommaresten zugeteilt, damit die Summe genau erhalten bleibt. Sind alle ursprünglichen Mindestwerte 0, wird gleichmäßig auf Bedarfe verteilt, deren Höchstbesetzung nicht 0 ist; sind alle auf 0 begrenzt, auf alle. Eine endliche Höchstbesetzung wird nur angehoben, wenn das neue Minimum sie überschreitet; eine unbegrenzte Höchstbesetzung bleibt unbegrenzt.
+
+**Zeile zurücksetzen** stellt die Werte wieder her, die beim Öffnen des Projekts vorlagen, und entfernt in dieser Sitzung neu angelegte Bedarfe der Zeile. Dieser Ausgangsstand bleibt nur während der Bearbeitung im Speicher: Nach Speichern und erneutem Öffnen gelten die gespeicherten Werte einschließlich Überschreibungen als neuer Ausgangsstand.
+
+Der Stundenabgleich summiert die Mindestbesetzung mal bezahlter Dienstdauer und vergleicht sie mit den Vertragssollstunden aller Personen mit Soll im Zeitraum. Unter 80 oder über 120 Prozent erscheint ein Hinweis: Zu wenig Bedarf lässt Personen unbeschäftigt, zu viel lässt Stellen offen. Ohne positives Vertragssoll wird kein Verhältnis berechnet. Der Vergleich aktualisiert sich bei jeder Änderung.
 
 ## Installation mit Python
 

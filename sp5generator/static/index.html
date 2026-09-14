@@ -37,6 +37,7 @@
       <span class="nav-divider"></span>
       <button class="nav-item" type="button" data-navigate="team" data-requires-project disabled><svg class="icon"><use href="#icon-people"/></svg><span>Team &amp; Freigaben</span><span id="navPeople" class="nav-count"></span></button>
       <button class="nav-item" type="button" data-navigate="rules" data-requires-project disabled><svg class="icon"><use href="#icon-sliders"/></svg><span>Regeln &amp; Bedarf</span><span id="navBlockers" class="nav-count warning" hidden></span></button>
+      <button class="nav-item" type="button" data-navigate="demand" data-requires-project disabled><svg class="icon"><use href="#icon-grid"/></svg><span>Bedarf</span></button>
       <button class="nav-item" type="button" data-navigate="calculate" data-requires-project disabled><svg class="icon"><use href="#icon-spark"/></svg><span>Berechnen</span><span id="navRunning" class="running-dot" hidden></span></button>
       <button class="nav-item" type="button" data-navigate="plan" data-requires-project disabled><svg class="icon"><use href="#icon-calendar"/></svg><span>Dienstplan</span></button>
     </nav>
@@ -74,7 +75,7 @@
           <div class="panel-footer"><span>Freigaben und persönliche Vorgaben werden im Projekt gespeichert.</span><button id="save" class="primary" type="button">Änderungen dauerhaft speichern</button></div>
         </section>
         <section class="panel" data-panel="rules" hidden aria-labelledby="rulesTitle">
-          <div class="section-heading page-section-heading"><div><h2 id="rulesTitle">Regeln &amp; Bedarf</h2><p>Besetzung festlegen, verbindliche Grenzen bestätigen und Wünsche gewichten.</p></div><button type="button" class="quiet" data-navigate="calculate">Weiter zur Berechnung<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
+          <div class="section-heading page-section-heading"><div><h2 id="rulesTitle">Regeln &amp; Bedarf</h2><p>Besetzung festlegen, verbindliche Grenzen bestätigen und Wünsche gewichten.</p></div><button type="button" class="quiet" data-navigate="demand">Weiter zum Bedarf<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
           <section id="referenceImport" class="surface padded" aria-labelledby="referenceImportTitle" hidden></section>
           <details class="surface"><summary>Schichten &amp; Qualifikationen<span class="summary-description">Zeitfenster und Anforderungen</span></summary><div class="details-content"><div id="shifts" class="scroll"></div><div id="positions" class="scroll"></div></div></details>
           <details class="surface" open><summary>Besetzungsbedarf<span class="summary-description">Minimum und Maximum je Dienst</span></summary><div class="details-content"><div id="demands" class="scroll"></div></div></details>
@@ -82,6 +83,15 @@
           <div class="surface padded unresolved-surface"><div class="section-heading"><div><h3>Offene Angaben</h3><p class="helper-text">Unklare importierte Bedeutungen zuerst fachlich korrigieren.</p></div></div><div class="bulk-approve" id="unresolvedBulk" data-pending="0" hidden><div><strong id="unresolvedBulkTitle">Offene Importangaben</strong><small id="unresolvedBulkBreakdown"></small></div><button id="confirmUnresolved" type="button" class="primary">Angezeigte Angaben als geprüft markieren</button></div><div id="unresolved"></div></div>
           <details class="surface"><summary>Optimierungswünsche<span class="summary-description">Gewichte für weiche Ziele</span></summary><div class="details-content"><p class="helper-text">Gewichte priorisieren Wünsche. Verbindliche Regeln und Freigaben gelten weiterhin.</p><div id="weights" class="grid"></div></div></details>
           <details class="surface advanced-settings"><summary>Erweiterte Projektdaten<span class="summary-description">Vollständiger JSON-Datenvertrag</span></summary><div class="details-content"><textarea id="json" rows="18" spellcheck="false" aria-label="Projekt als JSON bearbeiten"></textarea><div class="actions"><button id="refreshJson" type="button">Aktuelle Daten anzeigen</button><button id="applyJson" type="button">JSON-Änderungen übernehmen</button></div></div></details>
+        </section>
+        <section class="panel demand-panel" data-panel="demand" hidden aria-labelledby="demandTitle">
+          <div class="section-heading page-section-heading"><div><h2 id="demandTitle">Bedarf</h2><p>Mindestbesetzung je Dienstmuster und Tag bearbeiten und mit den Vertragssollstunden abgleichen.</p></div><button type="button" class="quiet" data-navigate="calculate">Weiter zur Berechnung<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
+          <div id="demandSummary" class="surface padded demand-summary" aria-live="polite" aria-atomic="true"></div>
+          <div class="surface demand-surface">
+            <div class="surface-toolbar"><p id="demandBoardHelp" class="helper-text">Eine Zahl direkt im Tag ändern oder den Zeilenwert für alle Tage, Werktage (Mo–Fr) oder Wochenenden (Sa–So) übernehmen. Überschriebene Werte sind markiert; Tage ohne passenden Dienst oder eindeutige Zuordnung bleiben gesperrt. Enthält eine Zelle mehrere Bedarfe, wird die Summe im Verhältnis ihrer ursprünglichen Mindestbesetzung verteilt; die einzelnen Bedarfe und ihre Arbeitsplätze bleiben erhalten. Übersteigt das Minimum die Höchstbesetzung, wird diese mit angehoben.</p></div>
+            <div id="demandBoard" class="scroll" role="region" aria-label="Mindestbesetzung nach Dienstmuster und Tag" aria-describedby="demandBoardHelp" tabindex="0"></div>
+            <div class="surface-footer"><span class="helper-text">Änderungen werden mit dem Projekt gespeichert. „Zeile zurücksetzen“ stellt den Stand beim Öffnen des Projekts wieder her.</span></div>
+          </div>
         </section>
         <section class="panel" data-panel="calculate" hidden aria-labelledby="calculateTitle">
           <div class="section-heading page-section-heading"><div><h2 id="calculateTitle">Prüfen &amp; berechnen</h2><p>Der Plan berücksichtigt bestätigte Regeln, Freigaben und Ihre Optimierungswünsche.</p></div></div>
