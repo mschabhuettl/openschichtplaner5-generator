@@ -148,6 +148,23 @@ Ein fehlender Kandidat wird vorab benannt; kombinierte Kandidatenengpässe werde
 durch das Modell bewiesen. Die Diagnose beansprucht weder Minimalität noch eine
 einzige Konfliktursache.
 
+Bei Teilplanung ab 120 Sekunden erhalten die Abdeckungs- und Qualitätsphase
+zusammen höchstens 40 Prozent der Gesamtfrist. Die Reparaturphase nutzt die verbleibende
+Zeit bis zur Gesamtfrist. Bei deaktivierter Reparatur (`_repair=False`), kürzeren
+Zeitlimits oder vollständiger Planung gilt weiterhin das volle Suchphasenbudget.
+Abwechselnd werden Einteilungen rund um ein Wochenende oder für bis zu sechs
+Personen zur erneuten Suche freigegeben.
+Sie verbessert nur die weichen Ziele der Teilplanung: weniger fehlende
+Mindeststellen, bei gleicher Deckung eine geringere gewichtete Bewertung.
+Harte Regeln, bestehende Fixierungen, persönliche Freigaben und Bedarfswerte
+bleiben unverändert. Jede Runde durchläuft dieselbe unabhängige Prüfung;
+die Übernahme verlangt `validation.valid=true`, auch bei der erneuten Prüfung
+gegen den ursprünglichen Snapshot. Offene Mindeststellen und fehlender
+Randkontext bleiben als Diagnosen sichtbar und verhindern eine Verbesserung
+nicht. Bei jeder Übernahme entscheidet zuerst die Zahl offener Mindeststellen,
+danach die Summe der gewichteten Zielbeiträge; Änderungskosten beziehen sich
+weiterhin auf den ursprünglichen Entwurf.
+
 In der Qualitätsphase gilt
 
 `J = wH EH + wN EN + wW EW + wF EF + wP EP + wA EA`.

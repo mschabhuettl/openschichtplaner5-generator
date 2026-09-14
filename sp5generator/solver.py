@@ -3,6 +3,7 @@
 from collections import Counter, defaultdict
 from datetime import timedelta
 from math import isfinite
+from random import Random
 from time import monotonic
 from types import SimpleNamespace
 from ortools.sat.python import cp_model
@@ -35,11 +36,16 @@ from .validator import PreparedValidator, validate
 SEARCH_WORKERS = 1
 
 
-def solve(snapshot, time_limit=30, partial=False):
+def solve(snapshot, time_limit=30, partial=False, _repair=True):
     if not isfinite(time_limit):
         raise ValueError('Zeitlimit muss eine endliche Zahl in Sekunden sein.')
     started = monotonic()
     deadline = started + time_limit
+    # Die Reparaturphase braucht ein eigenes Budget; sonst schöpfen die beiden
+    # Suchphasen an echten Daten die gesamte Frist aus.
+    repair_enabled = _repair and partial and time_limit >= 120
+    phase_limit = time_limit * 0.4 if repair_enabled else time_limit
+    phase_deadline = started + phase_limit
     timings = {}
     employee_candidates = None
     parameters = {
@@ -116,10 +122,105 @@ def solve(snapshot, time_limit=30, partial=False):
         )
 
     def finish(best):
+        if repair_enabled:
+            best = repair(best)
         # Result construction copies the parameters dictionary. Synchronize
         # later search status and timings when returning an earlier incumbent.
         best.parameters = dict(parameters)
         best.runtime_seconds = monotonic() - started
+        return best
+
+    def repair(best):
+        rng = Random(0)
+        employee_ids = sorted(employees)
+        weekends = sorted({
+            day - timedelta(days=day.weekday() - 5)
+            for day in dates(snapshot.period_start, snapshot.period_end)
+            if day.weekday() >= 5
+        })
+        round_number = 0
+        while True:
+            round_started = monotonic()
+            remaining = deadline - round_started
+            round_budget = max(15.0, remaining / 10)
+            if remaining <= round_budget:
+                break
+            # Periods without a Saturday or Sunday use employee neighborhoods.
+            neighborhood = "weekend" if round_number % 2 == 0 and weekends else "employees"
+            if neighborhood == "weekend":
+                saturday = rng.choice(weekends)
+                first, last = saturday - timedelta(days=1), saturday + timedelta(days=2)
+                released = {
+                    (a.employee_id, a.demand_id) for a in best.assignments
+                    if first <= shift_day[demands[a.demand_id].shift_id] <= last
+                }
+            else:
+                chosen = set(rng.sample(employee_ids, min(6, len(employee_ids))))
+                released = {
+                    (a.employee_id, a.demand_id) for a in best.assignments
+                    if a.employee_id in chosen
+                }
+            # User fixations, including boundary duties, remain hard constraints.
+            released -= fixed
+            candidate = snapshot.model_copy(deep=True)
+            candidate.assignments = [
+                a.model_copy(deep=True, update={
+                    "fixed": (a.employee_id, a.demand_id) not in released,
+                }) for a in best.assignments
+            ]
+            if deadline - monotonic() <= round_budget:
+                break
+            repaired = solve(candidate, round_budget, partial=True, _repair=False)
+            trace = {
+                "phase": "repair",
+                "neighborhood": neighborhood,
+                "released_assignments": len(released),
+                "started_seconds": round_started - started,
+                "budget_seconds": round_budget,
+                "solver_status": repaired.solver_status,
+                "accepted": False,
+            }
+            if repaired.assignments and repaired.validation.valid:
+                # Temporary neighborhood fixations must not escape into the
+                # result. Recheck against the original input and its fixations.
+                assignments = [
+                    a.model_copy(deep=True, update={
+                        "fixed": (a.employee_id, a.demand_id) in fixed,
+                    }) for a in repaired.assignments
+                ]
+                checked = validate(snapshot, assignments)
+                if checked.valid:
+                    metrics = repaired.metrics
+                    # Recursive solves use the incumbent as their draft. Keep
+                    # comparisons and reported change costs on the original draft.
+                    if snapshot.objectives.changes:
+                        selected = {(a.employee_id, a.demand_id) for a in assignments}
+                        changes = len(prior ^ selected)
+                        metrics["objective_contributions"]["changes"] = changes
+                        metrics["weighted_objective_contributions"]["changes"] = (
+                            changes * snapshot.objectives.changes
+                        )
+                    score = (
+                        metrics["vacancy_count"],
+                        sum(metrics["weighted_objective_contributions"].values()),
+                    )
+                    trace.update(vacancy_count=score[0], weighted_quality_cost=score[1])
+                    if score < (
+                        best.metrics["vacancy_count"],
+                        sum(best.metrics["weighted_objective_contributions"].values()),
+                    ):
+                        metrics["objective_phase"] = "repair"
+                        metrics["quality_scope"] = "repair neighborhood; global quality unproven"
+                        checked.diagnostics.extend(diagnostics)
+                        best = result(
+                            "FEASIBLE", assignments, checked, metrics=metrics,
+                            objective_value=float(score[1]),
+                        )
+                        parameters["coverage_proven"] = coverage_proven or score[0] == 0
+                        trace["accepted"] = True
+            trace["round_seconds"] = monotonic() - round_started
+            parameters["search_trace"].append(trace)
+            round_number += 1
         return best
 
     personal_period_paid = defaultdict(int)
@@ -873,7 +974,7 @@ def solve(snapshot, time_limit=30, partial=False):
             for key, x in xs.items():
                 model.add_hint(x, int(key in prior))
     if len(snapshot.employees) >= 40 and not partial:
-        initial_plan_deadline = min(started + time_limit / 2, monotonic() + 12)
+        initial_plan_deadline = min(started + phase_limit / 2, monotonic() + 12)
         plans = {
             e.id: [
                 a.model_copy(deep=True)
@@ -1092,10 +1193,10 @@ def solve(snapshot, time_limit=30, partial=False):
             model.minimize(weighted)
     # Reserve a fifth of the remaining budget for quality at fixed coverage.
     # This search policy never trades vacancies against an arbitrary penalty.
-    coverage_deadline = monotonic() + max(0, deadline - monotonic()) * 0.8
+    coverage_deadline = monotonic() + max(0, phase_deadline - monotonic()) * 0.8
     coverage_proven = not partial
     while True:
-        remaining = time_limit - (monotonic() - started)
+        remaining = phase_limit - (monotonic() - started)
         if best:
             # Leave a small allowance to copy and independently recheck the
             # final incumbent; a validated fallback is already available.
