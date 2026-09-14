@@ -44,6 +44,24 @@ def snapshot_hash(snapshot):
     ).hexdigest()
 
 
+def snapshot_hash_matches(snapshot, digest):
+    """Recognize pre-exclusion results only for an otherwise identical snapshot."""
+    if digest == snapshot_hash(snapshot):
+        return True
+    if any(employee.excluded for employee in snapshot.employees):
+        return False
+    # Older saved results hashed employees before the default-false field
+    # existed. Preserve that exact representation without ignoring real edits.
+    legacy = snapshot.model_dump(
+        mode="json", exclude=set() if snapshot.boundary_work else {"boundary_work"}
+    )
+    for employee in legacy["employees"]:
+        employee.pop("excluded")
+    return digest == hashlib.sha256(
+        json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def maximum_matching(adjacency):
     """Map right vertices to left vertices without a recursion-depth limit."""
     matched = {}
@@ -101,7 +119,7 @@ def eligibility(snapshot, employee, demand):
     position = next(p for p in snapshot.positions if p.id == demand.position_id)
     a, b = bounds(shift)
     first, last = local_day(a, snapshot.timezone), local_day(b - 1, snapshot.timezone)
-    reasons = []
+    reasons = ["excluded"] if employee.excluded else []
     # Input integrity checks the planning dates. A selected planning duty
     # additionally needs confirmed rules for its actual worked spill days.
     # Historical context retains its separate contract; do not infer profiles.

@@ -439,6 +439,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
     }
     reachable_minutes = {e.id: personal_period_paid[e.id] for e in snapshot.employees}
     exclusion_labels = {
+        "excluded": "von der Planung ausgenommen",
         "employment": "Beschäftigungszeitraum",
         "team": "Teamzugehörigkeit",
         "kind": "Diensttypfreigabe",

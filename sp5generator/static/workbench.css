@@ -337,3 +337,10 @@ body[data-active-panel=team] #people { max-height: none; }
   .demand-cell input.demand-value, .demand-cell .demand-value input { min-height: 42px; }
   #demandBoard { max-height: 70dvh; }
 }
+
+#people tr.excluded { opacity: .55; background: #edf0f4; }
+
+.demand-view-toolbar { flex-direction: column; align-items: stretch; gap: 12px; }
+.demand-view-toolbar [aria-pressed="true"] { color: #fff; background: var(--teal); border-color: var(--teal); }
+.demand-function-table .demand-cell input.demand-value { width: 124px; }
+.demand-function-table .demand-cell small { max-width: 124px; }

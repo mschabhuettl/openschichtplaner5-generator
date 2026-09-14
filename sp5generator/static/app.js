@@ -5,6 +5,7 @@ let dirty=false, jsonDirty=false, changeVersion=0, activePanel='projects', proje
 let indexVersion=-1, indexes=null, matrixCache=null, stateFrame=null, jsonVersion=-1;
 const renderedPanels=new Map(), collections=new Map();
 let originalDemands=new Map(), createdDemands=new Set();
+let demandView='dates';
 let savedRequest=0,jobsRequest=0;
 let readinessVersion=-1,readinessPending=-1,readinessRequest=0,readinessSummary=null;
 const fold=value=>String(value??'').toLocaleLowerCase('de-DE');
@@ -114,6 +115,19 @@ function canReplace(){return !(dirty||jsonDirty)||window.confirm('Ungespeicherte
 window.addEventListener('beforeunload',event=>{if(dirty||jsonDirty){event.preventDefault();event.returnValue='';}});
 function action(id,fn){$(id).onclick=()=>runAction($(id),fn);}
 function field(parent,label,value,change,type='text'){const l=el('label',label,parent),i=el('input',undefined,l);i.type=type;if(type==='number')i.step='any';if(type==='checkbox')i.checked=!!value;else i.value=value??'';i.onchange=()=>{change(type==='checkbox'?i.checked:type==='number'?(i.value===''?null:Number(i.value)):i.value);invalidateResult();};return i;}
+function tableInputNavigation(input,column){
+ input.dataset.tableColumn=column;
+ input.addEventListener('keydown',event=>{
+  if(event.isComposing||event.altKey||event.ctrlKey||event.metaKey||!['Enter','ArrowDown','ArrowUp'].includes(event.key))return;
+  event.preventDefault();
+  if(!input.checkValidity()){input.reportValidity();return;}
+  const fields=[...input.closest('table').querySelectorAll('input[data-table-column]')].filter(field=>field.dataset.tableColumn===column&&!field.disabled&&field.getClientRects().length);
+  const next=fields[fields.indexOf(input)+(event.key==='ArrowUp'?-1:1)]??input;
+  // Blur commits native number inputs even at the end of the visible list.
+  // Moving focus never rebuilds the collection or changes its current filter.
+  input.blur();next.focus();if(next.type==='number')next.select();
+ });
+}
 function select(parent,label,value,options,change,{updatesProject=true}={}){const l=el('label',label,parent),s=el('select',undefined,l);for(const [v,t] of options){const o=el('option',t,s);o.value=v;}s.value=value;s.onchange=()=>{change(s.value);if(updatesProject)invalidateResult();};return s;}
 function button(parent,text,fn){const b=el('button',text,parent);b.type='button';b.onclick=()=>runAction(b,fn);return b;}
 function table(parent,head){parent.replaceChildren();const t=el('table',undefined,parent),tr=el('tr',undefined,el('thead',undefined,t));head.forEach(x=>{const th=el('th',x,tr);th.scope='col';});return el('tbody',undefined,t);}
@@ -140,7 +154,7 @@ function load(s,persisted=false){
  clearTimeout(timer);timer=null;jobId=null;previous=[];$('cancel').disabled=true;$('job').textContent='';$('result').replaceChildren();$('validation').textContent='';$('validationSummary')?.remove();
  snapshot=s;personDraft=false;assignments=structuredClone(s.assignments);changeVersion++;dirty=!persisted;jsonDirty=false;jsonVersion=-1;indexes=null;matrixCache=null;renderedPanels.clear();collections.clear();
  // Reset is local to the opened project; no extra fields enter the snapshot.
- originalDemands=new Map(s.demands.map(d=>[d.id,{minimum:d.minimum,maximum:d.maximum,source:d.source}]));createdDemands=new Set();
+ originalDemands=new Map(s.demands.map(d=>[d.id,{minimum:d.minimum,maximum:d.maximum,source:d.source}]));createdDemands=new Set();demandView='dates';
  for(const id of ['details','people','history','shifts','positions','demands','demandBoard','demandSummary','profiles','plan','calendar','matrix'])$(id).replaceChildren();
  $('json').value='';updateSaveStatus();updateJobButtons();$('planView').querySelector('[value=positions]').textContent=serviceMatrix()?'Einsatzplan · Dienste':'Einsatzplan · Funktionen / Arbeitsplätze';
  $('start').value=s.period_start;$('end').value=s.period_end;$('timezone').value=s.timezone;$('matrixSearch').value='';
@@ -156,13 +170,17 @@ function render(){
 function setTargetHours(person,value){person.target_minutes=value===null?null:Math.round(value*60);for(const input of document.querySelectorAll('[data-employee-hours]'))if(input.dataset.employeeHours===person.id&&input!==document.activeElement)input.value=value===null?'':String(value);}
 function renderPeople(){
  const view=collection($('people'),'people',snapshot.employees,{label:'Personen',search:e=>e.name+' '+e.id,redraw:renderPeople});
- const body=table(view.content,['Person','Dienstart','Bevorzugt','Sollstunden','Teams','Profile','Details']),idx=dataIndex();
- view.items.forEach(e=>{const tr=el('tr',undefined,body);el('td',e.name||'Neue Person',tr);select(el('td',undefined,tr),'Erlaubt',e.allowed_kinds.join(','),[['day','Nur Tag'],['night','Nur Nacht'],['day,night','Tag und Nacht']],v=>e.allowed_kinds=v.split(','));select(el('td',undefined,tr),'Wunsch',e.preferred_kind??'',[['','Keine Präferenz'],['day','Bevorzugt Tag'],['night','Bevorzugt Nacht']],v=>e.preferred_kind=v||null);const hours=field(el('td',undefined,tr),'Stunden',e.target_minutes==null?'':e.target_minutes/60,v=>setTargetHours(e,v),'number');hours.dataset.employeeHours=e.id;hours.required=true;hours.min='0';el('td',e.team_ids.map(id=>idx.groups.get(id)?.name??id).join(', '),tr);el('td',e.profile_ids.join(', '),tr);button(el('td',undefined,tr),'Bearbeiten',()=>personDetails(e));});
+ const body=table(view.content,['Person','Planen','Dienstart','Bevorzugt','Sollstunden','Teams','Profile','Details']),idx=dataIndex();
+ view.items.forEach(e=>{
+  const tr=el('tr',undefined,body);tr.dataset.employeeId=e.id;tr.classList.toggle('excluded',!!e.excluded);el('td',e.name||'Neue Person',tr);
+  const planning=field(el('td',undefined,tr),'Planen',!e.excluded,v=>{e.excluded=!v;tr.classList.toggle('excluded',e.excluded);},'checkbox');planning.dataset.employeePlanning=e.id;tableInputNavigation(planning,'planning');planning.setAttribute('aria-label',`${e.name||'Neue Person'}: Planen`);
+  select(el('td',undefined,tr),'Erlaubt',e.allowed_kinds.join(','),[['day','Nur Tag'],['night','Nur Nacht'],['day,night','Tag und Nacht']],v=>e.allowed_kinds=v.split(','));select(el('td',undefined,tr),'Wunsch',e.preferred_kind??'',[['','Keine Präferenz'],['day','Bevorzugt Tag'],['night','Bevorzugt Nacht']],v=>e.preferred_kind=v||null);const hours=field(el('td',undefined,tr),'Stunden',e.target_minutes==null?'':e.target_minutes/60,v=>setTargetHours(e,v),'number');hours.dataset.employeeHours=e.id;tableInputNavigation(hours,'hours');hours.required=true;hours.min='0';el('td',e.team_ids.map(id=>idx.groups.get(id)?.name??id).join(', '),tr);el('td',e.profile_ids.join(', '),tr);button(el('td',undefined,tr),'Bearbeiten',()=>personDetails(e));
+ });
 }
 function addPerson(){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');
  if(personDraft&&!window.confirm('Nicht übernommene Abwesenheit verwerfen?'))return;personDraft=false;
- const person={id:'person-'+projectId(),name:'',team_ids:[],employment_start:snapshot.period_start,employment_end:snapshot.period_end,approvals:[],qualifications:[],availability:[],unavailable:[],allowed_kinds:['day','night'],preferred_kind:null,preferred_functions:[],allow_weekends:true,allow_holidays:true,profile_ids:[],target_minutes:null,balance_minutes:0,credit_minutes:0,employment_fraction:100,historical_nights:0,historical_weekends:0,historical_holidays:0,mentor_capacity:0};
+ const person={id:'person-'+projectId(),name:'',excluded:false,team_ids:[],employment_start:snapshot.period_start,employment_end:snapshot.period_end,approvals:[],qualifications:[],availability:[],unavailable:[],allowed_kinds:['day','night'],preferred_kind:null,preferred_functions:[],allow_weekends:true,allow_holidays:true,profile_ids:[],target_minutes:null,balance_minutes:0,credit_minutes:0,employment_fraction:100,historical_nights:0,historical_weekends:0,historical_holidays:0,mentor_capacity:0};
  snapshot.employees.push(person);invalidateResult();$('matrixSearch').value='';pageState('matrixPeople',30).page=Math.floor((snapshot.employees.length-1)/30);const people=pageState('people',30);people.query='';people.page=Math.floor((snapshot.employees.length-1)/30);renderActivePanel(true);personDetails(person);$('details').querySelector('input')?.focus();notice('Neue Person angelegt. Name, Sollstunden, Team und Regelprofile festlegen; Freigaben ausdrücklich erteilen.');
 }
 function removePerson(person){
@@ -263,7 +281,7 @@ function renderPositions(){
 }
 function renderDemands(){
  const view=collection($('demands'),'demands',snapshot.demands,{label:'Bedarfe',size:40,search:d=>demandLabel(d)+' '+d.id,redraw:renderDemands});
- const body=table(view.content,['Dienst und Zeit','Mindestens Personen','Höchstens Personen','Details']);view.items.forEach(d=>{const tr=el('tr',undefined,body);el('td',demandLabel(d),tr);const min=field(el('td',undefined,tr),'Min',d.minimum,v=>d.minimum=v,'number');min.min='0';min.step='1';const maxInput=field(el('td',undefined,tr),'Max (leer = unbegrenzt)',d.maximum,v=>d.maximum=v,'number');maxInput.min='0';maxInput.step='1';maxInput.placeholder='Unbegrenzt';const details=el('details',undefined,el('td',undefined,tr));el('summary','Technische Details',details);el('p',d.id,details);el('p',d.source,details);el('p',workplaceName(dataIndex().positions.get(d.position_id)?.workplace_id??''),details);});
+ const body=table(view.content,['Dienst und Zeit','Mindestens Personen','Höchstens Personen','Details']);view.items.forEach(d=>{const tr=el('tr',undefined,body);el('td',demandLabel(d),tr);const min=field(el('td',undefined,tr),'Min',d.minimum,v=>d.minimum=v,'number');min.min='0';min.step='1';tableInputNavigation(min,'minimum');const maxInput=field(el('td',undefined,tr),'Max (leer = unbegrenzt)',d.maximum,v=>d.maximum=v,'number');maxInput.min='0';maxInput.step='1';maxInput.placeholder='Unbegrenzt';tableInputNavigation(maxInput,'maximum');const details=el('details',undefined,el('td',undefined,tr));el('summary','Technische Details',details);el('p',d.id,details);el('p',d.source,details);el('p',workplaceName(dataIndex().positions.get(d.position_id)?.workplace_id??''),details);});
 }
 function demandBoardRows(){
  const idx=dataIndex(),rows=new Map(),patterns=new Map(),used=new Set();
@@ -341,6 +359,12 @@ function renderDemandSummary(){
 }
 function renderDemandBoard(){
  renderDemandSummary();const box=$('demandBoard'),scroll=[box.scrollLeft,box.scrollTop];box.replaceChildren();
+ const byFunction=demandView==='functions';
+ $('demandViewDates').setAttribute('aria-pressed',String(!byFunction));$('demandViewFunctions').setAttribute('aria-pressed',String(byFunction));
+ $('demandBoardHelp').hidden=byFunction;$('demandFunctionHelp').hidden=!byFunction;
+ box.setAttribute('aria-label',byFunction?'Mindestbesetzung nach Funktion und Tagesart':'Mindestbesetzung nach Dienstmuster und Tag');
+ box.setAttribute('aria-describedby',byFunction?'demandFunctionHelp':'demandBoardHelp');
+ if(byFunction){renderFunctionDemandBoard(box);box.scrollTo(...scroll);return;}
  const days=[];for(let day=snapshot.period_start;day<=snapshot.period_end;day=dayOffset(day,1))days.push(day);
  const weekend=day=>[0,6].includes(new Date(day+'T12:00:00Z').getUTCDay());
  const weekday=new Intl.DateTimeFormat('de-DE',{weekday:'short',timeZone:'UTC'});
@@ -352,7 +376,7 @@ function renderDemandBoard(){
   const tr=el('tr',undefined,body);tr.dataset.demandRow=row.key;
   const heading=el('th',undefined,tr);heading.scope='row';heading.className='demand-row';el('strong',row.name,heading);
   const times=row.times.map(([a,start,b,end])=>`${start}–${end}${b!==a?' (Folgetag)':''}`).join(' / ');el('small',times,heading);
-  const bulkLabel=el('label','Zeilenwert',heading),bulk=el('input',undefined,bulkLabel);bulk.type='number';bulk.min='0';bulk.step='1';bulk.className='demand-bulk-value';bulk.setAttribute('aria-label',`${row.name} · ${times}: Wert für Sammelbearbeitung`);
+  const bulkLabel=el('label','Zeilenwert',heading),bulk=el('input',undefined,bulkLabel);bulk.type='number';bulk.min='0';bulk.step='1';bulk.className='demand-bulk-value';tableInputNavigation(bulk,'bulk');bulk.setAttribute('aria-label',`${row.name} · ${times}: Wert für Sammelbearbeitung`);
   const actions=el('div',undefined,heading);actions.className='demand-row-actions';
   const controls=new Map();
   const changed=()=>{invalidateResult();renderDemandSummary();for(const refresh of controls.values())refresh();renderedPanels.set('demand',changeVersion);};
@@ -374,7 +398,7 @@ function renderDemandBoard(){
   });
   for(const day of days){
    const cell=row.cells.get(day),td=el('td',undefined,tr);td.className='demand-cell';td.dataset.demandDay=day;td.classList.toggle('weekend',weekend(day));
-   const input=el('input',undefined,td);input.type='number';input.min='0';input.step='1';input.className='demand-value';input.setAttribute('aria-label',`${row.name} · ${times} · ${dayText(day)}: Mindestbesetzung`);
+   const input=el('input',undefined,td);input.type='number';input.min='0';input.step='1';input.className='demand-value';tableInputNavigation(input,day);input.setAttribute('aria-label',`${row.name} · ${times} · ${dayText(day)}: Mindestbesetzung`);
    const status=el('small',undefined,td);
    if(!cell||(!cell.demands.length&&!demandCreation(row,cell))){input.disabled=true;td.classList.add('unavailable');status.textContent=cell?'Zuordnung unklar':'Kein Dienst';input.title=cell?'Keine eindeutige Position für diesen Dienst vorhanden.':'An diesem Tag existiert kein passender Dienst.';continue;}
    const refresh=()=>{const overridden=cell.demands.some(d=>d.source==='override');input.value=cell.demands.length?demandTotal(cell):'';input.required=!!cell.demands.length;input.setCustomValidity('');td.classList.toggle('overridden',overridden);td.dataset.source=overridden?'override':cell.demands[0]?.source??'';status.textContent=overridden?'Überschrieben':cell.demands.length>1?`${cell.demands.length} Bedarfe`:'';input.title=cell.demands.length>1?'Summe mehrerer Bedarfe; Änderungen werden im Verhältnis der ursprünglichen Mindestbesetzung verteilt.':'Mindestbesetzung direkt eingeben; 0 bedeutet kein Mindestbedarf.';};
@@ -390,6 +414,57 @@ function renderDemandBoard(){
  if(!rows.length)el('p','Im Planungszeitraum sind noch keine Dienste vorhanden.',box);
  box.scrollTo(...scroll);
 }
+const demandDayTypes=[['weekday','Werktag'],['saturday','Samstag'],['sunday','Sonntag'],['holiday','Feiertag']];
+function functionDemandRows(){
+ const idx=dataIndex(),rows=new Map(),services=new Map((snapshot.metadata.services??[]).map(s=>[s.function_id??'sp5:service:'+s.id,s]));
+ for(const position of snapshot.positions)if(!rows.has(position.function_id))rows.set(position.function_id,{id:position.function_id,name:services.get(position.function_id)?.name??position.name,cells:new Map(demandDayTypes.map(([type])=>[type,[]]))});
+ // The snapshot stores holiday dates on shifts. Classify the whole local
+ // day consistently, including functions whose own shift lacks that flag.
+ const holidays=new Set(snapshot.shifts.filter(s=>s.holiday&&s.segments.length).map(s=>localDay(s.segments[0].start)));
+ for(const demand of snapshot.demands){
+  const shift=idx.shifts.get(demand.shift_id),position=idx.positions.get(demand.position_id);
+  if(!shift?.segments.length||!position)continue;
+  const day=localDay(shift.segments[0].start);if(day<snapshot.period_start||day>snapshot.period_end)continue;
+  const weekday=new Date(day+'T12:00:00Z').getUTCDay();
+  const type=holidays.has(day)?'holiday':weekday===6?'saturday':weekday===0?'sunday':'weekday';
+  rows.get(position.function_id).cells.get(type).push(demand);
+ }
+ return [...rows.values()];
+}
+function renderFunctionDemandBoard(box){
+ const t=el('table',undefined,box);t.className='demand-table demand-function-table';el('caption','Mindestbesetzung nach Funktion und Tagesart',t).className='sr-only';
+ const head=el('tr',undefined,el('thead',undefined,t));el('th','Funktion',head).scope='col';
+ for(const [,label] of demandDayTypes)el('th',label,head).scope='col';
+ const body=el('tbody',undefined,t),rows=functionDemandRows();
+ for(const row of rows){
+  const tr=el('tr',undefined,body);tr.dataset.demandFunction=row.id;
+  const heading=el('th',row.name,tr);heading.scope='row';heading.className='demand-row';
+  for(const [type,label] of demandDayTypes){
+   const demands=row.cells.get(type),td=el('td',undefined,tr);td.className='demand-cell';td.dataset.demandType=type;
+   const input=el('input',undefined,td);input.type='number';input.min='0';input.step='1';input.className='demand-value';tableInputNavigation(input,type);input.setAttribute('aria-label',`${row.name} · ${label}: Mindestbesetzung je Bedarf`);
+   const status=el('small',undefined,td);
+   if(!demands.length){input.disabled=true;td.classList.add('unavailable');input.title='Keine Bedarfe dieser Tagesart im Planungszeitraum.';continue;}
+   const refresh=()=>{
+    const values=new Set(demands.map(d=>d.minimum)),mixed=values.size>1,overridden=demands.some(d=>d.source==='override');
+    input.value=mixed?'':String(demands[0].minimum);input.placeholder=mixed?'uneinheitlich':'';input.setCustomValidity('');
+    input.title=mixed?'Uneinheitliche Mindestbesetzung; eine Eingabe vereinheitlicht alle Bedarfe dieser Funktion und Tagesart.':'Mindestbesetzung für jeden Bedarf dieser Funktion und Tagesart; 0 bedeutet kein Mindestbedarf.';
+    td.classList.toggle('overridden',overridden);td.dataset.source=overridden?'override':demands[0].source;
+    status.textContent=overridden?'Überschrieben':'';
+   };
+   refresh();
+   input.oninput=()=>{
+    input.setCustomValidity('');if(input.value===''||!input.checkValidity()||!Number.isSafeInteger(Number(input.value))){input.setCustomValidity('Eine ganze Zahl ab 0 eingeben; zum Aufheben des Mindestbedarfs 0 verwenden.');return;}
+    const minimum=Number(input.value);let changed=false;
+    for(const demand of demands)if(demand.minimum!==minimum){demand.minimum=minimum;if(demand.maximum!==null&&demand.maximum<minimum)demand.maximum=minimum;demand.source='override';changed=true;}
+    refresh();if(changed){invalidateResult();renderDemandSummary();renderedPanels.set('demand',changeVersion);}
+   };
+  }
+ }
+ if(!rows.length)el('p','Im Projekt sind noch keine Funktionen vorhanden.',box);
+}
+function switchDemandView(view){demandView=view;renderDemandBoard();}
+$('demandViewDates').onclick=()=>switchDemandView('dates');
+$('demandViewFunctions').onclick=()=>switchDemandView('functions');
 function openDemandReview(query){
  const state=pageState('demands',40);state.query=query;state.page=0;navigate('rules');
  const target=$('demands');target.closest('details').open=true;renderDemands();
@@ -654,7 +729,7 @@ function focusAssignment(index){
  const state=pageState('assignments',40);state.query='';state.page=Math.floor(index/state.size);$('assignmentDetails').open=true;renderAssignments();
  const row=$('plan').querySelector(`[data-assignment-index="${index}"]`);row?.focus({preventScroll:true});row?.scrollIntoView({block:'center',behavior:'smooth'});
 }
-const diagnosticTitles={candidate_shortage:'Zu wenige geeignete Personen',shared_candidate_shortage:'Gemeinsamer Kandidatenengpass',vacancy:'Offene Stellen',maximum:'Höchstbesetzung',fixed:'Fixierte Einteilungen',duplicate:'Doppelte Einteilungen',reference:'Ungültige Verweise',context_assignment:'Planungszeitraum',interval_mismatch:'Dienstzeiten',unresolved:'Offene Angaben',profile:'Regelprofile',qualification:'Qualifikationen',approval:'Freigaben',split_weekend_approval:'Geteiltes Wochenende ohne Freigabe',rest:'Ruhezeiten',overlap:'Überlappende Dienste',interleaving:'Geteilte Dienste',availability:'Verfügbarkeit',kind:'Dienstart',boundary_kind:'Tag-/Nachtart der Randarbeit',boundary_period:'Randarbeit im Planungszeitraum',boundary_duplicate:'Doppelt erfasste Randarbeit',weekend:'Wochenenden',holiday:'Feiertage',employment:'Beschäftigungszeitraum',team:'Teamzuordnung',restriction:'Dienstsperren',absence:'Abwesenheiten',personal_work:'Persönliche Arbeit ohne Zeitangabe',night_block:'Ruhe nach Nachtblock',daily_limit:'Tägliche Höchstzeit',weekly_limit:'Wöchentliche Höchstzeit',period_limit:'Höchstzeit im Planungszeitraum',target_unreachable:'Periodensoll im Zuschnitt nicht erreichbar',work_days:'Höchstens erlaubte Arbeitstage',nights:'Höchstens erlaubte Nächte',weekends:'Höchstens erlaubte Wochenenden',consecutive_work:'Aufeinanderfolgende Arbeitstage',consecutive_nights:'Aufeinanderfolgende Nächte',weekly_rest:'Zusammenhängende Wochenruhe',context:'Angrenzende Dienste und Zeiträume',mentoring:'Erforderliche Betreuung',size_limit:'Planungsgröße',numeric_range:'Zahlenbereich',date_range:'Datumsbereich',created_at:'Datenstand',empty_id:'Fehlende Kennungen',duplicate_id:'Doppelte Kennungen',interval:'Dienstzeiten',demand:'Besetzungsbedarf',validity:'Gültigkeitszeitraum',assignment_reference:'Einteilungen',input:'Eingabedaten'};
+const diagnosticTitles={excluded:'Von der Planung ausgenommen',candidate_shortage:'Zu wenige geeignete Personen',shared_candidate_shortage:'Gemeinsamer Kandidatenengpass',vacancy:'Offene Stellen',maximum:'Höchstbesetzung',fixed:'Fixierte Einteilungen',duplicate:'Doppelte Einteilungen',reference:'Ungültige Verweise',context_assignment:'Planungszeitraum',interval_mismatch:'Dienstzeiten',unresolved:'Offene Angaben',profile:'Regelprofile',qualification:'Qualifikationen',approval:'Freigaben',split_weekend_approval:'Geteiltes Wochenende ohne Freigabe',rest:'Ruhezeiten',overlap:'Überlappende Dienste',interleaving:'Geteilte Dienste',availability:'Verfügbarkeit',kind:'Dienstart',boundary_kind:'Tag-/Nachtart der Randarbeit',boundary_period:'Randarbeit im Planungszeitraum',boundary_duplicate:'Doppelt erfasste Randarbeit',weekend:'Wochenenden',holiday:'Feiertage',employment:'Beschäftigungszeitraum',team:'Teamzuordnung',restriction:'Dienstsperren',absence:'Abwesenheiten',personal_work:'Persönliche Arbeit ohne Zeitangabe',night_block:'Ruhe nach Nachtblock',daily_limit:'Tägliche Höchstzeit',weekly_limit:'Wöchentliche Höchstzeit',period_limit:'Höchstzeit im Planungszeitraum',target_unreachable:'Periodensoll im Zuschnitt nicht erreichbar',work_days:'Höchstens erlaubte Arbeitstage',nights:'Höchstens erlaubte Nächte',weekends:'Höchstens erlaubte Wochenenden',consecutive_work:'Aufeinanderfolgende Arbeitstage',consecutive_nights:'Aufeinanderfolgende Nächte',weekly_rest:'Zusammenhängende Wochenruhe',context:'Angrenzende Dienste und Zeiträume',mentoring:'Erforderliche Betreuung',size_limit:'Planungsgröße',numeric_range:'Zahlenbereich',date_range:'Datumsbereich',created_at:'Datenstand',empty_id:'Fehlende Kennungen',duplicate_id:'Doppelte Kennungen',interval:'Dienstzeiten',demand:'Besetzungsbedarf',validity:'Gültigkeitszeitraum',assignment_reference:'Einteilungen',input:'Eingabedaten'};
 const diagnosticActions={
  boundary_kind:'Unter Regeln und Bedarf gesammelt einstellen: Wiederkehrende Dienste gesammelt einstellen. Je Dienst und Zeitmuster einmal Tag oder Nacht.',
  profile:'Unter Regeln und Bedarf das Regelprofil prüfen und bestätigen. Ein Profil gilt für alle ihm zugeordneten Personen.',
@@ -663,7 +738,7 @@ const diagnosticActions={
  approval:'Unter Team die persönlichen Dienstfreigaben prüfen.',
  qualification:'Unter Team die Qualifikationsnachweise prüfen.'
 };
-const eligibilityMessages={employment:'Der Dienst liegt außerhalb des Beschäftigungszeitraums.',team:'Die Person gehört nicht zum Team dieses Dienstes.',kind:'Diese Dienstart ist für die Person nicht erlaubt.',weekend:'Wochenenddienste sind für diese Person nicht erlaubt.',holiday:'Feiertagsdienste sind für diese Person nicht erlaubt.',approval:'Eine gültige Freigabe für diesen Dienst oder Arbeitsplatz fehlt.',qualification:'Ein gültiger Qualifikationsnachweis für diesen Dienst fehlt.',restriction:'Eine bestätigte Dienstsperre verhindert diese Einteilung.',absence:'Der Dienst überschneidet sich mit einer Abwesenheit.',availability:'Der vollständige Dienst liegt nicht innerhalb der erlaubten Zeitfenster.'};
+const eligibilityMessages={excluded:'Die Person ist von der Planung ausgenommen.',employment:'Der Dienst liegt außerhalb des Beschäftigungszeitraums.',team:'Die Person gehört nicht zum Team dieses Dienstes.',kind:'Diese Dienstart ist für die Person nicht erlaubt.',weekend:'Wochenenddienste sind für diese Person nicht erlaubt.',holiday:'Feiertagsdienste sind für diese Person nicht erlaubt.',approval:'Eine gültige Freigabe für diesen Dienst oder Arbeitsplatz fehlt.',qualification:'Ein gültiger Qualifikationsnachweis für diesen Dienst fehlt.',restriction:'Eine bestätigte Dienstsperre verhindert diese Einteilung.',absence:'Der Dienst überschneidet sich mit einer Abwesenheit.',availability:'Der vollständige Dienst liegt nicht innerhalb der erlaubten Zeitfenster.'};
 function updateUnresolvedBulk(shown,total){
  const bar=$('unresolvedBulk');bar.hidden=false;bar.dataset.pending=String(shown.length);
  const counts=new Map();for(const entry of shown){const key=unresolvedCategory(entry.message);counts.set(key,(counts.get(key)??0)+1);}

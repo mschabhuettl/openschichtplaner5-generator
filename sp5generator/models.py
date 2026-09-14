@@ -61,6 +61,8 @@ class RuleProfile(Model):
 class Employee(Model):
     id: str
     name: str
+    # Von der Planung ausgenommen; Daten und Verträge bleiben unverändert.
+    excluded: bool = False
     team_ids: list[str]
     employment_start: date
     employment_end: date

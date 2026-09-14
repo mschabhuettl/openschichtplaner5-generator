@@ -105,9 +105,9 @@ def main(argv=None):
         result = Result.model_validate_json(
             Path(args.result).read_text(encoding="utf-8")
         )
-        from .domain import snapshot_hash
+        from .domain import snapshot_hash_matches
 
-        if result.snapshot_id != snapshot.id or result.snapshot_hash != snapshot_hash(snapshot):
+        if result.snapshot_id != snapshot.id or not snapshot_hash_matches(snapshot, result.snapshot_hash):
             raise ValueError("Result does not reference this snapshot")
         if args.command == "validate":
             from .validator import validate as check

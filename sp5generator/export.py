@@ -107,10 +107,10 @@ def rows(snapshot: Snapshot, result: Result):
 
 
 def export_table(snapshot: Snapshot, result: Result, path: str | Path):
-    from .domain import snapshot_hash
+    from .domain import snapshot_hash_matches
     from .validator import validate
 
-    if result.snapshot_id != snapshot.id or result.snapshot_hash != snapshot_hash(snapshot):
+    if result.snapshot_id != snapshot.id or not snapshot_hash_matches(snapshot, result.snapshot_hash):
         raise ValueError("Result does not reference this snapshot")
     validation = validate(snapshot, result.assignments)
     if not validation.valid:

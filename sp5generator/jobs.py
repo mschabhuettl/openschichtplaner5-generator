@@ -340,7 +340,7 @@ class Store:
 
     def apply_synthetic(self, job_id, owner, key):
         """Atomic acceptance for the isolated canonical synthetic test store only."""
-        from .domain import snapshot_hash
+        from .domain import snapshot_hash, snapshot_hash_matches
         from .validator import validate
 
         if not key or len(key) > 128:
@@ -373,7 +373,7 @@ class Store:
             ) != snapshot_hash(snapshot):
                 raise Conflict("Snapshot changed; recalculate before acceptance")
             result = Result.model_validate_json(job["result"])
-            if result.snapshot_id != snapshot.id or result.snapshot_hash != snapshot_hash(snapshot):
+            if result.snapshot_id != snapshot.id or not snapshot_hash_matches(snapshot, result.snapshot_hash):
                 raise Conflict("Result belongs to a different snapshot")
             validation = validate(snapshot, result.assignments)
             if not validation.valid or not validation.complete:
