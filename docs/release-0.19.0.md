@@ -96,12 +96,21 @@ Gegen einen von Hand erstellten Vergleichsplan gemessen, blieben drei Unterschie
   Anteil der Blöcke ab drei freien Tagen 41 gegen 31 Prozent, vollständig freie
   Wochenenden je Person 1,25 gegen 1,20. Auch die Ausgeglichenheit ist besser
   (Gini 0,04 gegen 0,11), und es bleiben keine Regelbefunde gegen 39.
-- **Offene Grenze:** Die Wochenendkopplung erreicht den Vergleichsplan nicht. Dort
-  sind 10 Prozent der Wochenenden geteilt, im erzeugten Plan 19 Prozent. Das
-  rechnerische Minimum liegt bei 8 Prozent, weil der Sonntag je Wochenende zwei
-  Stellen weniger zu besetzen hat als der Samstag. Ein höheres Gewicht löst das
-  nicht: 30000 schnitt schlechter ab als 10000, der Unterschied lag in der
-  Laufstreuung. Die Arbeit daran ist nicht abgeschlossen.
+- **Wochenendkopplung als Rangstufe.** Die Regel, dass ein Wochenende ganz oder
+  gar nicht gearbeitet wird, ist kein gewichtetes Ziel mehr, sondern eine eigene
+  Stufe zwischen Abdeckung und Qualität. Ein höheres Gewicht hatte zuvor nicht
+  geholfen: 30000 schnitt schlechter ab als 10000, der Unterschied lag in der
+  Laufstreuung. An echten Quelldaten sinkt die Zahl geteilter Wochenenden damit
+  von 13 bis 17 auf 7 von 45, und zwei Läufe liefern zeichengleiche Ergebnisse —
+  die Stufe macht diese Größe reproduzierbar.
+- **Erreichbare Grenze:** 7 geteilte Wochenenden sind unter den geltenden
+  Freigaben das Minimum. Bei fünf davon ist die eingeteilte Person am jeweils
+  anderen Tag nicht einsetzbar. Eine Variante, die auch solche Fälle bestraft,
+  kommt auf dieselben 7 und verschlechtert dabei die Ausgeglichenheit; sie wurde
+  verworfen. Der Vergleichsplan liegt mit 5 darunter, nimmt dafür aber 28
+  Zuteilungen ohne gültige Freigabe vor, neun davon am Wochenende. Gemessen an
+  den vermeidbaren Teilungen liegt der erzeugte Plan mit 2 besser als der
+  Vergleichsplan mit 4.
 - **Zweite offene Grenze:** Der Vergleichsplan ist unter den harten Regeln dieses
   Programms nicht zulässig. 28 seiner 385 Einteilungen setzen Personen auf
   Dienste, für die keine Freigabe vorliegt und die auch in drei Jahren Historie
