@@ -106,9 +106,11 @@ Gegen einen von Hand erstellten Vergleichsplan gemessen, blieben drei Unterschie
 - **Erreichbare Grenze:** 7 geteilte Wochenenden sind unter den geltenden
   Freigaben das Minimum. Zwei davon sind vermeidbar, und dieser Wert ist mit
   ausreichendem Zeitbudget als Optimum **bewiesen**, nicht nur erreicht. Bei den
-  übrigen fünf ist die eingeteilte Person am jeweils anderen Tag nicht einsetzbar. Eine Variante, die auch solche Fälle bestraft,
-  kommt auf dieselben 7 und verschlechtert dabei die Ausgeglichenheit; sie wurde
-  verworfen. Der Vergleichsplan liegt mit 5 darunter, nimmt dafür aber 28
+  übrigen fünf ist die eingeteilte Person am jeweils anderen Tag nicht einsetzbar.
+  Auch die Gesamtzahl von 7 ist als Optimum **bewiesen**: eine Variante, die jede
+  Teilung bestraft — auch die von Personen ohne Einsatzmöglichkeit am anderen Tag —,
+  kommt nachweislich auf dieselben 7 und verschlechtert dabei die Ausgeglichenheit;
+  sie wurde verworfen. Der Vergleichsplan liegt mit 5 darunter, nimmt dafür aber 28
   Zuteilungen ohne gültige Freigabe vor, neun davon am Wochenende. Gemessen an
   den vermeidbaren Teilungen liegt der erzeugte Plan mit 2 besser als der
   Vergleichsplan mit 4.
