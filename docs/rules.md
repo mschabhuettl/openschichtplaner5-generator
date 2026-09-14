@@ -130,8 +130,8 @@ Erweiterung wird arithmetisch geprüft; der fertige Plan wird zusätzlich komple
 validiert und mit fixierten Einteilungsvariablen durch CP-SAT zertifiziert. Nur
 ein erfolgreiches Zertifikat liefert einen zulässigen Ausgangsplan. Ein
 `OPTIMAL` dieses eingeschränkten Zertifikats bedeutet ausdrücklich keine globale
-Optimalität; das Gesamtergebnis bleibt mindestens `FEASIBLE`. Anschließend wird die konfigurierte
-gewichtete Bewertung minimiert. Kalenderwochenruhe hat direkte Existenzbedingungen
+Optimalität; das Gesamtergebnis bleibt mindestens `FEASIBLE`. Anschließend folgen
+die unten beschriebenen Optimierungsphasen. Kalenderwochenruhe hat direkte Existenzbedingungen
 für freie Intervalle. Komplexe rollierende Regeln werden zusätzlich durch den
 unabhängigen arithmetischen Prüfer geprüft. Verletzende Personeneinteilungsmengen
 werden mit gültigen Ausschlussbedingungen ausgeschlossen und erneut optimiert.
@@ -139,31 +139,58 @@ Kein ungeprüfter Zwischenstand wird als zulässiges Ergebnis geliefert. Zeitlim
 kann daher `UNKNOWN` bedeuten, auch wenn eine noch ungeprüfte Zwischenbelegung
 existiert. Eine gefundene gültige Lösung bleibt bei Zeitlimit `FEASIBLE`.
 
-Teilplanung optimiert lexikografisch: zuerst die Zahl fehlender Mindeststellen,
-erst nach bewiesenem Minimum die Bewertung. Personelle Grenzen und Maximalbedarf
-bleiben unverändert hart. `validation.valid` bezeichnet personelle Zulässigkeit;
+Teilplanung optimiert lexikografisch: zuerst die Zahl fehlender Mindeststellen
+(`vacancies`), danach die Zahl geteilter Wochenenden (`couple`), zuletzt die
+gewichtete Bewertung (`quality`). Die Kopplungsphase ist nur aktiv, wenn
+`objectives.split_weekends` größer als 0 ist und mindestens ein Kopplungsterm
+existiert. Andernfalls folgt die Qualität wie bisher direkt auf die Abdeckung.
+Bei vollständiger Planung bleibt die Mindestabdeckung eine harte Bedingung;
+die Kopplungsphase folgt auf die Zulässigkeitsphase oder den zertifizierten
+Ausgangsplan und geht ebenfalls der Qualität vor.
+Die Wochenendkopplung ist eine betriebliche Regel: Wer am Wochenende arbeitet,
+soll Samstag und Sonntag arbeiten. Sie wird deshalb nicht gegen weiche Ziele
+aufgewogen. Bei ungleichem Bedarf an beiden Tagen können unvermeidbare Teilungen
+bestehen bleiben; für ihre Vermeidung wird keine Mindeststelle geopfert.
+
+Die nach der Abdeckungsphase erreichte Zahl offener Mindeststellen wird für die
+folgenden Phasen festgeschrieben. `parameters.quality_coverage_count` berichtet
+diesen Wert, `coverage_proven`, ob das Abdeckungsminimum bewiesen ist. Nach der
+Kopplungsphase wird deren bewiesenes Minimum ebenfalls festgeschrieben; ohne
+Optimalitätsbeweis darf die Qualität höchstens die erreichte Zahl geteilter
+Wochenenden verwenden. `parameters.split_weekend_count` berichtet den erreichten
+Wert und `split_weekends_proven` den Optimalitätsnachweis. `search_trace` weist
+die Kopplungsphase als `couple` aus.
+
+Personelle Grenzen und Maximalbedarf bleiben unverändert hart.
+`validation.valid` bezeichnet personelle Zulässigkeit;
 `validation.complete` verlangt zusätzlich alle Mindestbedarfe und geprüften
 Randkontext. `INFEASIBLE` wird nur nach einem Beweis des bindenden Modells gemeldet.
 Ein fehlender Kandidat wird vorab benannt; kombinierte Kandidatenengpässe werden
 durch das Modell bewiesen. Die Diagnose beansprucht weder Minimalität noch eine
 einzige Konfliktursache.
 
-Bei Teilplanung ab 120 Sekunden erhalten die Abdeckungs- und Qualitätsphase
-zusammen höchstens 40 Prozent der Gesamtfrist. Die Reparaturphase nutzt die verbleibende
+Bei aktiver Kopplungsphase läuft die Abdeckung bis 50 Prozent des verbleibenden
+Phasenbudgets, die Kopplung bis 80 Prozent; der Rest steht der Qualität zur
+Verfügung. Ohne Kopplungsphase bleibt die Abdeckungsfrist bei 80 Prozent.
+Bei Teilplanung ab 120 Sekunden erhalten die Abdeckungs-, Kopplungs- und
+Qualitätsphase zusammen höchstens 40 Prozent der Gesamtfrist. Die Reparaturphase nutzt die verbleibende
 Zeit bis zur Gesamtfrist. Bei deaktivierter Reparatur (`_repair=False`), kürzeren
 Zeitlimits oder vollständiger Planung gilt weiterhin das volle Suchphasenbudget.
 Abwechselnd werden Einteilungen rund um ein Wochenende oder für bis zu sechs
 Personen zur erneuten Suche freigegeben.
-Sie verbessert nur die weichen Ziele der Teilplanung: weniger fehlende
-Mindeststellen, bei gleicher Deckung eine geringere gewichtete Bewertung.
+Sie verbessert die Teilplanung in derselben Rangordnung: weniger fehlende
+Mindeststellen, bei gleicher Deckung weniger geteilte Wochenenden, bei gleicher
+Kopplung eine geringere gewichtete Bewertung.
 Harte Regeln, bestehende Fixierungen, persönliche Freigaben und Bedarfswerte
 bleiben unverändert. Jede Runde durchläuft dieselbe unabhängige Prüfung;
 die Übernahme verlangt `validation.valid=true`, auch bei der erneuten Prüfung
 gegen den ursprünglichen Snapshot. Offene Mindeststellen und fehlender
 Randkontext bleiben als Diagnosen sichtbar und verhindern eine Verbesserung
-nicht. Bei jeder Übernahme entscheidet zuerst die Zahl offener Mindeststellen,
-danach die Summe der gewichteten Zielbeiträge; Änderungskosten beziehen sich
-weiterhin auf den ursprünglichen Entwurf.
+nicht. Bei jeder Übernahme entscheidet das Tripel aus offenen Mindeststellen,
+dem ungewichteten Beitrag `objective_contributions["split_weekends"]` und der
+Summe der gewichteten Zielbeiträge. Bei deaktivierter Wochenendkopplung ist der
+zweite Wert 0. Änderungskosten beziehen sich weiterhin auf den ursprünglichen
+Entwurf.
 
 In der Qualitätsphase gilt
 
@@ -201,7 +228,7 @@ Optionale Ergebnisintervalle müssen exakt zum referenzierten Snapshot passen.
 Snapshot-Integrität verwendet SHA-256 des vollständigen kanonischen JSON.
 
 
-## Weiche Dienstblöcke und zusammenhängende Freizeit
+## Dienstblöcke, Wochenendkopplung und zusammenhängende Freizeit
 
 `objectives.workday_transitions` gewichtet die Anzahl der Wechsel zwischen
 lokalen Arbeitstagen und Tagen ohne Dienst. Vorhandene Dienstsegment-Variablen
@@ -247,17 +274,20 @@ unter `isolated_days` aus. Das Ziel bleibt weich und garantiert keine
 Mindestblocklänge; harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich
 dadurch nicht.
 
-`objectives.split_weekends` gewichtet die Anzahl der Wochenenden, an denen eine
-Person genau am Samstag oder genau am Sonntag einen Dienst beginnt. Maßgeblich ist
+`objectives.split_weekends` aktiviert bei einem Wert größer als 0 die eigene
+Kopplungsrangstufe für die Anzahl der Wochenenden, an denen eine Person genau
+am Samstag oder genau am Sonntag einen Dienst beginnt. Maßgeblich ist
 der Dienstbeginn: Ein Freitagnachtdienst zählt zum Freitag, auch wenn er bis
 Samstag reicht; ein Samstagsnachtdienst zählt nur zum Samstag, nicht zum Sonntag.
 Ein Wochenende zählt nur, wenn für die Person an beiden Tagen eine Möglichkeit
 zum Dienstbeginn besteht und beide Tage vollständig im Planungszeitraum liegen.
-Neue Importe und Projektanlagen beginnen mit Gewicht 200; beim Laden älterer
+Neue Importe und Projektanlagen beginnen mit Gewicht 10000; beim Laden älterer
 Projekte ohne dieses Feld gilt 0 (deaktiviert).
-Gespeicherte Projekte bleiben damit unverändert. Der Ergebnisbericht weist den
-ungewichteten und gewichteten Beitrag unter `split_weekends` aus. Das Ziel bleibt
-weich; harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich dadurch nicht.
+Gespeicherte Projekte ohne dieses Ziel bleiben damit unverändert. Der
+Ergebnisbericht weist weiterhin den ungewichteten und gewichteten Beitrag unter
+`split_weekends` aus. Der ungewichtete Beitrag bestimmt die Kopplungsrangstufe
+vor der Qualität; die Höhe des Gewichts kann diesen Vorrang nicht verändern.
+Harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich dadurch nicht.
 
 `objectives.block_shape` gewichtet ein Blocklängenprofil je abgeschlossenem
 Dienstblock. Maßgeblich sind aufeinanderfolgende Kalendertage mit Dienstbeginn;

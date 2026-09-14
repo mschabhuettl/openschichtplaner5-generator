@@ -30,12 +30,20 @@ Gegen einen von Hand erstellten Vergleichsplan gemessen, blieben drei Unterschie
   ein Dienst **beginnt**: ein Dienst von Freitagabend bis Samstagfrüh ist kein
   Samstagsdienst.
 - **`objectives.block_shape`** bewertet je abgeschlossenem Block dessen Länge
-  anhand eines Kostenprofils. Das Profil stammt aus der beobachteten Verteilung
-  des Vergleichsplans: die häufigste Länge kostet nichts, seltenere Längen kosten
-  nach ihrer negativen Log-Wahrscheinlichkeit. Umgesetzt als Zustandsautomat über
-  Tabellenbedingungen; der Startzustand kommt aus der persönlichen Randarbeit vor
+  anhand eines Kostenprofils. Das Profil ist am Zweck geeicht, nicht an der
+  Vorlage: zusammenhängende Freizeit entsteht aus wenigen, längeren Dienstblöcken,
+  weil beide sich denselben Zeitraum teilen. Vier bis fünf Tage kosten daher
+  nichts, einzelne Arbeitstage sind teuer, ab sieben Tagen steigen die Kosten
+  wieder. Umgesetzt als Zustandsautomat über Tabellenbedingungen, der bis neun
+  Tage unterscheidet; der Startzustand kommt aus der persönlichen Randarbeit vor
   dem Zeitraum. Eine harte Obergrenze für Blocklängen entsteht dadurch nicht und
-  wird auch nicht angenommen.
+  wird auch nicht angenommen. Die harte Wochenruhe allein genügt als Bremse
+  nicht: sie lässt rechnerisch bis zu zwölf Tage am Stück zu.
+- **Geeichte Vorbelegungen.** Die Gewichte neuer Importe und Projektanlagen waren
+  nie aufeinander abgestimmt; an echten Quelldaten trug ein Ziel 286.000 Punkte
+  zur Gesamtwertung bei, ein anderes 6.400. Sie sind nun so gesetzt, dass die
+  Ziele vergleichbare Beiträge leisten. Gespeicherte Projekte behalten ihre
+  gespeicherten Gewichte.
 - **Reparaturphase.** Nach den beiden bisherigen Suchphasen wird abwechselnd ein
   Wochenende samt Freitag und Montag oder werden die Pläne von bis zu sechs
   Personen wieder freigegeben und dieser Ausschnitt neu gelöst. Übernommen wird
@@ -70,10 +78,13 @@ Gegen einen von Hand erstellten Vergleichsplan gemessen, blieben drei Unterschie
   Test, der die Kopplung nachweist, bei der Zählweise fallen beide Tests zur
   Nachtdienstabgrenzung.
 - Private lokale Abnahme gegen echte Quelldaten, nur nicht identifizierende
-  Aggregate. Die Blockform entspricht dem Vergleichsplan: mittlere Blocklänge
-  2,66 gegen 2,66 Tage, Anteil der Längen zwei bis vier 82 gegen 78 Prozent,
-  keine Blöcke ab sechs Tagen gegen einen. Die Reparaturphase senkt bei 300
-  Sekunden die fehlenden Mindeststellen von 51 auf 10.
+  Aggregate, gemessen gegen einen von Hand erstellten Plan desselben Zeitraums:
+  einzeln liegende Arbeitstage 8 gegen 17 Prozent, mittlere Länge der
+  zusammenhängenden Freizeit 3,13 gegen 2,50 Tage, Erholungsblöcke ab drei freien
+  Tagen 46 gegen 31 Prozent, vollständig freie Wochenenden je Person 1,23 gegen
+  1,20, Ausgeglichenheit der Wochenendlast 0,021 gegen 0,109, Regelbefunde keine
+  gegen 39. Die Reparaturphase senkt bei 300 Sekunden die fehlenden
+  Mindeststellen von 51 auf 10.
 - **Wichtig für die Auslegung:** Die Messgrößen streuen zwischen Läufen erheblich,
   weil die Abbruchgrenze eine Wanduhr ist. Derselbe Code liefert für den Anteil
   einzeln liegender Arbeitstage Werte zwischen 17 und 33 Prozent. Einzelne Läufe
@@ -86,9 +97,11 @@ Gegen einen von Hand erstellten Vergleichsplan gemessen, blieben drei Unterschie
   Wochenenden je Person 1,25 gegen 1,20. Auch die Ausgeglichenheit ist besser
   (Gini 0,04 gegen 0,11), und es bleiben keine Regelbefunde gegen 39.
 - **Offene Grenze:** Die Wochenendkopplung erreicht den Vergleichsplan nicht. Dort
-  sind 10 Prozent der Wochenenden geteilt, im erzeugten Plan 23 bis 37 Prozent.
-  Das zählt auch nach dem Zweckmaßstab, denn ein geteiltes Wochenende zerschneidet
-  die Erholung. Die Arbeit daran ist nicht abgeschlossen.
+  sind 10 Prozent der Wochenenden geteilt, im erzeugten Plan 19 Prozent. Das
+  rechnerische Minimum liegt bei 8 Prozent, weil der Sonntag je Wochenende zwei
+  Stellen weniger zu besetzen hat als der Samstag. Ein höheres Gewicht löst das
+  nicht: 30000 schnitt schlechter ab als 10000, der Unterschied lag in der
+  Laufstreuung. Die Arbeit daran ist nicht abgeschlossen.
 - **Zweite offene Grenze:** Der Vergleichsplan ist unter den harten Regeln dieses
   Programms nicht zulässig. 28 seiner 385 Einteilungen setzen Personen auf
   Dienste, für die keine Freigabe vorliegt und die auch in drei Jahren Historie

@@ -82,7 +82,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
         raise ValueError('Zeitlimit muss eine endliche Zahl in Sekunden sein.')
     started = monotonic()
     deadline = started + time_limit
-    # Die Reparaturphase braucht ein eigenes Budget; sonst schöpfen die beiden
+    # Die Reparaturphase braucht ein eigenes Budget; sonst schöpfen die
     # Suchphasen an echten Daten die gesamte Frist aus.
     repair_enabled = _repair and partial and time_limit >= 120
     phase_limit = time_limit * 0.4 if repair_enabled else time_limit
@@ -266,21 +266,38 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
                         )
                     score = (
                         metrics["vacancy_count"],
+                        metrics["objective_contributions"].get("split_weekends", 0)
+                        if snapshot.objectives.split_weekends else 0,
                         sum(metrics["weighted_objective_contributions"].values()),
                     )
-                    trace.update(vacancy_count=score[0], weighted_quality_cost=score[1])
-                    if score < (
+                    previous_score = (
                         best.metrics["vacancy_count"],
+                        best.metrics["objective_contributions"].get("split_weekends", 0)
+                        if snapshot.objectives.split_weekends else 0,
                         sum(best.metrics["weighted_objective_contributions"].values()),
-                    ):
+                    )
+                    trace.update(
+                        vacancy_count=score[0], split_weekend_count=score[1],
+                        weighted_quality_cost=score[2],
+                    )
+                    if score < previous_score:
                         metrics["objective_phase"] = "repair"
                         metrics["quality_scope"] = "repair neighborhood; global quality unproven"
                         checked.diagnostics.extend(diagnostics)
                         best = result(
                             "FEASIBLE", assignments, checked, metrics=metrics,
-                            objective_value=float(score[1]),
+                            objective_value=float(score[2]),
                         )
                         parameters["coverage_proven"] = coverage_proven or score[0] == 0
+                        if couple_enabled:
+                            parameters["split_weekend_count"] = score[1]
+                            # A neighborhood optimum is no global proof. Keep
+                            # the previous proof only at unchanged coverage and
+                            # coupling, or use the universal lower bound zero.
+                            parameters["split_weekends_proven"] = score[1] == 0 or (
+                                parameters.get("split_weekends_proven", False)
+                                and score[:2] == previous_score[:2]
+                            )
                         trace["accepted"] = True
             trace["round_seconds"] = monotonic() - round_started
             parameters["search_trace"].append(trace)
@@ -1144,6 +1161,14 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
                     model.add_hint(x, int(key in chosen))
     timings["initial_plan"] = monotonic() - warm_started
     weighted = sum(costs)
+    coupling_terms = components.get("split_weekends", [])
+    coupling = sum(coupling_terms)
+    couple_enabled = bool(snapshot.objectives.split_weekends and coupling_terms)
+    split_weekends_proven = not couple_enabled
+    if couple_enabled:
+        parameters["objective_semantics"] = (
+            "lexicographic vacancies, then split weekends, then configured weighted costs"
+        )
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = SEARCH_WORKERS
     solver.parameters.random_seed = 0
@@ -1255,6 +1280,11 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
             )
             for key, terms in weighted_components.items()
         }
+        if couple_enabled:
+            split_count = metrics["objective_contributions"]["split_weekends"]
+            split_weekends_proven = split_count == 0
+            parameters["split_weekend_count"] = split_count
+            parameters["split_weekends_proven"] = split_weekends_proven
         parameters["first_feasible_seconds"] = monotonic() - started
         checked.diagnostics.extend(diagnostics)
         best = result(
@@ -1271,11 +1301,16 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
             # not prove optimal coverage, even if the fixed-hint solve was optimal.
             model.add(sum(vacancies) <= warm_vacancies)
         else:
-            phase = "quality"
-            model.minimize(weighted)
-    # Reserve a fifth of the remaining budget for quality at fixed coverage.
-    # This search policy never trades vacancies against an arbitrary penalty.
-    coverage_deadline = monotonic() + max(0, phase_deadline - monotonic()) * 0.8
+            phase = "couple" if couple_enabled else "quality"
+            model.minimize(coupling if couple_enabled else weighted)
+            if couple_enabled:
+                model.add(coupling <= split_count)
+    # Coupling shares the coverage allowance when active; quality retains
+    # the final fifth. Earlier tiers never trade against weighted penalties.
+    phases_started = monotonic()
+    phase_budget = max(0, phase_deadline - phases_started)
+    coverage_deadline = phases_started + phase_budget * (0.5 if couple_enabled else 0.8)
+    coupling_deadline = phases_started + phase_budget * 0.8
     coverage_proven = not partial
     while True:
         remaining = phase_limit - (monotonic() - started)
@@ -1301,8 +1336,10 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
                     ],
                 ),
             )
-        if phase == "vacancies":
+        if phase == "vacancies" or (couple_enabled and phase == "feasibility"):
             remaining = min(remaining, max(0.001, coverage_deadline - monotonic()))
+        elif phase == "couple":
+            remaining = min(remaining, max(0.001, coupling_deadline - monotonic()))
         elif partial and phase == "quality":
             # Improve the certified fixed-coverage incumbent with OR-Tools'
             # native portfolio, retaining the single-worker crash workaround.
@@ -1473,9 +1510,22 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
             "objective_value": solver.objective_value,
             "best_bound": solver.best_objective_bound,
         })
+        if couple_enabled:
+            split_count = metrics["objective_contributions"]["split_weekends"]
+            split_weekends_proven = (
+                split_count == 0
+                or (phase == "couple" and status == cp_model.OPTIMAL)
+                or (phase == "quality" and split_weekends_proven)
+            )
+            parameters["split_weekend_count"] = split_count
+            parameters["split_weekends_proven"] = split_weekends_proven
+            trace["split_weekend_count"] = split_count
         if phase == "quality" and not coverage_proven:
             name = "FEASIBLE"
             metrics["quality_scope"] = "fixed incumbent coverage; global coverage unproven"
+        elif phase == "quality" and not split_weekends_proven:
+            name = "FEASIBLE"
+            metrics["quality_scope"] = "bounded incumbent split weekends; global coupling unproven"
         best = result(
             name,
             assignments,
@@ -1485,29 +1535,49 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
             best_bound=solver.best_objective_bound,
         )
         if phase == "feasibility":
-            model.minimize(weighted)
-            phase = "quality"
+            if couple_enabled:
+                model = model.clone()
+                model.add(coupling <= split_count)
+            model.minimize(coupling if couple_enabled else weighted)
+            phase = "couple" if couple_enabled else "quality"
             best.objective_value = None
             best.best_bound = None
             model.clear_hints()
-            for key, x in xs.items():
-                model.add_hint(x, solver.value(x))
+            if couple_enabled:
+                for index in range(len(model.proto.variables)):
+                    variable = model.get_int_var_from_proto_index(index)
+                    model.add_hint(variable, solver.value(variable))
+            else:
+                for key, x in xs.items():
+                    model.add_hint(x, solver.value(x))
             continue
-        if phase == "vacancies":
-            optimum = solver.value(sum(vacancies))
-            coverage_proven = status == cp_model.OPTIMAL or optimum == 0
-            parameters["coverage_proven"] = coverage_proven
-            parameters["quality_coverage_count"] = optimum
+        if phase in ("vacancies", "couple"):
             # Clone preserves hard rules and variable indices, while isolating
-            # the conditional coverage equality and quality bound.
+            # each tier's bound from the preceding optimization model.
             model = model.clone()
-            model.add(sum(vacancies) == optimum)
-            model.add(weighted <= sum(metrics["weighted_objective_contributions"].values()))
-            model.minimize(weighted)
+            if phase == "vacancies":
+                optimum = solver.value(sum(vacancies))
+                coverage_proven = status == cp_model.OPTIMAL or optimum == 0
+                parameters["coverage_proven"] = coverage_proven
+                parameters["quality_coverage_count"] = optimum
+                model.add(sum(vacancies) == optimum)
+                phase = "couple" if couple_enabled else "quality"
+                if couple_enabled:
+                    model.add(coupling <= split_count)
+            else:
+                if split_weekends_proven:
+                    model.add(coupling == split_count)
+                else:
+                    model.add(coupling <= split_count)
+                phase = "quality"
+            if phase == "couple":
+                model.minimize(coupling)
+            else:
+                model.add(weighted <= sum(metrics["weighted_objective_contributions"].values()))
+                model.minimize(weighted)
             model.clear_hints()
             for index in range(len(model.proto.variables)):
                 variable = model.get_int_var_from_proto_index(index)
                 model.add_hint(variable, solver.value(variable))
-            phase = "quality"
             continue
         return finish(best)
