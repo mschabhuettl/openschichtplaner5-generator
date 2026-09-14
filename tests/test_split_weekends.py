@@ -53,6 +53,59 @@ def test_split_weekends_high_weight_assigns_both_days_to_one_person():
     assert len({a.employee_id for a in result.assignments}) == 1
 
 
+def test_split_weekends_friday_night_does_not_require_sunday_assignment():
+    snapshot = case(shifts=[
+        shift("fri_night", 9, 22, 8, "night"), shift("sun", 11, 8, 8),
+    ])
+    snapshot.assignments = [
+        Assignment(employee_id="e0", demand_id="fri_night"),
+        Assignment(employee_id="e1", demand_id="sun"),
+    ]
+    snapshot.restrictions = [
+        Restriction(employee_id="e1", shift_id="fri_night", level=2),
+    ]
+    snapshot.objectives = Objectives(
+        hours=0, nights=0, weekends=0, holidays=0, wishes=0, changes=1,
+        split_weekends=1000,
+    )
+
+    result = solve(snapshot, time_limit=5)
+
+    assert result.solver_status == "OPTIMAL"
+    assert validate(snapshot, result.assignments).complete
+    # Freitag 22 bis Samstag 06 erzeugt keinen Samstagsdienst für e0.
+    assert {(a.employee_id, a.demand_id) for a in result.assignments} == {
+        ("e0", "fri_night"), ("e1", "sun"),
+    }
+
+
+def test_split_weekends_saturday_night_requires_real_sunday_assignment():
+    snapshot = case(shifts=[
+        shift("sat_night", 10, 22, 8, "night"), shift("sun", 11, 18, 4),
+    ])
+    snapshot.assignments = [
+        Assignment(employee_id="e0", demand_id="sat_night"),
+        Assignment(employee_id="e1", demand_id="sun"),
+    ]
+    # e1 hat keine Samstagsmöglichkeit und damit selbst keine Wochenendkopplung.
+    snapshot.restrictions = [
+        Restriction(employee_id="e1", shift_id="sat_night", level=2),
+    ]
+    snapshot.objectives = Objectives(
+        hours=0, nights=0, weekends=0, holidays=0, wishes=0, changes=1,
+        split_weekends=1000,
+    )
+
+    result = solve(snapshot, time_limit=5)
+
+    assert result.solver_status == "OPTIMAL"
+    assert validate(snapshot, result.assignments).complete
+    # Das Dienstende am Sonntag ersetzt keinen Sonntagsbeginn; 12 h Ruhe bleiben.
+    assert {(a.employee_id, a.demand_id) for a in result.assignments} == {
+        ("e0", "sat_night"), ("e0", "sun"),
+    }
+
+
 @pytest.mark.parametrize("day", [10, 11])
 def test_split_weekends_skips_weekends_with_only_one_day_of_demand(day):
     snapshot = case(n=1, shifts=[shift("single", day, 8, 8)])

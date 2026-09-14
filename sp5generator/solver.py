@@ -438,6 +438,7 @@ def solve(snapshot, time_limit=30, partial=False):
         daily = defaultdict(list)
         work = defaultdict(list)
         night = defaultdict(list)
+        beginnt = defaultdict(list)
         period_weekend = defaultdict(list)
         paid = []
         planning_tails = []
@@ -448,6 +449,7 @@ def solve(snapshot, time_limit=30, partial=False):
                 work[day].append(x)
             if s.kind == "night":
                 night[shift_day[d.shift_id]].append(x)
+            beginnt[shift_day[d.shift_id]].append(x)
             if snapshot.period_start <= shift_day[d.shift_id] <= snapshot.period_end:
                 paid.append(s.paid_minutes * x)
                 tail = {day for day in dates_by_shift[d.shift_id] if day > snapshot.period_end}
@@ -477,6 +479,11 @@ def solve(snapshot, time_limit=30, partial=False):
             v = model.new_bool_var("night:" + e.id + ":" + str(day))
             model.add_max_equality(v, choices)
             nv[day] = v
+        bv = {}
+        for day, choices in beginnt.items():
+            v = model.new_bool_var("starts:" + e.id + ":" + str(day))
+            model.add_max_equality(v, choices)
+            bv[day] = v
         wev = {}
         for week, choices in period_weekend.items():
             v = model.new_bool_var("weekend:" + e.id + ":" + str(week))
@@ -484,16 +491,18 @@ def solve(snapshot, time_limit=30, partial=False):
             wev[week] = v
         worked_vars[e.id], nights_vars[e.id], weekend_vars[e.id] = wv, nv, wev
         if snapshot.objectives.split_weekends:
+            # Ein Dienst gehört zu dem Tag, an dem er beginnt; ein Freitagnachtdienst
+            # macht den Samstag nicht zum Wochenenddienst.
             for week in sorted({day - timedelta(days=day.weekday())
-                                for day in wv if day.weekday() >= 5}):
+                                for day in bv if day.weekday() >= 5}):
                 sat, sun = week + timedelta(days=5), week + timedelta(days=6)
                 # Ohne Arbeitsmöglichkeit an beiden Tagen gibt es nichts zu koppeln.
-                if sat not in wv or sun not in wv:
+                if sat not in bv or sun not in bv:
                     continue
                 if sat < snapshot.period_start or sun > snapshot.period_end:
                     continue
                 split = model.new_bool_var("split_weekend:" + e.id + ":" + str(week))
-                model.add_abs_equality(split, wv[sat] - wv[sun])
+                model.add_abs_equality(split, bv[sat] - bv[sun])
                 cost("split_weekends", split, snapshot.objectives.split_weekends)
         # Reuse actual local worked-day variables (including split/overnight
         # duties and fixed boundary assignments). Minimize fragmentation, not

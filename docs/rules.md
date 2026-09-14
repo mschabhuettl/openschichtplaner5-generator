@@ -218,10 +218,13 @@ Mindestblocklänge; harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern si
 dadurch nicht.
 
 `objectives.split_weekends` gewichtet die Anzahl der Wochenenden, an denen eine
-Person genau am Samstag oder genau am Sonntag arbeitet. Ein Wochenende zählt nur,
-wenn für die Person an beiden Tagen eine Arbeitsmöglichkeit besteht und beide Tage
-vollständig im Planungszeitraum liegen. Neue Importe und Projektanlagen beginnen
-mit Gewicht 200; beim Laden älterer Projekte ohne dieses Feld gilt 0 (deaktiviert).
+Person genau am Samstag oder genau am Sonntag einen Dienst beginnt. Maßgeblich ist
+der Dienstbeginn: Ein Freitagnachtdienst zählt zum Freitag, auch wenn er bis
+Samstag reicht; ein Samstagsnachtdienst zählt nur zum Samstag, nicht zum Sonntag.
+Ein Wochenende zählt nur, wenn für die Person an beiden Tagen eine Möglichkeit
+zum Dienstbeginn besteht und beide Tage vollständig im Planungszeitraum liegen.
+Neue Importe und Projektanlagen beginnen mit Gewicht 200; beim Laden älterer
+Projekte ohne dieses Feld gilt 0 (deaktiviert).
 Gespeicherte Projekte bleiben damit unverändert. Der Ergebnisbericht weist den
 ungewichteten und gewichteten Beitrag unter `split_weekends` aus. Das Ziel bleibt
 weich; harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich dadurch nicht.
