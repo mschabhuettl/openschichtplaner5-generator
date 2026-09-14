@@ -13,8 +13,8 @@ from test_core_rules import case, shift
 from test_sp5_adapter import SyntheticDatabase
 
 
-@pytest.mark.parametrize('basis,expected', [(0, None), (1, 1200), (2, None), (3, None)])
-def test_import_only_uses_active_weekly_basis(basis, expected):
+@pytest.mark.parametrize('basis,expected', [(0, 1200), (1, 1200), (2, None), (3, None)])
+def test_import_uses_active_daily_or_weekly_basis(basis, expected):
     class Source(SyntheticDatabase):
         def get_employees(self, **kw):
             return [{**super().get_employees(**kw)[0], 'CALCBASE': basis,

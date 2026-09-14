@@ -25,6 +25,14 @@ werden als Quellwert erhalten und wegen des nichtnegativen Zielstunden-
 vertrags ausdrücklich zur Klärung markiert. Bestehende Projekte werden
 nicht automatisch neu berechnet.
 
+Für das weiche Ziel zur Verteilung über Kalenderwochen ermittelt der Adapter
+separat Vertragswochenstunden: bei Wochenbasis aus `HRSWEEK`, bei Tagesbasis
+aus `HRSDAY × Anzahl der Arbeitstage Montag bis Sonntag` in `WORKDAYS`.
+Der achte Maskeneintrag (Feiertag) zählt dabei nicht mit. `HRSWEEK` ist bei
+Tagesbasis nicht verlässlich. Fehlende, nicht endliche oder negative Stunden
+sowie Tagesbasis ohne Arbeitstage liefern keinen Wert; Monats- und Gesamtbasis
+werden nicht auf Wochen umgerechnet. Eine harte Höchstgrenze entsteht daraus nicht.
+
 ## In der Oberfläche
 
 „Sollstunden im Planungszeitraum“ ist das Soll für den gesamten Zeitraum.

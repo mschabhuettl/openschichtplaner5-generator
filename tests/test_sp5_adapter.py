@@ -148,15 +148,21 @@ def test_not_employed_in_period_is_reported_once_without_dropping_people(
 @pytest.mark.parametrize(
     "employee_changes,expected_weekly_minutes,expected_count",
     [
-        ([{}], [None], 1),
+        ([{}], [2400], 0),
         ([{"CALCBASE": 1}], [2400], 0),
         ([{"CALCBASE": 1, "HRSWEEK": 0}], [0], 0),
         ([{"CALCBASE": 1, "HRSWEEK": None}], [None], 1),
-        ([{"EMPEND": "2026-01-04"}], [None], 0),
-        ([{"EMPSTART": "2026-01-07"}], [None], 0),
-        ([{"EMPEND": "2026-01-05"}], [None], 1),
-        ([{"EMPSTART": "2026-01-06"}], [None], 1),
-        ([{}, {}], [None, None], 2),
+        ([{"EMPEND": "2026-01-04"}], [2400], 0),
+        ([{"EMPSTART": "2026-01-07"}], [2400], 0),
+        ([{"EMPEND": "2026-01-05"}], [2400], 0),
+        ([{"EMPSTART": "2026-01-06"}], [2400], 0),
+        ([{}, {}], [2400, 2400], 0),
+        ([{"HRSDAY": None}], [None], 1),
+        ([{"HRSDAY": None, "EMPEND": "2026-01-04"}], [None], 0),
+        ([{"HRSDAY": None, "EMPSTART": "2026-01-07"}], [None], 0),
+        ([{"HRSDAY": None, "EMPEND": "2026-01-05"}], [None], 1),
+        ([{"HRSDAY": None, "EMPSTART": "2026-01-06"}], [None], 1),
+        ([{"HRSDAY": None}, {"HRSDAY": None}], [None, None], 2),
     ],
 )
 def test_without_weekly_contract_is_reported_once_for_employed_people(
@@ -187,6 +193,117 @@ def test_without_weekly_contract_is_reported_once_for_employed_people(
         assert "Obergrenze entsteht dadurch nicht und wird auch nicht angenommen" in messages[0]
         assert "ausdrücklich im Regelprofil" in messages[0]
         assert all(person.name not in messages[0] for person in snapshot.employees)
+
+
+@pytest.mark.parametrize(
+    "workdays,expected_minutes",
+    [
+        ("1111100", 2400),
+        ("0111000", 1440),
+        ("0000011", 960),
+        ("1111111", 3360),
+        ("0000000", None),
+    ],
+)
+@pytest.mark.parametrize("holiday_slot", ["0", "1"])
+@pytest.mark.parametrize("hrs_week", [None, 75])
+def test_daily_weekly_contract_uses_workdays_without_holiday_slot(
+    workdays, expected_minutes, holiday_slot, hrs_week
+):
+    class Source(SyntheticDatabase):
+        def get_employees(self, **kw):
+            employee = super().get_employees(**kw)[0]
+            return [{**employee, "CALCBASE": 0, "HRSDAY": 8,
+                     "HRSWEEK": hrs_week, "WORKDAYS": workdays + holiday_slot}]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+    assert snapshot.employees[0].contractual_weekly_minutes == expected_minutes
+    assert snapshot.metadata["without_weekly_contract"] == (1 if expected_minutes is None else 0)
+    assert snapshot.profiles[0].max_weekly_minutes is None
+
+
+@pytest.mark.parametrize(
+    "daily_hours,expected_minutes",
+    [({}, None), ({"HRSDAY": None}, None), ({"HRSDAY": ""}, None),
+     ({"HRSDAY": 0}, 0), ({"HRSDAY": 7.5}, 2250)],
+)
+def test_daily_weekly_contract_distinguishes_unset_and_zero_hours(daily_hours, expected_minutes):
+    class Source(SyntheticDatabase):
+        def get_employees(self, **kw):
+            employee = super().get_employees(**kw)[0]
+            employee.pop("HRSDAY")
+            return [{**employee, "CALCBASE": 0, **daily_hours}]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+    assert snapshot.employees[0].contractual_weekly_minutes == expected_minutes
+    assert snapshot.metadata["without_weekly_contract"] == (1 if expected_minutes is None else 0)
+
+
+@pytest.mark.parametrize("basis", [2, 3, -1, 4])
+def test_other_calculation_bases_do_not_derive_weekly_contract(basis):
+    class Source(SyntheticDatabase):
+        def get_employees(self, **kw):
+            employee = super().get_employees(**kw)[0]
+            return [{**employee, "CALCBASE": basis, "HRSDAY": 8,
+                     "HRSWEEK": 40, "HRSMONTH": 160, "HRSTOTAL": 1920,
+                     "WORKDAYS": "11111001"}]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+    assert snapshot.employees[0].contractual_weekly_minutes is None
+    assert snapshot.metadata["without_weekly_contract"] == 1
+
+
+@pytest.mark.parametrize("basis,hours_field", [(0, "HRSDAY"), (1, "HRSWEEK")])
+@pytest.mark.parametrize("hours", [-1, float("nan"), float("inf"), float("-inf")])
+def test_weekly_contract_rejects_negative_and_nonfinite_hours(monkeypatch, basis, hours_field, hours):
+    # Isolate contract validation from the independent period-target calculation.
+    monkeypatch.setattr("sp5lib.calculations.get_nominal_hours", lambda *args, **kwargs: 0)
+
+    class Source(SyntheticDatabase):
+        def get_employees(self, **kw):
+            employee = super().get_employees(**kw)[0]
+            return [{**employee, "CALCBASE": basis, hours_field: hours}]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+    assert snapshot.employees[0].contractual_weekly_minutes is None
+    assert snapshot.metadata["without_weekly_contract"] == 1
+
+
+def test_without_weekly_contract_counts_only_remaining_people_after_daily_derivation():
+    class Source(SyntheticDatabase):
+        def get_employees(self, **kw):
+            employee = super().get_employees(**kw)[0]
+            changes = [
+                {"CALCBASE": 0},
+                {"CALCBASE": 0, "WORKDAYS": "01110001"},
+                {"CALCBASE": 1},
+                {"CALCBASE": 2},
+                {"CALCBASE": 3},
+                {"CALCBASE": 0, "HRSDAY": None},
+            ]
+            return [{**employee, "ID": 101 + index, **fields}
+                    for index, fields in enumerate(changes)]
+
+        def get_group_members(self, g):
+            return list(range(101, 107))
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+    assert [person.contractual_weekly_minutes for person in snapshot.employees] == [
+        2400, 1440, 2400, None, None, None,
+    ]
+    assert snapshot.metadata["without_weekly_contract"] == 3
+    messages = [message for message in snapshot.unresolved if "keine Vertragswochenstunden" in message]
+    assert messages == [
+        "Für 3 Personen nennt die Quelle keine Vertragswochenstunden. "
+        "Das weiche Ziel zur Verteilung über die Kalenderwochen wirkt für sie nicht; eine "
+        "Obergrenze entsteht dadurch nicht und wird auch nicht angenommen. Wer eine Grenze "
+        "braucht, hinterlegt sie ausdrücklich im Regelprofil."
+    ]
 
 
 def test_native_24_hour_window_paid_duration_and_nominal_week_are_distinct():

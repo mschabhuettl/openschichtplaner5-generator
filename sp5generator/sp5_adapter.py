@@ -384,6 +384,17 @@ def import_snapshot(
             )
         employment_start = calc.to_date(e.get("EMPSTART")) or date.min
         employment_end = calc.to_date(e.get("EMPEND")) or date.max
+        contractual_weekly_minutes = None
+        # ctx maps unset hours to zero, so check source presence separately.
+        if (ctx.calcbase == 1 and e.get("HRSWEEK") not in (None, "")
+                and math.isfinite(ctx.hrs_week) and ctx.hrs_week >= 0):
+            contractual_weekly_minutes = _minutes(ctx.hrs_week)
+        elif (ctx.calcbase == 0 and e.get("HRSDAY") not in (None, "")
+                and math.isfinite(ctx.hrs_day) and ctx.hrs_day >= 0):
+            # HRSWEEK is unreliable for daily basis; count Mon–Sun, omit the holiday slot.
+            workdays_per_week = sum(ctx.workdays[:7])
+            if workdays_per_week:
+                contractual_weekly_minutes = _minutes(ctx.hrs_day * workdays_per_week)
         employees.append(
             Employee(
                 id=eid,
@@ -395,11 +406,7 @@ def import_snapshot(
                 employment_end=employment_end,
                 profile_ids=["sp5:unconfirmed"],
                 target_minutes=max(0, _minutes(target)),
-                contractual_weekly_minutes=(
-                    _minutes(ctx.hrs_week) if ctx.calcbase == 1
-                    and e.get("HRSWEEK") not in (None, "")
-                    and math.isfinite(ctx.hrs_week) and ctx.hrs_week >= 0 else None
-                ),
+                contractual_weekly_minutes=contractual_weekly_minutes,
             )
         )
         if employment_end < period_start or employment_start > period_end:
