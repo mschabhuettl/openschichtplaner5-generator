@@ -104,8 +104,9 @@ Gegen einen von Hand erstellten Vergleichsplan gemessen, blieben drei Unterschie
   von 13 bis 17 auf 7 von 45, und zwei Läufe liefern zeichengleiche Ergebnisse —
   die Stufe macht diese Größe reproduzierbar.
 - **Erreichbare Grenze:** 7 geteilte Wochenenden sind unter den geltenden
-  Freigaben das Minimum. Bei fünf davon ist die eingeteilte Person am jeweils
-  anderen Tag nicht einsetzbar. Eine Variante, die auch solche Fälle bestraft,
+  Freigaben das Minimum. Zwei davon sind vermeidbar, und dieser Wert ist mit
+  ausreichendem Zeitbudget als Optimum **bewiesen**, nicht nur erreicht. Bei den
+  übrigen fünf ist die eingeteilte Person am jeweils anderen Tag nicht einsetzbar. Eine Variante, die auch solche Fälle bestraft,
   kommt auf dieselben 7 und verschlechtert dabei die Ausgeglichenheit; sie wurde
   verworfen. Der Vergleichsplan liegt mit 5 darunter, nimmt dafür aber 28
   Zuteilungen ohne gültige Freigabe vor, neun davon am Wochenende. Gemessen an
