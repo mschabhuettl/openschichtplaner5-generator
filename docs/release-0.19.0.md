@@ -42,6 +42,22 @@ Gegen einen von Hand erstellten Vergleichsplan gemessen, blieben drei Unterschie
   nur, was zuerst weniger fehlende Mindeststellen und danach eine geringere
   gewichtete Bewertung erreicht. Damit dafür Zeit bleibt, erhalten die beiden
   Suchphasen ab 120 Sekunden Teilplanung zusammen 40 Prozent der Frist.
+- **Vertragswochenstunden bei Tagesbasis.** Das Feld wurde bisher nur gesetzt,
+  wenn die Quelle die Woche als Bemessungsgrundlage führt. An echten Quelldaten
+  traf das auf 15 von 88 Personen zu; das weiche Ziel zur Verteilung über die
+  Kalenderwochen wirkte damit für ein Sechstel der Belegschaft. Bei Tagesbasis
+  wird nun dieselbe Formel verwendet wie in der Quellenbibliothek: Tagessoll je
+  Arbeitstag laut Wochentagsmaske, gezählt von Montag bis Sonntag. Die
+  Wochenstunden der Quelle bleiben dort ungenutzt, weil sie bei 19 von 88
+  Personen um bis zu 35 Stunden von dieser Rechnung abweichen. Monats- und
+  Gesamtbasis bleiben ohne Wert; dort wird nichts heruntergerechnet. Die
+  Abdeckung steigt damit von 15 auf 87 von 88 Personen.
+- **Freizeitstruktur im Bericht.** Der Ergebnisbericht maß bisher nur die
+  Dienstseite. Ob ein Plan zusammenhängende Freizeit lässt, war daran nicht
+  abzulesen. Ausgewiesen werden nun Anzahl und mittlere Länge der
+  Freizeitblöcke, einzeln liegende freie Tage, Blöcke ab drei Tagen, der längste
+  Block und die Zahl vollständig freier Wochenenden. Die Kennzahlen berichten
+  und steuern nicht.
 - **Berichte.** Fehlende Vertragswochenstunden werden im Importbericht benannt,
   samt der Klarstellung, dass daraus keine Obergrenze abgeleitet wird. Die
   Vorabprüfung auf private Daten weist übersprungene Pfade aus, damit eine
@@ -63,10 +79,16 @@ Gegen einen von Hand erstellten Vergleichsplan gemessen, blieben drei Unterschie
   einzeln liegender Arbeitstage Werte zwischen 17 und 33 Prozent. Einzelne Läufe
   taugen nicht als Beleg; die hier genannten Aussagen beruhen auf mehreren Läufen
   je Einstellung.
+- **Zur Einordnung:** Der Vergleichsplan ist eine Referenz, kein Zielbild. Gemessen
+  am Zweck des Programms steht der erzeugte Plan bei der zusammenhängenden
+  Freizeit besser da: mittlere Freizeitblocklänge 3,0 bis 3,2 gegen 2,5 Tage,
+  Anteil der Blöcke ab drei freien Tagen 41 gegen 31 Prozent, vollständig freie
+  Wochenenden je Person 1,25 gegen 1,20. Auch die Ausgeglichenheit ist besser
+  (Gini 0,04 gegen 0,11), und es bleiben keine Regelbefunde gegen 39.
 - **Offene Grenze:** Die Wochenendkopplung erreicht den Vergleichsplan nicht. Dort
-  sind 10 Prozent der Wochenenden geteilt, im erzeugten Plan 23 bis 30 Prozent.
-  Ein höheres Gewicht auf der Kopplung verschlechtert zugleich die Blockform. Die
-  Arbeit daran ist nicht abgeschlossen.
+  sind 10 Prozent der Wochenenden geteilt, im erzeugten Plan 23 bis 37 Prozent.
+  Das zählt auch nach dem Zweckmaßstab, denn ein geteiltes Wochenende zerschneidet
+  die Erholung. Die Arbeit daran ist nicht abgeschlossen.
 - **Zweite offene Grenze:** Der Vergleichsplan ist unter den harten Regeln dieses
   Programms nicht zulässig. 28 seiner 385 Einteilungen setzen Personen auf
   Dienste, für die keine Freigabe vorliegt und die auch in drei Jahren Historie

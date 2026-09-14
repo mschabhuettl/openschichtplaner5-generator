@@ -262,16 +262,22 @@ weich; harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich dadurch ni
 `objectives.block_shape` gewichtet ein Blocklängenprofil je abgeschlossenem
 Dienstblock. Maßgeblich sind aufeinanderfolgende Kalendertage mit Dienstbeginn;
 ein Übernachtdienst verlängert den Block nicht allein durch seinen Überhang.
-Das Profil stammt aus 151 beobachteten Praxisblöcken mit den Häufigkeiten
-26/43/46/30/5/0/1 für die Längen 1 bis 7. Laplace-Glättung und negative
-Log-Wahrscheinlichkeit ergeben die Kosten 55/7/0/42/206/316 für die Längen
-1/2/3/4/5/6 oder mehr; die häufigste Länge 3 ist kostenfrei.
+Das Profil ist am Zweck zusammenhängender Freizeit geeicht: Wenige, längere
+Dienstblöcke ermöglichen längere Freizeitblöcke, da beide denselben Zeitraum
+teilen. Es bildet keine beobachtete Häufigkeitsverteilung nach. Die Kosten
+300/80/15/0/0/15/60/150/400 gelten für die Längen 1/2/3/4/5/6/7/8/9 oder mehr;
+vier und fünf Tage sind kostenfrei, einzelne Arbeitstage teuer. Ab sieben Tagen
+steigen die Kosten wieder und bilden eine weiche Obergrenze: Die harte Wochenruhe
+von 36 Stunden je Kalenderwoche kann bei Ruhe am Wochenrand rechnerisch bis zu
+zwölf aufeinanderfolgende Arbeitstage zulassen und verhindert lange Blöcke daher
+nicht allein.
 Bekannte, unmittelbar vor dem Zeitraum beginnende Randdienste verlängern den
-Startzustand bis zur Kategorie 6 oder mehr. Die Tagesfolge berücksichtigt auch
+Startzustand bis zur Kategorie 9 oder mehr. Die Tagesfolge berücksichtigt auch
 den Folgetag des Zeitraums; anschließend wird ein noch offener Block bewertet.
 Fehlt ein bekannter Vorgängerblock, beginnt der Zustand bei 0.
 Die Vorbelegung bleibt überall 0 (deaktiviert), auch für neue Importe und
 Projektanlagen sowie beim Laden älterer Projekte ohne dieses Feld.
 Der Ergebnisbericht weist den ungewichteten und gewichteten Beitrag unter
 `block_shape` aus. Das Ziel ergänzt die bestehenden Blockziele und bleibt weich:
-Es setzt keine harte Obergrenze und ändert keine Freigaben, Bedarfe oder Stundenwerte.
+Es setzt keine harte Obergrenze und nimmt auch keine an. Freigaben, Bedarfe und
+Stundenwerte ändern sich dadurch nicht.

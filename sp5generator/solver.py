@@ -35,9 +35,13 @@ from .validator import PreparedValidator, validate
 # model. Use the verified single-worker path for every production solve.
 SEARCH_WORKERS = 1
 
-# Aus der beobachteten Blocklängenverteilung abgeleitet; 3 ist die häufigste
-# Länge und daher kostenfrei. Schlüssel 6 steht für sechs Tage oder mehr.
-LAENGENKOSTEN = {1: 55, 2: 7, 3: 0, 4: 42, 5: 206, 6: 316}
+# Zusammenhängende Freizeit entsteht aus wenigen, längeren Dienstblöcken;
+# beide teilen sich denselben Zeitraum. Vier bis fünf Tage sind daher
+# kostenfrei. Einzelne Arbeitstage sind teuer, ab sieben Tagen steigen die
+# Kosten wieder: die harte Wochenruhe lässt rechnerisch bis zu zwölf Tage am
+# Stück zu, was im beobachteten Betrieb nirgends vorkommt.
+# Schlüssel 9 steht für neun Tage oder mehr.
+LAENGENKOSTEN = {1: 300, 2: 80, 3: 15, 4: 0, 5: 0, 6: 15, 7: 60, 8: 150, 9: 400}
 
 
 def _free_time_metrics(period_start, period_end, worked_days_by_person):
@@ -655,23 +659,25 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
                 model.add_abs_equality(split, bv[sat] - bv[sun])
                 cost("split_weekends", split, snapshot.objectives.split_weekends)
         if snapshot.objectives.block_shape:
+            max_blocklaenge = max(LAENGENKOSTEN)
             tage = list(dates(snapshot.period_start, snapshot.period_end + timedelta(days=1)))
             # Vor dem Zeitraum enthält bv nur fixierte Dienste oder persönliche
             # Randarbeit; vorhandene Tagesvariablen sind dort zwingend belegt.
             startlaenge = 0
             vortag = snapshot.period_start - timedelta(days=1)
-            while vortag in bv and startlaenge < 6:
+            while vortag in bv and startlaenge < max_blocklaenge:
                 startlaenge += 1
                 vortag -= timedelta(days=1)
             z_vor = model.new_constant(startlaenge)
             null = model.new_constant(0)
             tupel = [
-                (z, 0, 0, LAENGENKOSTEN.get(z, 0)) for z in range(7)
+                (z, 0, 0, LAENGENKOSTEN.get(z, 0)) for z in range(max_blocklaenge + 1)
             ] + [
-                (z, 1, min(z + 1, 6), 0) for z in range(7)
+                (z, 1, min(z + 1, max_blocklaenge), 0) for z in range(max_blocklaenge + 1)
             ]
             for tag in tage:
-                z_nach = model.new_int_var(0, 6, "block_state:" + e.id + ":" + str(tag))
+                z_nach = model.new_int_var(0, max_blocklaenge,
+                                           "block_state:" + e.id + ":" + str(tag))
                 c = model.new_int_var(0, max(LAENGENKOSTEN.values()),
                                       "block_cost:" + e.id + ":" + str(tag))
                 model.add_allowed_assignments([z_vor, bv.get(tag, null), z_nach, c], tupel)

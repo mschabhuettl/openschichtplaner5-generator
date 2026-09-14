@@ -237,7 +237,9 @@ def create_project(data: ProjectCreateRequest) -> Snapshot:
         context_complete=data.context_duty_free_confirmed,
         rule_version='project-rules:1', source='json', employees=people, positions=positions,
         shifts=shifts, demands=demands, profiles=[profile],
-        objectives=Objectives(workday_transitions=100, isolated_days=1000, split_weekends=200),
+        objectives=Objectives(workday_transitions=400, isolated_days=3000,
+                              split_weekends=10000, block_shape=15,
+                              nights=30, weekends=30),
         metadata={
             'project_name': data.project_name,
             'created_with': 'project-setup',

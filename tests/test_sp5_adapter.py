@@ -1216,10 +1216,13 @@ def test_reference_reason_explains_first_failed_filter_without_creating_demand(r
     assert len(snapshot.demands) == (0 if reason == 'missing_demand' else 2 if reason == 'ambiguous' else 1)
 
 
-def test_new_import_defaults_isolated_days_to_1000():
+def test_new_import_enables_the_calibrated_objectives():
     snapshot = import_snapshot(SyntheticDatabase(), date(2026, 1, 5), date(2026, 1, 6), '1', 'UTC')
-    assert snapshot.objectives.isolated_days == 1000
-    assert snapshot.objectives.split_weekends == 200
+    assert snapshot.objectives.workday_transitions == 400
+    assert snapshot.objectives.isolated_days == 3000
+    assert snapshot.objectives.split_weekends == 10000
+    assert snapshot.objectives.block_shape == 15
+    assert (snapshot.objectives.nights, snapshot.objectives.weekends) == (30, 30)
 
 
 def test_loading_snapshot_without_isolated_days_keeps_zero_weight():
@@ -1230,7 +1233,7 @@ def test_loading_snapshot_without_isolated_days_keeps_zero_weight():
     del original['objectives']['isolated_days']
     restored = Snapshot.model_validate(original)
     assert restored.objectives.isolated_days == 0
-    assert restored.objectives.workday_transitions == 100
+    assert restored.objectives.workday_transitions == 400
 
 
 def test_new_import_proposes_authorized_rest_defaults_without_confirming_setup():
@@ -1243,7 +1246,7 @@ def test_new_import_proposes_authorized_rest_defaults_without_confirming_setup()
     assert not p.confirmed and p.source == 'unresolved'
     assert p.max_consecutive_work_days is None
     assert all(not e.approvals for e in s.employees)
-    assert s.objectives.workday_transitions == 100
+    assert s.objectives.workday_transitions == 400
     assert input_diagnostics(s)  # Proposed values do not remove setup blockers.
 
 
