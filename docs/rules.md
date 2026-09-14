@@ -245,3 +245,20 @@ Projekte ohne dieses Feld gilt 0 (deaktiviert).
 Gespeicherte Projekte bleiben damit unverändert. Der Ergebnisbericht weist den
 ungewichteten und gewichteten Beitrag unter `split_weekends` aus. Das Ziel bleibt
 weich; harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich dadurch nicht.
+
+`objectives.block_shape` gewichtet ein Blocklängenprofil je abgeschlossenem
+Dienstblock. Maßgeblich sind aufeinanderfolgende Kalendertage mit Dienstbeginn;
+ein Übernachtdienst verlängert den Block nicht allein durch seinen Überhang.
+Das Profil stammt aus 151 beobachteten Praxisblöcken mit den Häufigkeiten
+26/43/46/30/5/0/1 für die Längen 1 bis 7. Laplace-Glättung und negative
+Log-Wahrscheinlichkeit ergeben die Kosten 55/7/0/42/206/316 für die Längen
+1/2/3/4/5/6 oder mehr; die häufigste Länge 3 ist kostenfrei.
+Bekannte, unmittelbar vor dem Zeitraum beginnende Randdienste verlängern den
+Startzustand bis zur Kategorie 6 oder mehr. Die Tagesfolge berücksichtigt auch
+den Folgetag des Zeitraums; anschließend wird ein noch offener Block bewertet.
+Fehlt ein bekannter Vorgängerblock, beginnt der Zustand bei 0.
+Die Vorbelegung bleibt überall 0 (deaktiviert), auch für neue Importe und
+Projektanlagen sowie beim Laden älterer Projekte ohne dieses Feld.
+Der Ergebnisbericht weist den ungewichteten und gewichteten Beitrag unter
+`block_shape` aus. Das Ziel ergänzt die bestehenden Blockziele und bleibt weich:
+Es setzt keine harte Obergrenze und ändert keine Freigaben, Bedarfe oder Stundenwerte.

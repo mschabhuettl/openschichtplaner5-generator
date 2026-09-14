@@ -158,6 +158,8 @@ class Objectives(Model):
     isolated_days: int = Field(default=0, ge=0)
     # Geteilte Wochenenden nur bei aktiviertem Gewicht bestrafen.
     split_weekends: int = Field(default=0, ge=0)
+    # Blocklängenprofil nur bei aktiviertem Gewicht bewerten.
+    block_shape: int = Field(default=0, ge=0)
     hours: int = Field(default=1, ge=0)
     nights: int = Field(default=10, ge=0)
     weekends: int = Field(default=10, ge=0)
