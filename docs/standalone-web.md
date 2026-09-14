@@ -38,6 +38,17 @@ Das Stammverzeichnis darf direkt die DBF-Dateien oder genau ein passendes direkt
 
 Nach **Teams laden** das Team, den neuen Planungszeitraum, die ausdrücklich gewählte Zeitzone und den historischen Bezugszeitraum auswählen. Als Historienbasis stehen Ist, Soll oder beide zur Auswahl; Standard ist Ist. Die Historie muss vor dem neuen Planungszeitraum liegen. Der Import schreibt keine Originaltabellen. Fingerprints vor und nach dem Lesen erkennen zwischenzeitliche Änderungen; sie behaupten keine atomare Datenbanktransaktion. Fehlende Tabellen und ungeklärte Originalsemantik bleiben sichtbar.
 
+**Tag/Nacht beim Import nach Zeitregel zuordnen** ist standardmäßig ausgeschaltet.
+Ohne diese ausdrückliche Zuordnung müssen Dienst- und Randzeitmuster vor der
+Berechnung unter **Regeln & Bedarf → Wiederkehrende Dienste gesammelt einstellen**
+je Muster als Tag oder Nacht bestätigt werden.
+
+Die Befundgruppen im Prüfbericht nennen für Randarbeitsarten, Regelprofile, offene
+Importangaben, Verfügbarkeit, Freigaben und Qualifikationen den Bereich zur
+Behebung. Bei mehr als 20 Befunden einer Art weist die Gruppe zusätzlich darauf
+hin, dass sich viele gleichartige Befunde meist gesammelt erledigen lassen.
+Ein bestätigtes Regelprofil gilt für alle ihm zugeordneten Personen.
+
 Ein Browser kann den freien Zugriff auf lokale Verzeichnisse nicht stellvertretend für einen entfernten Server gewähren. Deshalb wird der Quellpfad am Rechner des Dienstes bzw. als Docker-Bind-Mount bereitgestellt; es gibt keine Übertragung an einen externen Dienst.
 
 ## Matrix aus bisherigen Diensten
