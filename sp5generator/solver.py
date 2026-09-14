@@ -77,6 +77,69 @@ def _free_time_metrics(period_start, period_end, worked_days_by_person):
     }
 
 
+def _split_weekend_approval_diagnostics(snapshot, assignments):
+    if not snapshot.objectives.split_weekends:
+        return []
+    shifts = {s.id: s for s in snapshot.shifts}
+    demands = {d.id: d for d in snapshot.demands}
+    starts = defaultdict(set)
+    for assignment in assignments:
+        shift = shifts[demands[assignment.demand_id].shift_id]
+        starts[assignment.employee_id].add(day_of(shift, snapshot.timezone))
+    for work in snapshot.boundary_work:
+        starts[work.employee_id].add(day_of(work, snapshot.timezone))
+
+    # Visit actual starts, not every employee/calendar-day combination. Like
+    # the starts variables, sets count a day once and ignore overnight spill.
+    split_weekends = []
+    for employee_id, days in starts.items():
+        for day in sorted(days):
+            if day.weekday() < 5:
+                continue
+            saturday = day - timedelta(days=day.weekday() - 5)
+            sunday = saturday + timedelta(days=1)
+            if saturday < snapshot.period_start or sunday > snapshot.period_end:
+                continue
+            missing_day = sunday if day == saturday else saturday
+            if missing_day not in days:
+                split_weekends.append((employee_id, saturday, missing_day))
+    if not split_weekends:
+        return []
+
+    missing_days = {day for _, _, day in split_weekends}
+    demands_by_day = defaultdict(list)
+    for demand in snapshot.demands:
+        day = day_of(shifts[demand.shift_id], snapshot.timezone)
+        if day in missing_days:
+            demands_by_day[day].append(demand)
+    employees = {e.id: e for e in snapshot.employees}
+    diagnostics = []
+    for employee_id, saturday, missing_day in split_weekends:
+        employee = employees[employee_id]
+        candidates = [
+            (demand, set(eligibility(snapshot, employee, demand)))
+            for demand in demands_by_day[missing_day]
+        ]
+        demand, reasons = min(candidates, key=lambda item: len(item[1]), default=(None, None))
+        # An eligible alternative (empty set) wins; another exclusion means
+        # that approval alone would not make this demand individually eligible.
+        if reasons != {"approval"}:
+            continue
+        shift = shifts[demand.shift_id]
+        diagnostics.append(Diagnostic(
+            code="split_weekend_approval",
+            employee_id=employee_id,
+            demand_id=demand.id,
+            date=str(missing_day),
+            message=f"{employee.name}: Wochenende vom {saturday} ist geteilt. "
+            f"Für {shift.name} am {missing_day} fehlt die persönliche "
+            f"Dienstfreigabe. Mit ihr ließe sich das Wochenende "
+            "zusammenlegen; ohne sie bleibt die Teilung bestehen. Eine Freigabe entsteht "
+            "dadurch nicht und wird auch nicht angenommen.",
+        ))
+    return diagnostics
+
+
 def solve(snapshot, time_limit=30, partial=False, _repair=True):
     if not isfinite(time_limit):
         raise ValueError('Zeitlimit muss eine endliche Zahl in Sekunden sein.')
@@ -119,6 +182,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
 
     def result(status, assignments=None, validation=None, **kwargs):
         assignments = assignments or []
+        kwargs.setdefault("metrics", {})["split_weekends_blocked_by_approval"] = 0
         kwargs.setdefault("metrics", {})["free_time"] = _free_time_metrics(
             snapshot.period_start,
             snapshot.period_end,
@@ -188,6 +252,11 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
     def finish(best):
         if repair_enabled:
             best = repair(best)
+        # Report only after plan selection, including repair and fallbacks.
+        # These hints never enter independent validation or search decisions.
+        hints = _split_weekend_approval_diagnostics(snapshot, best.assignments)
+        best.validation.diagnostics.extend(hints)
+        best.metrics["split_weekends_blocked_by_approval"] = len(hints)
         # Result construction copies the parameters dictionary. Synchronize
         # later search status and timings when returning an earlier incumbent.
         best.parameters = dict(parameters)

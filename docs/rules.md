@@ -289,6 +289,18 @@ Ergebnisbericht weist weiterhin den ungewichteten und gewichteten Beitrag unter
 vor der Qualität; die Höhe des Gewichts kann diesen Vorrang nicht verändern.
 Harte Regeln, Freigaben, Bedarfe und Stundenwerte ändern sich dadurch nicht.
 
+Bei aktivem Ziel `split_weekends` benennt `split_weekend_approval` nach der
+Planauswahl fehlende persönliche Dienstfreigaben an geteilten Wochenenden.
+Maßgeblich sind Dienstbeginne einschließlich persönlicher Randarbeit; beide Tage
+müssen im Planungszeitraum liegen. Der Hinweis nennt Person, Tag und Dienst nur,
+wenn die Person am fehlenden Tag für keinen Bedarf geeignet ist und die kleinste
+Menge von Eignungsgründen ausschließlich `approval` enthält. Ohne Bedarf erscheint
+kein Hinweis.
+`metrics.split_weekends_blocked_by_approval` zählt diese Fälle. Die Diagnose
+berichtet ausschließlich: Sie erteilt, unterstellt oder empfiehlt keine Freigabe
+und ändert weder Ziele, harte Regeln, Suche, Planauswahl, Gültigkeit noch Status.
+Bei `split_weekends=0` entfällt die Prüfung vollständig.
+
 `objectives.block_shape` gewichtet ein Blocklängenprofil je abgeschlossenem
 Dienstblock. Maßgeblich sind aufeinanderfolgende Kalendertage mit Dienstbeginn;
 ein Übernachtdienst verlängert den Block nicht allein durch seinen Überhang.
