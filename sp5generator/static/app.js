@@ -749,7 +749,7 @@ function renderSearchTrace(parent,parameters){
   const balken=el('div',undefined,zeile);balken.className='trace-bar';
   el('span',undefined,balken).style.width=Math.max(2,Math.round(100*dauer/gesamt))+'%';
   el('small',`${dauer.toLocaleString('de-DE',{maximumFractionDigits:1})} s · ${SUCHSTATUS[step.native_status]??step.native_status}`
-   +(step.accepted?' · übernommen':' · verworfen'),zeile);
+   +(step.accepted?' · übernommen':' · nicht übernommen'),zeile);
   el('p',PHASENZWECK[step.phase]??'',zeile).className='helper-text small-text';
  }
  if(runden.length){
@@ -785,7 +785,7 @@ function renderLiveProgress(steps,elapsed,limit){
  for(const step of fertig.filter(step=>step.phase!=='repair')){
   zeile(PHASENNAMEN[step.phase]??step.phase,
    `${(step.search_seconds??0).toLocaleString('de-DE',{maximumFractionDigits:1})} s · ${SUCHSTATUS[step.native_status]??step.native_status}`
-   +(step.accepted?' · übernommen':' · verworfen'),step.accepted);
+   +(step.accepted?' · übernommen':' · nicht übernommen'),step.accepted);
  }
  const runden=fertig.filter(step=>step.phase==='repair');
  if(runden.length){

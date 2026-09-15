@@ -60,7 +60,7 @@ module.exports=async function weekendSummary({page,base}){
  const first=await steps.first().innerText();
  assert.match(first,/Gültige Besetzung finden|Besetzung maximieren/,'The first stage is named in plain words');
  assert.match(first,/\d+(,\d+)? s ·/,'Each stage reports how long it ran');
- assert.match(first,/übernommen|verworfen/,'Each stage says whether its result was kept');
+ assert.match(first,/· (nicht )?übernommen/,'Each stage says whether its result was kept');
  assert((await trace.locator('.trace-step.accepted').count())>=1,'A kept stage is marked');
 
  // Both days need one person: nothing forces a split any more.
