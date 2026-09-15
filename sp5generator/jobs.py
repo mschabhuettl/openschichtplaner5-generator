@@ -43,7 +43,7 @@ class Store:
         with self.connect() as conn:
             conn.executescript("""
             CREATE TABLE IF NOT EXISTS snapshots(id TEXT PRIMARY KEY,owner TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,owner TEXT NOT NULL,snapshot_id TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL,created_at REAL NOT NULL,started_at REAL,finished_at REAL,parameters TEXT NOT NULL,result TEXT,error TEXT);
+            CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,owner TEXT NOT NULL,snapshot_id TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL,created_at REAL NOT NULL,started_at REAL,finished_at REAL,parameters TEXT NOT NULL,result TEXT,error TEXT,progress TEXT);
             CREATE TABLE IF NOT EXISTS accepted(snapshot_id TEXT PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS receipts(key TEXT PRIMARY KEY,owner TEXT NOT NULL,job_id TEXT NOT NULL,payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,actor TEXT NOT NULL,job_id TEXT NOT NULL,created_at REAL NOT NULL,payload TEXT NOT NULL);
@@ -52,7 +52,15 @@ class Store:
             CREATE INDEX IF NOT EXISTS jobs_owner_snapshot_created ON jobs(owner,snapshot_id,created_at DESC);
             """)
         self._migrate_project_summaries()
+        self._migrate_job_progress()
         os.chmod(self.path, 0o600)
+
+    def _migrate_job_progress(self):
+        """Ältere Datenbanken kennen den Fortschritt einer Berechnung nicht."""
+        with self.transaction() as conn:
+            vorhanden = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+            if "progress" not in vorhanden:
+                conn.execute("ALTER TABLE jobs ADD COLUMN progress TEXT")
 
     def _migrate_project_summaries(self):
         """Upgrade 0.7 databases atomically without rewriting their snapshots.
@@ -305,7 +313,7 @@ class Store:
         with self.connect() as conn:
             row = conn.execute(
                 """SELECT rowid,id,snapshot_id,state,created_at,started_at,finished_at,
-                parameters,error FROM jobs WHERE id=? AND owner=?""", (id, owner)
+                parameters,error,progress FROM jobs WHERE id=? AND owner=?""", (id, owner)
             ).fetchone()
             if not row:
                 raise KeyError(id)
@@ -319,6 +327,12 @@ class Store:
         data = dict(row)
         data.pop("rowid")
         data["parameters"] = json.loads(data["parameters"])
+        # Der Fortschritt ist eine Anzeige, kein Ergebnis: unlesbare Stände
+        # dürfen die Abfrage nicht scheitern lassen.
+        try:
+            data["progress"] = json.loads(data["progress"]) if data["progress"] else []
+        except ValueError:
+            data["progress"] = []
         data["queue_position"] = queue_position
         end = data["finished_at"] if data["finished_at"] is not None else time.time()
         data["elapsed_seconds"] = max(0, end - data["started_at"]) if data["started_at"] is not None else 0
@@ -422,9 +436,38 @@ def _solve_child(path, job, parent_pid):
     try:
         from .solver import solve
 
+        schritte = []
+        zuletzt = [0.0]
+
+        def melden(schritt):
+            """Suchstufen sichtbar machen, ohne die Rechnung zu bremsen.
+
+            Bewusst ohne Store: der Fortschritt ist reine Anzeige und darf
+            weder Migrationen anstoßen noch auf Sperren warten.
+            """
+            schritte.append(schritt)
+            jetzt = time.monotonic()
+            if jetzt - zuletzt[0] < 0.4 and len(schritte) > 1:
+                return
+            zuletzt[0] = jetzt
+            try:
+                conn = sqlite3.connect(path, timeout=1, isolation_level=None)
+                try:
+                    conn.execute("PRAGMA busy_timeout=1000")
+                    conn.execute(
+                        "UPDATE jobs SET progress=? WHERE id=? AND state='running'",
+                        (json.dumps(schritte[-60:]), job["id"]),
+                    )
+                finally:
+                    conn.close()
+            except Exception:
+                # Eine belegte Datenbank darf die Planung nicht beenden.
+                pass
+
         result = solve(
             Snapshot.model_validate_json(job["payload"]),
             **json.loads(job["parameters"]),
+            progress=melden,
         )
         store = Store(path)
         with store.connect() as conn:

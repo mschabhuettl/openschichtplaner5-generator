@@ -453,8 +453,6 @@ th.weekend, td.weekend { background: var(--surface-2); }
 .calculation-card { border-top: 3px solid var(--accent); padding: var(--pad); display: flex; flex-direction: column; gap: 14px; }
 .calculation-symbol { display: none; }
 .calculation-options { display: flex; flex-direction: column; gap: 13px; max-width: 420px; }
-.calculation-progress { display: flex; align-items: center; gap: 11px; font-size: 12.5px; color: var(--muted); }
-.calculation-progress strong { display: block; font-size: 13px; color: var(--ink); }
 .calculation-foundation { display: flex; flex-direction: column; gap: 15px; }
 .readiness-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .foundation-details > summary { cursor: pointer; font-size: 12.5px; color: var(--accent-ink); font-weight: 600; }
@@ -538,3 +536,18 @@ tr.excluded td:first-child::after { content: " · ausgenommen"; font-size: 11px;
   .trace-step { grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "meta" "bar" "note"; gap: 6px; }
   .trace-step > small { white-space: normal; }
 }
+
+/* ------------------------------------------- Fortschritt einer Berechnung */
+
+.calculation-progress { display: flex; flex-direction: column; align-items: stretch; gap: 12px; font-size: 12.5px; color: var(--muted); }
+.progress-head { display: flex; align-items: center; gap: 11px; font-size: 12.5px; color: var(--muted); }
+.progress-head strong { display: block; font-size: 13px; color: var(--ink); }
+.progress-bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.progress-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width .6s linear; }
+.trace-step.compact {
+  grid-template-columns: minmax(140px, 1fr) auto; grid-template-areas: "name meta";
+  padding: 8px 12px; gap: 4px 12px;
+}
+.trace-step.compact > small { white-space: normal; text-align: right; }
+.trace-step.running { border-left-color: var(--accent); background: var(--surface); }
+.trace-step.running > strong::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }

@@ -77,6 +77,44 @@ def _free_time_metrics(period_start, period_end, worked_days_by_person):
     }
 
 
+class _Zwischenstand(cp_model.CpSolverSolutionCallback):
+    """Meldet jede verbesserte Lösung, während die Suche noch läuft.
+
+    Die Meldung ist reine Anzeige: sie ändert weder Modell noch Auswahl und
+    darf die Suche unter keinen Umständen abbrechen.
+    """
+
+    def __init__(self, phase, search_started, run_started, melden, abstand=0.5):
+        super().__init__()
+        self._phase = phase
+        self._search_started = search_started
+        self._run_started = run_started
+        self._melden = melden
+        self._abstand = abstand
+        self._zuletzt = 0.0
+        self._anzahl = 0
+
+    def on_solution_callback(self):
+        self._anzahl += 1
+        jetzt = monotonic()
+        if jetzt - self._zuletzt < self._abstand:
+            return
+        self._zuletzt = jetzt
+        try:
+            self._melden({
+                "phase": self._phase,
+                "kind": "incumbent",
+                "solutions": self._anzahl,
+                "started_seconds": self._search_started - self._run_started,
+                "search_seconds": jetzt - self._search_started,
+                "elapsed_seconds": jetzt - self._run_started,
+                "objective": self.objective_value,
+                "bound": self.best_objective_bound,
+            })
+        except Exception:
+            pass
+
+
 def _forced_split_weekends(snapshot):
     """Teilungen, die schon der Bedarf erzwingt, samt Hinweisen.
 
@@ -193,7 +231,7 @@ def _split_weekend_approval_diagnostics(snapshot, assignments):
     return diagnostics, len(split_weekends)
 
 
-def solve(snapshot, time_limit=30, partial=False, _repair=True):
+def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None):
     if not isfinite(time_limit):
         raise ValueError('Zeitlimit muss eine endliche Zahl in Sekunden sein.')
     started = monotonic()
@@ -219,6 +257,18 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
         # not an independent-validation or global optimality claim.
         "search_trace": [],
     }
+
+    def note(trace):
+        """Suchverlauf festhalten und, falls gewünscht, sofort melden."""
+        parameters["search_trace"].append(trace)
+        if progress is None:
+            return
+        # Eine fehlschlagende Fortschrittsmeldung darf die Planung nie beenden.
+        try:
+            progress(dict(trace))
+        except Exception:
+            pass
+
 
     def worked_days(employee_id, plan):
         days = {
@@ -440,7 +490,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
                             )
                         trace["accepted"] = True
             trace["round_seconds"] = monotonic() - round_started
-            parameters["search_trace"].append(trace)
+            note(trace)
             round_number += 1
         return best
 
@@ -1503,7 +1553,11 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
             parameters["quality_presolve"] = True
         solver.parameters.max_time_in_seconds = remaining
         search_started = monotonic()
-        status = solver.solve(model)
+        beobachter = (
+            _Zwischenstand(phase, search_started, started, progress)
+            if progress is not None else None
+        )
+        status = solver.solve(model, beobachter) if beobachter else solver.solve(model)
         search_seconds = monotonic() - search_started
         timings["search"] = timings.get("search", 0) + search_seconds
         name = solver.status_name(status)
@@ -1516,7 +1570,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
             "independently_valid": None,
             "accepted": False,
         }
-        parameters["search_trace"].append(trace)
+        note(trace)
         parameters["last_optimization_status"] = name
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             if best:

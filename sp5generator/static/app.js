@@ -767,6 +767,38 @@ function renderSearchTrace(parent,parameters){
  if(parameters.split_weekends_proven)beweis.push(`Die Zahl geteilter Wochenenden (${parameters.split_weekend_count??0}) ist als Minimum bewiesen.`);
  if(beweis.length)el('p',beweis.join(' '),body).className='helper-text';
 }
+function renderLiveProgress(steps,elapsed,limit){
+ const fill=$('progressFill'),phase=$('progressPhase'),list=$('progressSteps');
+ fill.style.width=(limit>0?Math.min(100,Math.round(100*elapsed/limit)):0)+'%';
+ const zahl=n=>Number(n).toLocaleString('de-DE',{maximumFractionDigits:0});
+ const fertig=steps.filter(step=>step.kind!=='incumbent');
+ const letzter=steps[steps.length-1];
+ const laufend=letzter&&letzter.kind==='incumbent'?letzter:null;
+ const name=letzter?(PHASENNAMEN[letzter.phase]??letzter.phase):'Wird vorbereitet';
+ phase.textContent=`${name} · ${Math.round(elapsed)} von höchstens ${limit} Sekunden`;
+ list.replaceChildren();
+ const zeile=(titel,text,übernommen)=>{
+  const li=el('li',undefined,list);li.className='trace-step compact';
+  if(übernommen)li.classList.add('accepted');
+  el('strong',titel,li);el('small',text,li);return li;
+ };
+ for(const step of fertig.filter(step=>step.phase!=='repair')){
+  zeile(PHASENNAMEN[step.phase]??step.phase,
+   `${(step.search_seconds??0).toLocaleString('de-DE',{maximumFractionDigits:1})} s · ${SUCHSTATUS[step.native_status]??step.native_status}`
+   +(step.accepted?' · übernommen':' · verworfen'),step.accepted);
+ }
+ const runden=fertig.filter(step=>step.phase==='repair');
+ if(runden.length){
+  const übernommen=runden.filter(step=>step.accepted).length;
+  zeile(PHASENNAMEN.repair,`${runden.length} Durchgänge · ${übernommen} übernommen`,übernommen>0);
+ }
+ if(laufend){
+  const teile=[`${laufend.solutions??0} Lösungen gefunden`];
+  if(Number.isFinite(laufend.objective))teile.push(`beste Bewertung ${zahl(laufend.objective)}`);
+  if(Number.isFinite(laufend.bound))teile.push(`untere Schranke ${zahl(laufend.bound)}`);
+  zeile(`${PHASENNAMEN[laufend.phase]??laufend.phase} · sucht`,teile.join(' · '),false).classList.add('running');
+ }
+}
 const diagnosticTitles={excluded:'Von der Planung ausgenommen',candidate_shortage:'Zu wenige geeignete Personen',shared_candidate_shortage:'Gemeinsamer Kandidatenengpass',vacancy:'Offene Stellen',maximum:'Höchstbesetzung',fixed:'Fixierte Einteilungen',duplicate:'Doppelte Einteilungen',reference:'Ungültige Verweise',context_assignment:'Planungszeitraum',interval_mismatch:'Dienstzeiten',unresolved:'Offene Angaben',profile:'Regelprofile',qualification:'Qualifikationen',approval:'Freigaben',split_weekend_approval:'Geteiltes Wochenende ohne Freigabe',split_weekend_demand:'Geteiltes Wochenende durch den Bedarf',rest:'Ruhezeiten',overlap:'Überlappende Dienste',interleaving:'Geteilte Dienste',availability:'Verfügbarkeit',kind:'Dienstart',boundary_kind:'Tag-/Nachtart der Randarbeit',boundary_period:'Randarbeit im Planungszeitraum',boundary_duplicate:'Doppelt erfasste Randarbeit',weekend:'Wochenenden',holiday:'Feiertage',employment:'Beschäftigungszeitraum',team:'Teamzuordnung',restriction:'Dienstsperren',absence:'Abwesenheiten',personal_work:'Persönliche Arbeit ohne Zeitangabe',night_block:'Ruhe nach Nachtblock',daily_limit:'Tägliche Höchstzeit',weekly_limit:'Wöchentliche Höchstzeit',period_limit:'Höchstzeit im Planungszeitraum',target_unreachable:'Periodensoll im Zuschnitt nicht erreichbar',work_days:'Höchstens erlaubte Arbeitstage',nights:'Höchstens erlaubte Nächte',weekends:'Höchstens erlaubte Wochenenden',consecutive_work:'Aufeinanderfolgende Arbeitstage',consecutive_nights:'Aufeinanderfolgende Nächte',weekly_rest:'Zusammenhängende Wochenruhe',context:'Angrenzende Dienste und Zeiträume',mentoring:'Erforderliche Betreuung',size_limit:'Planungsgröße',numeric_range:'Zahlenbereich',date_range:'Datumsbereich',created_at:'Datenstand',empty_id:'Fehlende Kennungen',duplicate_id:'Doppelte Kennungen',interval:'Dienstzeiten',demand:'Besetzungsbedarf',validity:'Gültigkeitszeitraum',assignment_reference:'Einteilungen',input:'Eingabedaten'};
 const diagnosticActions={
  boundary_kind:'Unter Regeln und Bedarf gesammelt einstellen: Wiederkehrende Dienste gesammelt einstellen. Je Dienst und Zeitmuster einmal Tag oder Nacht.',
@@ -918,7 +950,9 @@ async function poll(){
   let j=await api('/api/jobs/'+encodeURIComponent(requestedJob)+'/status');if(jobId!==requestedJob)return;
   if(!['queued','running'].includes(j.state)){j=await api('/api/jobs/'+encodeURIComponent(requestedJob));if(jobId!==requestedJob)return;}
   $('job').textContent=`${jobStates[j.state]??j.state} · ${Math.max(0,Math.round((j.finished_at??Date.now()/1000)-(j.started_at??j.created_at)))} Sekunden`;
-  if(['queued','running'].includes(j.state)){timer=setTimeout(poll,1000);return;}
+  if(['queued','running'].includes(j.state)){
+   renderLiveProgress(Array.isArray(j.progress)?j.progress:[],j.elapsed_seconds??0,Number($('limit').value)||0);
+   timer=setTimeout(poll,1000);return;}
   jobId=null;updateJobButtons();
   if(j.error)notice(j.error,true);
   if(j.result){

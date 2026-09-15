@@ -160,8 +160,12 @@
                 <button id="cancel" type="button" disabled>Abbrechen</button>
               </div>
               <div id="calculationProgress" class="calculation-progress" hidden>
-                <span class="activity-spinner" aria-hidden="true"></span>
-                <div><strong>Berechnung läuft</strong><span>Sie können den Fortschritt auch später wieder öffnen.</span></div>
+                <div class="progress-head">
+                  <span class="activity-spinner" aria-hidden="true"></span>
+                  <div><strong>Berechnung läuft</strong><span id="progressPhase">Wird vorbereitet …</span></div>
+                </div>
+                <div class="progress-bar" role="presentation"><span id="progressFill"></span></div>
+                <ol id="progressSteps" class="trace" aria-live="polite"></ol>
               </div>
               <p id="job" aria-live="polite" class="job-status"></p>
             </section>
