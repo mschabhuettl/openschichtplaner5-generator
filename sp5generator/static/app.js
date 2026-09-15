@@ -729,6 +729,44 @@ function focusAssignment(index){
  const state=pageState('assignments',40);state.query='';state.page=Math.floor(index/state.size);$('assignmentDetails').open=true;renderAssignments();
  const row=$('plan').querySelector(`[data-assignment-index="${index}"]`);row?.focus({preventScroll:true});row?.scrollIntoView({block:'center',behavior:'smooth'});
 }
+const PHASENNAMEN={feasibility:'Gültige Besetzung finden',vacancies:'Besetzung maximieren',couple:'Wochenenden koppeln',quality:'Qualität abwägen',repair:'Nachbessern'};
+const PHASENZWECK={feasibility:'Erst einmal eine Einteilung finden, die jede harte Regel einhält und jede Pflichtstelle besetzt.',vacancies:'So wenige unbesetzte Pflichtstellen wie möglich.',couple:'Samstag und Sonntag zusammenlegen, ohne die Besetzung zu verschlechtern.',quality:'Die gewichteten Ziele abwägen: Blöcke, Freizeit, Nächte, Wochenenden, Wünsche.',repair:'Ausschnitte wieder auflösen und neu lösen, solange es besser wird.'};
+const SUCHSTATUS={OPTIMAL:'bewiesenes Optimum',FEASIBLE:'gültige Lösung',INFEASIBLE:'nicht lösbar',UNKNOWN:'Zeit aufgebraucht',MODEL_INVALID:'Modell ungültig'};
+function renderSearchTrace(parent,parameters){
+ const trace=parameters?.search_trace;if(!Array.isArray(trace)||!trace.length)return;
+ const box=el('details',undefined,parent);box.className='surface trace-box';box.open=true;
+ el('summary','Wie der Plan entstanden ist',box);
+ const body=el('div',undefined,box);body.className='details-content';
+ el('p','Die Suche läuft in Stufen. Jede Stufe darf die vorherige nicht verschlechtern.',body).className='helper-text';
+ const phasen=trace.filter(step=>step.phase!=='repair');
+ const runden=trace.filter(step=>step.phase==='repair');
+ const gesamt=trace.reduce((sum,step)=>sum+(step.round_seconds??step.search_seconds??0),0)||1;
+ const liste=el('ol',undefined,body);liste.className='trace';
+ for(const step of phasen){
+  const dauer=step.search_seconds??0,zeile=el('li',undefined,liste);zeile.className='trace-step';
+  if(step.accepted)zeile.classList.add('accepted');
+  el('strong',PHASENNAMEN[step.phase]??step.phase,zeile);
+  const balken=el('div',undefined,zeile);balken.className='trace-bar';
+  el('span',undefined,balken).style.width=Math.max(2,Math.round(100*dauer/gesamt))+'%';
+  el('small',`${dauer.toLocaleString('de-DE',{maximumFractionDigits:1})} s · ${SUCHSTATUS[step.native_status]??step.native_status}`
+   +(step.accepted?' · übernommen':' · verworfen'),zeile);
+  el('p',PHASENZWECK[step.phase]??'',zeile).className='helper-text small-text';
+ }
+ if(runden.length){
+  const übernommen=runden.filter(step=>step.accepted).length;
+  const sekunden=runden.reduce((sum,step)=>sum+(step.round_seconds??0),0);
+  const zeile=el('li',undefined,liste);zeile.className='trace-step';if(übernommen)zeile.classList.add('accepted');
+  el('strong',PHASENNAMEN.repair,zeile);
+  const balken=el('div',undefined,zeile);balken.className='trace-bar';
+  el('span',undefined,balken).style.width=Math.max(2,Math.round(100*sekunden/gesamt))+'%';
+  el('small',`${sekunden.toLocaleString('de-DE',{maximumFractionDigits:1})} s · ${runden.length} Durchgänge · ${übernommen} übernommen`,zeile);
+  el('p',PHASENZWECK.repair,zeile).className='helper-text small-text';
+ }
+ const beweis=[];
+ if(parameters.coverage_proven)beweis.push('Die Besetzung ist als bestmöglich bewiesen.');
+ if(parameters.split_weekends_proven)beweis.push(`Die Zahl geteilter Wochenenden (${parameters.split_weekend_count??0}) ist als Minimum bewiesen.`);
+ if(beweis.length)el('p',beweis.join(' '),body).className='helper-text';
+}
 const diagnosticTitles={excluded:'Von der Planung ausgenommen',candidate_shortage:'Zu wenige geeignete Personen',shared_candidate_shortage:'Gemeinsamer Kandidatenengpass',vacancy:'Offene Stellen',maximum:'Höchstbesetzung',fixed:'Fixierte Einteilungen',duplicate:'Doppelte Einteilungen',reference:'Ungültige Verweise',context_assignment:'Planungszeitraum',interval_mismatch:'Dienstzeiten',unresolved:'Offene Angaben',profile:'Regelprofile',qualification:'Qualifikationen',approval:'Freigaben',split_weekend_approval:'Geteiltes Wochenende ohne Freigabe',split_weekend_demand:'Geteiltes Wochenende durch den Bedarf',rest:'Ruhezeiten',overlap:'Überlappende Dienste',interleaving:'Geteilte Dienste',availability:'Verfügbarkeit',kind:'Dienstart',boundary_kind:'Tag-/Nachtart der Randarbeit',boundary_period:'Randarbeit im Planungszeitraum',boundary_duplicate:'Doppelt erfasste Randarbeit',weekend:'Wochenenden',holiday:'Feiertage',employment:'Beschäftigungszeitraum',team:'Teamzuordnung',restriction:'Dienstsperren',absence:'Abwesenheiten',personal_work:'Persönliche Arbeit ohne Zeitangabe',night_block:'Ruhe nach Nachtblock',daily_limit:'Tägliche Höchstzeit',weekly_limit:'Wöchentliche Höchstzeit',period_limit:'Höchstzeit im Planungszeitraum',target_unreachable:'Periodensoll im Zuschnitt nicht erreichbar',work_days:'Höchstens erlaubte Arbeitstage',nights:'Höchstens erlaubte Nächte',weekends:'Höchstens erlaubte Wochenenden',consecutive_work:'Aufeinanderfolgende Arbeitstage',consecutive_nights:'Aufeinanderfolgende Nächte',weekly_rest:'Zusammenhängende Wochenruhe',context:'Angrenzende Dienste und Zeiträume',mentoring:'Erforderliche Betreuung',size_limit:'Planungsgröße',numeric_range:'Zahlenbereich',date_range:'Datumsbereich',created_at:'Datenstand',empty_id:'Fehlende Kennungen',duplicate_id:'Doppelte Kennungen',interval:'Dienstzeiten',demand:'Besetzungsbedarf',validity:'Gültigkeitszeitraum',assignment_reference:'Einteilungen',input:'Eingabedaten'};
 const diagnosticActions={
  boundary_kind:'Unter Regeln und Bedarf gesammelt einstellen: Wiederkehrende Dienste gesammelt einstellen. Je Dienst und Zeitmuster einmal Tag oder Nacht.',
@@ -922,6 +960,7 @@ async function poll(){
       const person_=gapIdx.employees.get(row.employee_id);if(person_)button(line,'Person bearbeiten',()=>personDetails(person_));}};
     gapBox.ontoggle=()=>{if(gapBox.open&&!gapList.childNodes.length)drawGaps();};
    }
+   renderSearchTrace($('result'),j.result.parameters);
    const evaluation=el('details',undefined,$('result'));el('summary','Technische Auswertung',evaluation);evaluation.ontoggle=()=>{if(evaluation.open&&!evaluation.querySelector('pre'))el('pre',JSON.stringify({solver_status:j.result.solver_status,offene_Stellen:j.result.vacancies,auswertung:j.result.metrics},null,2),evaluation);};
    renderValidation(j.result.validation);$('validationDetails').open=!valid||!complete;
    if(accepted&&previous.length){const old=new Set(previous.map(a=>a.employee_id+'|'+a.demand_id)),next=new Set(assignments.map(a=>a.employee_id+'|'+a.demand_id));el('p',`Vergleich: ${[...next].filter(x=>!old.has(x)).length} hinzugefügt, ${[...old].filter(x=>!next.has(x)).length} entfernt.`,$('result'));}

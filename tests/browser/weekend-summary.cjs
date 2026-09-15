@@ -52,6 +52,17 @@ module.exports=async function weekendSummary({page,base}){
  assert.match(forced,/1 davon erzwingt der Bedarf selbst; so viele bleiben/,'Unequal weekend demand is named as the cause');
  assert.match(forced,/Zusammenhängende Freizeit: \d+ Blöcke/,'Free time is reported in plain words');
 
+ // Der Suchverlauf erklärt in Klartext, wie der Plan zustande kam.
+ const trace=page.locator('#result details.trace-box');
+ assert.match(await trace.locator('summary').innerText(),/Wie der Plan entstanden ist/);
+ const steps=trace.locator('.trace-step');
+ assert((await steps.count())>=1,'At least one search stage is shown');
+ const first=await steps.first().innerText();
+ assert.match(first,/Gültige Besetzung finden|Besetzung maximieren/,'The first stage is named in plain words');
+ assert.match(first,/\d+(,\d+)? s ·/,'Each stage reports how long it ran');
+ assert.match(first,/übernommen|verworfen/,'Each stage says whether its result was kept');
+ assert((await trace.locator('.trace-step.accepted').count())>=1,'A kept stage is marked');
+
  // Both days need one person: nothing forces a split any more.
  const balanced=await solved(project('synthetic-weekend-balanced',1));
  assert.doesNotMatch(balanced,/erzwingt der Bedarf selbst/,'Equal weekend demand forces no split');

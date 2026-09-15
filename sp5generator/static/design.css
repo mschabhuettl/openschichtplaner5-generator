@@ -1,6 +1,6 @@
 /* =========================================================================
    OpenSchichtplaner5 – Gestaltungssprache
-   Eine Datei, ausgeschrieben. Reihenfolge: Marken, Grundlagen, Gerüst,
+   Eine Datei, ausgeschrieben. Reihenfolge: Grundfarben, Grundlagen, Gerüst,
    Bedienelemente, Konfigurationslinie, Flächen, Tabellen, Zustände, Seiten.
    ========================================================================= */
 
@@ -286,7 +286,7 @@ details.surface > summary + .details-content { border-top: 1px solid var(--line)
   border: 1px solid var(--line); border-left: 3px solid var(--line-2); border-radius: var(--r-sm);
   padding: 11px 14px; font-size: 13px; color: var(--ink-2); background: var(--surface-2);
 }
-.notice { background: var(--accent-bg); border-color: var(--accent-line); border-left-color: var(--accent); }
+.notice { background: var(--accent-bg); border-color: var(--accent-line); border-left-color: var(--accent); margin-bottom: 22px; }
 .notice.error, .inline-warning.bad { background: var(--danger-bg); border-color: #edd2cd; border-left-color: var(--danger); color: var(--danger); }
 .readiness-note { background: var(--surface-2); border-left-color: var(--line-2); }
 .readiness-note.warning, .inline-warning { background: var(--warn-bg); border-color: #ecdfc4; border-left-color: var(--warn); color: var(--warn); }
@@ -508,3 +508,33 @@ tr.excluded td:first-child::after { content: " · ausgenommen"; font-size: 11px;
 .unavailable { background: var(--surface-2); color: var(--faint); }
 .overridden { border-color: var(--accent) !important; }
 .person-editor { border: 1px solid var(--accent-line); border-radius: var(--r-lg); background: var(--accent-bg); padding: var(--pad); display: flex; flex-direction: column; gap: var(--gap); }
+
+/* --------------------------------------------- Suchverlauf („Denkprozess")
+
+   Jede Stufe der Suche als Zeile: Name, Zeitanteil, Ergebnis, Zweck.
+   Übernommene Stufen sind farbig abgesetzt, verworfene bleiben blass.
+   ------------------------------------------------------------------ */
+
+.trace { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; counter-reset: stufe; }
+.trace-step {
+  display: grid; grid-template-columns: minmax(150px, 190px) minmax(90px, 1fr) auto;
+  grid-template-areas: "name bar meta" "note note note";
+  gap: 4px 14px; align-items: center;
+  border: 1px solid var(--line); border-left: 3px solid var(--line-2);
+  border-radius: var(--r-sm); padding: 11px 14px; background: var(--surface);
+}
+.trace-step.accepted { border-left-color: var(--accent); background: var(--accent-bg); }
+.trace-step > strong { grid-area: name; font-size: 13.5px; display: flex; align-items: baseline; gap: 8px; }
+.trace-step > strong::before { counter-increment: stufe; content: counter(stufe); font-family: var(--sans); font-size: 11px; font-weight: 700; color: var(--faint); }
+.trace-step.accepted > strong::before { color: var(--accent-ink); }
+.trace-bar { grid-area: bar; height: 7px; border-radius: 999px; background: var(--surface-2); overflow: hidden; min-width: 60px; }
+.trace-step.accepted .trace-bar { background: #f0ddd2; }
+.trace-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--line-2); }
+.trace-step.accepted .trace-bar > span { background: var(--accent); }
+.trace-step > small { grid-area: meta; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.trace-step > p { grid-area: note; margin-top: 2px; }
+
+@media (max-width: 760px) {
+  .trace-step { grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "meta" "bar" "note"; gap: 6px; }
+  .trace-step > small { white-space: normal; }
+}
