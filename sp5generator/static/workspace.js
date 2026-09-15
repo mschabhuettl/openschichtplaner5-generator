@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const byId = id => document.getElementById(id);
-  const names = {projects:'Projekte',team:'Team & Freigaben',rules:'Regeln & Bedarf',demand:'Bedarf',calculate:'Planen',plan:'Dienstplan'};
+  const names = {projects:'Projekte',team:'Team & Freigaben',rules:'Regeln',demand:'Bedarf',calculate:'Planen',plan:'Dienstplan'};
   const states = {queued:'In Warteschlange',running:'Wird berechnet',succeeded:'Beendet · Ergebnis prüfen',failed:'Fehlgeschlagen',cancelled:'Abgebrochen'};
   let activePanel = 'projects';
   let current = {snapshot:null,assignments:[],dirty:false,jsonDirty:false,jobId:null,solving:false};

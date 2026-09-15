@@ -52,7 +52,7 @@ module.exports=async function guidance({page,base}){
  await page.locator('[data-panel="rules"]').waitFor({state:'visible'});
  const bereiche=page.locator('#rulesNav button');
  assert.equal(await bereiche.count(),6,'Sechs Einstellungsbereiche');
- for(const [name,sichtbar] of [['Regelprofile','#profiles'],['Ziele','#weights'],['Bedarf','#demands']]){
+ for(const [name,sichtbar] of [['Regelprofile','#profiles'],['Ziele','#weights'],['Einzelne Bedarfe','#demands']]){
   await bereiche.filter({hasText:name}).click();
   assert.equal(await page.locator(sichtbar).isVisible(),true,`${name} ist sichtbar`);
   assert.equal(await page.locator('#rulesNav button.active').innerText(),name);
