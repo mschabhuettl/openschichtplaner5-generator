@@ -454,9 +454,14 @@ def _solve_child(path, job, parent_pid):
                 conn = sqlite3.connect(path, timeout=1, isolation_level=None)
                 try:
                     conn.execute("PRAGMA busy_timeout=1000")
+                    # Die Belegung ist groß und nur im jüngsten Stand von
+                    # Interesse; ältere Einträge behalten nur ihre Kennzahlen.
+                    schlank = [dict(schritt) for schritt in schritte[-60:]]
+                    for älter in schlank[:-1]:
+                        älter.pop("grid", None)
                     conn.execute(
                         "UPDATE jobs SET progress=? WHERE id=? AND state='running'",
-                        (json.dumps(schritte[-60:]), job["id"]),
+                        (json.dumps(schlank), job["id"]),
                     )
                 finally:
                     conn.close()

@@ -767,6 +767,37 @@ function renderSearchTrace(parent,parameters){
  if(parameters.split_weekends_proven)beweis.push(`Die Zahl geteilter Wochenenden (${parameters.split_weekend_count??0}) ist als Minimum bewiesen.`);
  if(beweis.length)el('p',beweis.join(' '),body).className='helper-text';
 }
+let flowShape='',flowPrevious=[];
+function renderFlowBoard(grid){
+ const board=$('progressBoard'),host=$('flowGrid');
+ if(!Array.isArray(grid)||!grid.length){board.hidden=true;flowShape='';flowPrevious=[];return;}
+ board.hidden=false;
+ const tage=grid[0].length,form=`${grid.length}x${tage}`;
+ if(form!==flowShape){
+  flowShape=form;flowPrevious=[];host.replaceChildren();
+  host.style.setProperty('--tage',String(tage));
+  for(let zeile=0;zeile<grid.length;zeile++)for(let spalte=0;spalte<tage;spalte++){
+   const zelle=el('i',undefined,host);zelle.className='flow-cell idle';zelle.dataset.at=`${zeile}:${spalte}`;
+  }
+ }
+ const zellen=host.children,erstmals=!flowPrevious.length;let bewegt=0;
+ for(let zeile=0;zeile<grid.length;zeile++){
+  const jetzt=grid[zeile],vorher=flowPrevious[zeile]??'';
+  for(let spalte=0;spalte<tage;spalte++){
+   const zeichen=jetzt[spalte],alt=vorher[spalte];
+   if(zeichen===alt)continue;
+   if(!erstmals)bewegt++;
+   const zelle=zellen[zeile*tage+spalte];if(!zelle)continue;
+   zelle.className='flow-cell '+(zeichen==='N'?'night':zeichen==='T'?'day':'idle')+(alt===undefined?'':zeichen==='.'?' leaving':' arriving');
+   zelle.addEventListener('animationend',()=>zelle.classList.remove('arriving','leaving'),{once:true});
+  }
+ }
+ flowPrevious=grid.slice();
+ const belegt=grid.reduce((summe,zeile)=>summe+zeile.length-zeile.split('.').length+1,0);
+ $('flowMoved').textContent=bewegt
+  ?`${belegt} Einteilungen · ${bewegt} ${bewegt===1?'Zelle hat sich bewegt':'Zellen haben sich bewegt'}`
+  :`${belegt} Einteilungen`;
+}
 function renderLiveProgress(steps,elapsed,limit){
  const fill=$('progressFill'),phase=$('progressPhase'),list=$('progressSteps');
  fill.style.width=(limit>0?Math.min(100,Math.round(100*elapsed/limit)):0)+'%';
@@ -798,6 +829,8 @@ function renderLiveProgress(steps,elapsed,limit){
   if(Number.isFinite(laufend.bound))teile.push(`untere Schranke ${zahl(laufend.bound)}`);
   zeile(`${PHASENNAMEN[laufend.phase]??laufend.phase} · sucht`,teile.join(' · '),false).classList.add('running');
  }
+ const letzteBelegung=[...steps].reverse().find(step=>Array.isArray(step.grid));
+ renderFlowBoard(letzteBelegung?letzteBelegung.grid:null);
 }
 const diagnosticTitles={excluded:'Von der Planung ausgenommen',candidate_shortage:'Zu wenige geeignete Personen',shared_candidate_shortage:'Gemeinsamer Kandidatenengpass',vacancy:'Offene Stellen',maximum:'Höchstbesetzung',fixed:'Fixierte Einteilungen',duplicate:'Doppelte Einteilungen',reference:'Ungültige Verweise',context_assignment:'Planungszeitraum',interval_mismatch:'Dienstzeiten',unresolved:'Offene Angaben',profile:'Regelprofile',qualification:'Qualifikationen',approval:'Freigaben',split_weekend_approval:'Geteiltes Wochenende ohne Freigabe',split_weekend_demand:'Geteiltes Wochenende durch den Bedarf',rest:'Ruhezeiten',overlap:'Überlappende Dienste',interleaving:'Geteilte Dienste',availability:'Verfügbarkeit',kind:'Dienstart',boundary_kind:'Tag-/Nachtart der Randarbeit',boundary_period:'Randarbeit im Planungszeitraum',boundary_duplicate:'Doppelt erfasste Randarbeit',weekend:'Wochenenden',holiday:'Feiertage',employment:'Beschäftigungszeitraum',team:'Teamzuordnung',restriction:'Dienstsperren',absence:'Abwesenheiten',personal_work:'Persönliche Arbeit ohne Zeitangabe',night_block:'Ruhe nach Nachtblock',daily_limit:'Tägliche Höchstzeit',weekly_limit:'Wöchentliche Höchstzeit',period_limit:'Höchstzeit im Planungszeitraum',target_unreachable:'Periodensoll im Zuschnitt nicht erreichbar',work_days:'Höchstens erlaubte Arbeitstage',nights:'Höchstens erlaubte Nächte',weekends:'Höchstens erlaubte Wochenenden',consecutive_work:'Aufeinanderfolgende Arbeitstage',consecutive_nights:'Aufeinanderfolgende Nächte',weekly_rest:'Zusammenhängende Wochenruhe',context:'Angrenzende Dienste und Zeiträume',mentoring:'Erforderliche Betreuung',size_limit:'Planungsgröße',numeric_range:'Zahlenbereich',date_range:'Datumsbereich',created_at:'Datenstand',empty_id:'Fehlende Kennungen',duplicate_id:'Doppelte Kennungen',interval:'Dienstzeiten',demand:'Besetzungsbedarf',validity:'Gültigkeitszeitraum',assignment_reference:'Einteilungen',input:'Eingabedaten'};
 const diagnosticActions={

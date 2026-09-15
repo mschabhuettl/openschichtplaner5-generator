@@ -15,15 +15,18 @@ module.exports=async function progressView({page,base}){
 
  // Der Fortschritt kommt vom Rechenprozess; für eine verlässliche Prüfung
  // wird ein fester Stand eingespielt, statt auf Laufzeit zu hoffen.
- const eingespielt=[
+ const ersterStand=['TT..','.T.N','....'];
+ const zweiterStand=['TT.N','.T..','..T.'];
+ let stand=ersterStand;
+ const eingespielt=()=>[
   {phase:'vacancies',search_seconds:0.4,native_status:'OPTIMAL',accepted:true},
-  {phase:'quality',kind:'incumbent',solutions:9,search_seconds:2.5,elapsed_seconds:2.9,objective:28500,bound:2700},
+  {phase:'quality',kind:'incumbent',solutions:9,search_seconds:2.5,elapsed_seconds:2.9,objective:28500,bound:2700,grid:stand},
  ];
  const muster=/\/api\/jobs\/[^/]+\/status$/;
  await page.route(muster,async route=>{
   const response=await route.fetch(),data=await response.json();
   if(data.state==='running'||data.state==='queued'){
-   data.state='running';data.progress=eingespielt;data.elapsed_seconds=10;data.started_at=data.started_at??data.created_at;
+   data.state='running';data.progress=eingespielt();data.elapsed_seconds=10;data.started_at=data.started_at??data.created_at;
   }
   await route.fulfill({response,json:data});
  });
@@ -46,6 +49,21 @@ module.exports=async function progressView({page,base}){
  assert.equal(await page.locator('#progressSteps .trace-step.running').count(),1);
  assert.match(await page.locator('#progressPhase').innerText(),/Qualität abwägen · 10 von höchstens 40 Sekunden/);
  assert.equal(await page.locator('#progressFill').evaluate(node=>node.style.width),'25%','Der Balken zeigt den Anteil der Rechenzeit');
+
+ // Die laufende Belegung: Personen als Zeilen, Kalendertage als Spalten.
+ const zellen=page.locator('#flowGrid .flow-cell');
+ await zellen.first().waitFor({timeout:15000});
+ assert.equal(await zellen.count(),12,'Drei Personen über vier Kalendertage');
+ assert.equal(await page.locator('#flowGrid .flow-cell.day').count(),3,'Drei Tagdienste im ersten Zwischenstand');
+ assert.equal(await page.locator('#flowGrid .flow-cell.night').count(),1);
+ assert.match(await page.locator('#flowMoved').innerText(),/^4 Einteilungen$/);
+
+ // Der nächste Zwischenstand bewegt genau die geänderten Zellen.
+ stand=zweiterStand;
+ await page.waitForFunction(()=>/Zellen haben sich bewegt/.test(document.querySelector('#flowMoved').textContent),null,{timeout:15000});
+ assert.match(await page.locator('#flowMoved').innerText(),/^5 Einteilungen · 3 Zellen haben sich bewegt$/);
+ assert.equal(await page.locator('#flowGrid .flow-cell.day').count(),4,'Eine Person kommt hinzu');
+ assert.equal(await page.locator('#flowGrid .flow-cell.night').count(),1,'Der Nachtdienst wechselt die Person');
 
  await page.click('#cancel');
  await page.unroute(muster);

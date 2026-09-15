@@ -77,6 +77,28 @@ def _free_time_metrics(period_start, period_end, worked_days_by_person):
     }
 
 
+def _plan_raster(snapshot, xs, demands, shift_day, shifts):
+    """Zellen für die Live-Ansicht: je Entscheidungsvariable Zeile, Spalte, Art.
+
+    Übertragen werden nur Indizes und Dienstarten. Namen bleiben dort, wo sie
+    ohnehin schon liegen: in der geöffneten Planung.
+    """
+    spalten = {
+        tag: i for i, tag in enumerate(
+            dates(snapshot.period_start, snapshot.period_end + timedelta(days=1))
+        )
+    }
+    zeilen = {e.id: i for i, e in enumerate(snapshot.employees)}
+    zellen = []
+    for (employee_id, demand_id), x in xs.items():
+        tag = shift_day[demands[demand_id].shift_id]
+        if tag not in spalten or employee_id not in zeilen:
+            continue
+        art = ord("N") if shifts[demands[demand_id].shift_id].kind == "night" else ord("T")
+        zellen.append((x, zeilen[employee_id], spalten[tag], art))
+    return len(zeilen), len(spalten), zellen
+
+
 class _Zwischenstand(cp_model.CpSolverSolutionCallback):
     """Meldet jede verbesserte Lösung, während die Suche noch läuft.
 
@@ -84,15 +106,26 @@ class _Zwischenstand(cp_model.CpSolverSolutionCallback):
     darf die Suche unter keinen Umständen abbrechen.
     """
 
-    def __init__(self, phase, search_started, run_started, melden, abstand=0.5):
+    def __init__(self, phase, search_started, run_started, melden, raster=None,
+                 abstand=0.5):
         super().__init__()
         self._phase = phase
         self._search_started = search_started
         self._run_started = run_started
         self._melden = melden
+        self._raster = raster
         self._abstand = abstand
         self._zuletzt = 0.0
         self._anzahl = 0
+
+    def _belegung(self):
+        """Die aktuelle Einteilung als eine Zeichenkette je Person."""
+        personen, tage, zellen = self._raster
+        gitter = [bytearray(b"." * tage) for _ in range(personen)]
+        for x, zeile, spalte, art in zellen:
+            if self.boolean_value(x):
+                gitter[zeile][spalte] = art
+        return [zeile.decode("ascii") for zeile in gitter]
 
     def on_solution_callback(self):
         self._anzahl += 1
@@ -110,6 +143,7 @@ class _Zwischenstand(cp_model.CpSolverSolutionCallback):
                 "elapsed_seconds": jetzt - self._run_started,
                 "objective": self.objective_value,
                 "bound": self.best_objective_bound,
+                "grid": self._belegung() if self._raster else None,
             })
         except Exception:
             pass
@@ -244,6 +278,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None):
     timings = {}
     employee_candidates = None
     approval_gaps = None
+    plan_raster = None
     demands = {d.id: d for d in snapshot.demands}
     dates_by_shift = {}
     parameters = {
@@ -1553,8 +1588,10 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None):
             parameters["quality_presolve"] = True
         solver.parameters.max_time_in_seconds = remaining
         search_started = monotonic()
+        if progress is not None and plan_raster is None:
+            plan_raster = _plan_raster(snapshot, xs, demands, shift_day, shifts)
         beobachter = (
-            _Zwischenstand(phase, search_started, started, progress)
+            _Zwischenstand(phase, search_started, started, progress, plan_raster)
             if progress is not None else None
         )
         status = solver.solve(model, beobachter) if beobachter else solver.solve(model)

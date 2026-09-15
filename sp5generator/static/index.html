@@ -166,6 +166,11 @@
                 </div>
                 <div class="progress-bar" role="presentation"><span id="progressFill"></span></div>
                 <ol id="progressSteps" class="trace" aria-live="polite"></ol>
+                <figure id="progressBoard" class="flow-board" hidden>
+                  <figcaption><span id="flowMoved">Belegung wird aufgebaut …</span></figcaption>
+                  <div id="flowGrid" class="flow-grid" role="img" aria-label="Laufende Belegung: Personen über Kalendertage"></div>
+                  <div class="flow-legend"><span><i class="flow-key day"></i>Tagdienst</span><span><i class="flow-key night"></i>Nachtdienst</span><span><i class="flow-key idle"></i>frei</span></div>
+                </figure>
               </div>
               <p id="job" aria-live="polite" class="job-status"></p>
             </section>
