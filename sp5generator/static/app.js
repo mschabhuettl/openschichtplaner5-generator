@@ -533,7 +533,7 @@ function renderReferenceImport(){
  const actions=el('div',undefined,box);actions.className='actions';
  button(actions,'Bedarf prüfen',()=>{const target=$('demands');target.closest('details').open=true;renderDemands();target.tabIndex=-1;target.focus();target.scrollIntoView({block:'start'});});
  button(actions,'Team & Freigaben prüfen',()=>window.PlannerUI.navigate('team',{focus:true,scroll:true}));
- el('p','Danach Regelprofile und offene Importangaben fachlich bearbeiten. Unter Berechnen zeigt die automatische Vorprüfung den aktuellen Eingabestand; erst die Berechnung und Ergebnisprüfung belegen einen gültigen Plan.',box).className='helper-text';
+ el('p','Danach Regelprofile und offene Importangaben fachlich bearbeiten. Unter Planen zeigt die automatische Vorprüfung den aktuellen Eingabestand; erst die Berechnung und Ergebnisprüfung belegen einen gültigen Plan.',box).className='helper-text';
  if(!rows.length)return;
  const details=el('details',undefined,box);el('summary','Vergleichsdienste einzeln ansehen',details);
  const state=pageState('referenceImport',10),filter=el('div',undefined,details);filter.className='details-content';
@@ -1153,7 +1153,7 @@ function renderCalendar(){
  badge.title=`Persönliche Arbeit aus der Quelle · ${x.work.paid_minutes} bezahlte Minuten · deckt keinen Bedarf, sperrt aber die Person.`;});
  (gaps.get(cellKey)??[]).forEach(({demand,gap})=>{const badge=button(td,`${gap} offen`,()=>{const state=pageState('demands',40);state.query=demand.id;state.page=0;navigate('rules');const details=$('demands').closest('details');if(details)details.open=true;renderDemands();$('demands').scrollIntoView({block:'center',behavior:'smooth'});});badge.className='vacancy-badge';badge.title=demandLabel(demand);});});});
  if(!view.total)el('p','Keine passenden Personen oder Dienste. Suche anpassen.',view.content);
- else if(!assignments.length)el('p','Noch keine Einteilungen. Berechnen oder Einteilungen im Detailbereich ergänzen.',view.content);
+ else if(!assignments.length)el('p','Noch keine Einteilungen. Unter Planen rechnen lassen oder Einteilungen im Detailbereich ergänzen.',view.content);
 }
 $('matrixSearch').oninput=debounce(()=>{if(!snapshot)return;pageState('matrixPeople',30).page=0;pageState('matrixPositions',16).page=0;renderMatrix();});
 action('transpose',()=>{transposed=!transposed;$('transpose').setAttribute('aria-pressed',String(transposed));renderMatrix();});

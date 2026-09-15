@@ -93,7 +93,7 @@ main { padding: 22px 32px 0; max-width: 1800px; }
 .setup-options { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .setup-options > label:has(input[type=checkbox]), .setup-options > small { grid-column: 1 / -1; }
 /* Calculation: foundation across the top, preflight beside the explicit action. */
-.calculation-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .85fr); gap: 20px; max-width: none; }
+.calculation-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; max-width: 880px; }
 .calculation-foundation { grid-column: 1 / -1; margin: 0; padding: 22px 24px; }
 .calculation-foundation h3 { font-size: 16px; margin-bottom: 16px; }
 .planning-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 24px; margin: 0; }

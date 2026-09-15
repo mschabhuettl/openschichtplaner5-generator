@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const byId = id => document.getElementById(id);
-  const names = {projects:'Projekte',team:'Team & Freigaben',rules:'Regeln & Bedarf',demand:'Bedarf',calculate:'Berechnen',plan:'Dienstplan'};
+  const names = {projects:'Projekte',team:'Team & Freigaben',rules:'Regeln & Bedarf',demand:'Bedarf',calculate:'Planen',plan:'Dienstplan'};
   const states = {queued:'In Warteschlange',running:'Wird berechnet',succeeded:'Beendet · Ergebnis prüfen',failed:'Fehlgeschlagen',cancelled:'Abgebrochen'};
   let activePanel = 'projects';
   let current = {snapshot:null,assignments:[],dirty:false,jsonDirty:false,jobId:null,solving:false};
@@ -134,7 +134,7 @@
     const checked=['ready','issues'].includes(readiness.state);
     const hints=checked?readiness.count:0;
     const readinessLabels={unchecked:'noch nicht geprüft',pending:'wird geprüft',draft:'Bearbeitung offen',error:'Prüfung fehlgeschlagen',ready:'Eingabehinweise',issues:'Eingabehinweise'};
-    const readinessMessages={unchecked:'Noch keine aktuelle Eingabeprüfung. Beim Öffnen von Berechnen wird automatisch geprüft.',pending:'Aktuelle Eingaben werden geprüft …',draft:'Offene Bearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Eingabeprüfung.',error:'Vorprüfung nicht abgeschlossen. Bitte den angezeigten Fehler prüfen und erneut versuchen.',ready:'Keine offenen Eingabehinweise. Berechnung und unabhängige Ergebnisprüfung stehen noch aus.',issues:`${number(hints)} Hinweise aus der aktuellen Eingabeprüfung. Die konkreten Hinweise unten fachlich bearbeiten.`};
+    const readinessMessages={unchecked:'Noch keine aktuelle Eingabeprüfung. Beim Öffnen von Planen wird automatisch geprüft.',pending:'Aktuelle Eingaben werden geprüft …',draft:'Offene Bearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Eingabeprüfung.',error:'Vorprüfung nicht abgeschlossen. Bitte den angezeigten Fehler prüfen und erneut versuchen.',ready:'Keine offenen Eingabehinweise. Berechnung und unabhängige Ergebnisprüfung stehen noch aus.',issues:`${number(hints)} Hinweise aus der aktuellen Eingabeprüfung. Die konkreten Hinweise unten fachlich bearbeiten.`};
     const title=projectName(project);
     if(document.activeElement!==byId('projectName'))byId('projectName').value=title;
     byId('projectName').readOnly=busy();
