@@ -203,6 +203,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
     phase_deadline = started + phase_limit
     timings = {}
     employee_candidates = None
+    approval_gaps = None
     demands = {d.id: d for d in snapshot.demands}
     dates_by_shift = {}
     parameters = {
@@ -246,6 +247,13 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
         counts = defaultdict(int)
         for a in assignments:
             counts[a.demand_id] += 1
+        if approval_gaps is not None:
+            kwargs.setdefault("metrics", {})["missing_approvals"] = [
+                {"employee_id": eid, "function_id": fid, "blocked_demands": n}
+                for (eid, fid), n in sorted(
+                    approval_gaps.items(), key=lambda item: (-item[1], item[0])
+                )
+            ]
         if employee_candidates is not None:
             selected = Counter(
                 a.employee_id for a in assignments
@@ -493,6 +501,8 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
 
     diagnostics = []
     exclusions = defaultdict(Counter)
+    approval_only = defaultdict(list)
+    approval_gap_counts = Counter()
     candidate_stats = {
         e.id: {"positive_capacity_demands": 0, "eligible_demands": 0,
                "eligible_required_demands": 0, "exclusions": Counter()}
@@ -537,6 +547,8 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
                         stats["eligible_demands"] += 1
                         stats["eligible_required_demands"] += int(d.minimum > 0)
                         reachable_minutes[e.id] += shifts[d.shift_id].paid_minutes
+            if in_period and d.minimum > 0 and reasons == ["approval"]:
+                approval_only[d.id].append(e.id)
             if reasons:
                 exclusions[d.id].update(reasons)
                 if (e.id, d.id) in fixed:
@@ -588,6 +600,9 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
         if d.maximum is not None:
             model.add(sum(choices) <= d.maximum)
         if len(choices) < d.minimum:
+            # Eine Freigabe hilft nur dort, wo der Bedarf sonst unbesetzbar bleibt.
+            for eid in approval_only.get(d.id, ()):
+                approval_gap_counts[(eid, positions[d.position_id].function_id)] += 1
             explanation = "; ".join(
                 f"{exclusion_labels[reason]}: {count}"
                 for reason, count in sorted(exclusions[d.id].items())
@@ -611,6 +626,9 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
             vacancies.append(v)
         else:
             model.add(sum(choices) >= d.minimum)
+    # Wie bei den Kandidatenzahlen: erst nach dem vollständigen Durchlauf
+    # veröffentlichen, nie einen abgebrochenen Anfang.
+    approval_gaps = approval_gap_counts
     for sid in shifts:
         if monotonic() >= deadline:
             return timed_out()

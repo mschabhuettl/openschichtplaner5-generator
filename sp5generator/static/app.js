@@ -900,6 +900,28 @@ async function poll(){
     el('p',parts.join(' '),$('result'));
    }
    if(m.free_time?.blocks)el('p',`Zusammenhängende Freizeit: ${m.free_time.blocks} Blöcke, im Schnitt ${m.free_time.mean_length.toLocaleString('de-DE')} Tage, ${m.free_time.three_or_more} ab drei Tagen, ${m.free_time.single_days} einzelne freie Tage, ${m.free_time.free_weekends} vollständig freie Wochenenden.`,$('result'));
+   if(m.missing_approvals?.length){
+    const gaps=m.missing_approvals,gapIdx=dataIndex();
+    const gapServices=new Map((snapshot.metadata.services??[]).map(s=>[s.function_id??'sp5:service:'+s.id,s]));
+    const gapName=row=>[gapIdx.employees.get(row.employee_id)?.name??row.employee_id,gapServices.get(row.function_id)?.name??row.function_id];
+    const gapBox=el('details',undefined,$('result'));
+    el('summary',`Fehlende Dienstfreigaben: ${gaps.length} · ${new Set(gaps.map(row=>row.employee_id)).size} Personen`,gapBox);
+    el('p','Bei diesen Stellen ist die persönliche Dienstfreigabe die einzige Hürde; ohne sie bleibt die Stelle unbesetzbar. Die Liste nennt nur, wo eine Freigabe fehlt. Sie erteilt keine und schlägt auch keine vor.',gapBox);
+    button(gapBox,'Fehlende Freigaben als CSV',()=>{
+     const quote=value=>{const text=String(value??'');return /[";\r\n]/.test(text)?'"'+text.replace(/"/g,'""')+'"':text;};
+     const lines=[['Person','Dienst','Blockierte Stellen'],...gaps.map(row=>[...gapName(row),row.blocked_demands])];
+     download(new Blob(['\ufeff'+lines.map(line=>line.map(quote).join(';')).join('\r\n')+'\r\n'],{type:'text/csv;charset=utf-8'}),
+      `fehlende-freigaben-${snapshot.period_start}-${snapshot.period_end}.csv`);
+     notice(`${gaps.length} fehlende Dienstfreigaben als CSV heruntergeladen.`);
+    });
+    const gapList=el('div',undefined,gapBox);
+    const drawGaps=()=>{const view=collection(gapList,'missingApprovals',gaps,{label:'Freigaben',size:20,search:row=>gapName(row).join(' '),redraw:drawGaps});
+     for(const row of view.items){const [person,service]=gapName(row);const line=el('article',undefined,view.content);line.className='diagnostic-item';
+      el('strong',`${person} · ${service}`,line);
+      el('p',`${row.blocked_demands} ${row.blocked_demands===1?'Stelle bleibt':'Stellen bleiben'} ohne diese Freigabe unbesetzbar.`,line);
+      const person_=gapIdx.employees.get(row.employee_id);if(person_)button(line,'Person bearbeiten',()=>personDetails(person_));}};
+    gapBox.ontoggle=()=>{if(gapBox.open&&!gapList.childNodes.length)drawGaps();};
+   }
    const evaluation=el('details',undefined,$('result'));el('summary','Technische Auswertung',evaluation);evaluation.ontoggle=()=>{if(evaluation.open&&!evaluation.querySelector('pre'))el('pre',JSON.stringify({solver_status:j.result.solver_status,offene_Stellen:j.result.vacancies,auswertung:j.result.metrics},null,2),evaluation);};
    renderValidation(j.result.validation);$('validationDetails').open=!valid||!complete;
    if(accepted&&previous.length){const old=new Set(previous.map(a=>a.employee_id+'|'+a.demand_id)),next=new Set(assignments.map(a=>a.employee_id+'|'+a.demand_id));el('p',`Vergleich: ${[...next].filter(x=>!old.has(x)).length} hinzugefügt, ${[...old].filter(x=>!next.has(x)).length} entfernt.`,$('result'));}
