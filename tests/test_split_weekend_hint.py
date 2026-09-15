@@ -180,26 +180,29 @@ def test_any_eligible_demand_suppresses_hint_for_the_missing_day():
     assert_no_hint(result)
 
 
-def test_friday_night_touching_saturday_is_no_weekend_start():
+def test_friday_night_touching_saturday_splits_the_weekend():
     snapshot = weekend_case()
     snapshot.shifts[0] = shift("sat", 9, 22, 8, "night")
 
-    assert_no_hint(solve(snapshot, time_limit=5))
-
-
-def test_saturday_night_touching_sunday_still_lacks_a_sunday_start():
-    snapshot = weekend_case()
-    snapshot.shifts[0] = shift("sat", 10, 22, 8, "night")
-    snapshot.shifts[1].segments = shift("sun", 11, 18, 4).segments
-    snapshot.shifts[1].paid_minutes = 240
-
     result = solve(snapshot, time_limit=5)
 
+    # Der Freitagnachtdienst verbraucht den Samstagmorgen; ohne Sonntag bleibt
+    # das Wochenende geteilt, und dafür fehlt e0 die Freigabe.
     hint, = hints(result)
     assert hint.employee_id == "e0"
     assert hint.date == "2026-01-11"
     assert hint.demand_id == "sun"
     assert result.metrics["split_weekends_blocked_by_approval"] == 1
+
+
+def test_saturday_night_reaching_into_sunday_completes_the_weekend():
+    snapshot = weekend_case()
+    snapshot.shifts[0] = shift("sat", 10, 22, 8, "night")
+    snapshot.shifts[1].segments = shift("sun", 11, 18, 4).segments
+    snapshot.shifts[1].paid_minutes = 240
+
+    # Samstag 22 bis Sonntag 06 berührt beide Tage: kein geteiltes Wochenende.
+    assert_no_hint(solve(snapshot, time_limit=5))
 
 
 @pytest.mark.parametrize("day_only", [False, True])

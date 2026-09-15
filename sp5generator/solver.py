@@ -90,16 +90,17 @@ def _forced_split_weekends(snapshot):
     shifts = {s.id: s for s in snapshot.shifts}
     minimum, maximum, unlimited = defaultdict(int), defaultdict(int), set()
     for demand in snapshot.demands:
-        day = day_of(shifts[demand.shift_id], snapshot.timezone)
-        if day is None or day.weekday() < 5:
-            continue
-        if not snapshot.period_start <= day <= snapshot.period_end:
-            continue
-        minimum[day] += demand.minimum
-        if demand.maximum is None:
-            unlimited.add(day)
-        else:
-            maximum[day] += demand.maximum
+        # Wie die Kopplung selbst: ein Dienst belegt jeden Tag, den er berührt.
+        for day in day_minutes(shifts[demand.shift_id], snapshot.timezone):
+            if day is None or day.weekday() < 5:
+                continue
+            if not snapshot.period_start <= day <= snapshot.period_end:
+                continue
+            minimum[day] += demand.minimum
+            if demand.maximum is None:
+                unlimited.add(day)
+            else:
+                maximum[day] += demand.maximum
     diagnostics, total = [], 0
     for monday in sorted({day - timedelta(days=day.weekday()) for day in minimum}):
         saturday, sunday = monday + timedelta(days=5), monday + timedelta(days=6)
@@ -136,12 +137,13 @@ def _split_weekend_approval_diagnostics(snapshot, assignments):
     starts = defaultdict(set)
     for assignment in assignments:
         shift = shifts[demands[assignment.demand_id].shift_id]
-        starts[assignment.employee_id].add(day_of(shift, snapshot.timezone))
+        starts[assignment.employee_id].update(day_minutes(shift, snapshot.timezone))
     for work in snapshot.boundary_work:
-        starts[work.employee_id].add(day_of(work, snapshot.timezone))
+        starts[work.employee_id].update(day_minutes(work, snapshot.timezone))
 
-    # Visit actual starts, not every employee/calendar-day combination. Like
-    # the starts variables, sets count a day once and ignore overnight spill.
+    # Visit days actually worked, not every employee/calendar-day combination.
+    # Like the daily variables, a day counts once, no matter how many duties
+    # touch it.
     split_weekends = []
     for employee_id, days in starts.items():
         for day in sorted(days):
@@ -160,9 +162,9 @@ def _split_weekend_approval_diagnostics(snapshot, assignments):
     missing_days = {day for _, _, day in split_weekends}
     demands_by_day = defaultdict(list)
     for demand in snapshot.demands:
-        day = day_of(shifts[demand.shift_id], snapshot.timezone)
-        if day in missing_days:
-            demands_by_day[day].append(demand)
+        for day in day_minutes(shifts[demand.shift_id], snapshot.timezone):
+            if day in missing_days:
+                demands_by_day[day].append(demand)
     employees = {e.id: e for e in snapshot.employees}
     diagnostics = []
     for employee_id, saturday, missing_day in split_weekends:
@@ -811,18 +813,18 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
             wev[week] = v
         worked_vars[e.id], nights_vars[e.id], weekend_vars[e.id] = wv, nv, wev
         if snapshot.objectives.split_weekends:
-            # Ein Dienst gehört zu dem Tag, an dem er beginnt; ein Freitagnachtdienst
-            # macht den Samstag nicht zum Wochenenddienst.
+            # Ein Dienst gehört zu jedem Tag, den er berührt: ein Freitagnachtdienst
+            # verbraucht den Samstagmorgen und greift damit ins Wochenende ein.
             for week in sorted({day - timedelta(days=day.weekday())
-                                for day in bv if day.weekday() >= 5}):
+                                for day in wv if day.weekday() >= 5}):
                 sat, sun = week + timedelta(days=5), week + timedelta(days=6)
                 # Ohne Arbeitsmöglichkeit an beiden Tagen gibt es nichts zu koppeln.
-                if sat not in bv or sun not in bv:
+                if sat not in wv or sun not in wv:
                     continue
                 if sat < snapshot.period_start or sun > snapshot.period_end:
                     continue
                 split = model.new_bool_var("split_weekend:" + e.id + ":" + str(week))
-                model.add_abs_equality(split, bv[sat] - bv[sun])
+                model.add_abs_equality(split, wv[sat] - wv[sun])
                 cost("split_weekends", split, snapshot.objectives.split_weekends)
         if snapshot.objectives.block_shape:
             max_blocklaenge = max(LAENGENKOSTEN)

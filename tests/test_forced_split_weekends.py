@@ -79,3 +79,22 @@ def test_plan_reports_every_counted_split_not_only_the_weighted_ones():
     assert result.validation.complete
     assert result.metrics["objective_contributions"].get("split_weekends", 0) == 0
     assert result.metrics["split_weekends_in_plan"] == 1
+
+
+def test_a_friday_night_reaching_into_saturday_counts_towards_the_floor():
+    # Ein Freitagnachtdienst belegt den Samstag mit; damit steht der Samstag
+    # rechnerisch bei zwei Besetzungen gegen eine am Sonntag.
+    snapshot = case(n=4, shifts=[
+        shift("fri_night", 9, 22, 8, "night"), shift("sat", 10, 8, 8),
+        shift("sun", 11, 8, 8),
+    ])
+    snapshot.objectives = Objectives(
+        split_weekends=1, hours=0, nights=0, weekends=0, holidays=0,
+        wishes=0, changes=0,
+    )
+
+    result = solve(snapshot, time_limit=5)
+
+    hint, = forced(result)
+    assert "am Samstag 2 und am Sonntag 1" in hint.message
+    assert result.metrics["split_weekends_forced_by_demand"] == 1

@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.21.0** benennt fehlende Dienstfreigaben, statt sie nur zu zählen. Bleibt eine Pflichtstelle unbesetzbar, nennt der Bericht je Person und Dienstart, wie viele Stellen ohne genau diese Freigabe offen bleiben – sortiert nach Wirkung, mit Sprung in die Personenbearbeitung und als CSV-Datei. An echten Quelldaten sind das 132 Zeilen für 54 Personen, die stärksten lösen je 31 Stellen auf einmal. Die Liste erteilt keine Freigabe und schlägt keine vor. Die [Releasehinweise](docs/release-0.21.0.md) zeigen auch, warum die Historie hier nichts mehr beisteuert.
+**Version 0.22.0** behandelt einen Dienst als Wochenenddienst, sobald er einen der beiden Tage **berührt**: Ein Freitagnachtdienst verbraucht den Samstagmorgen und greift damit ins Wochenende ein. Bisher zählte nur der Tag, an dem ein Dienst beginnt – die Optimierung war für genau das blind, was der Freizeitbericht anschließend maß. An echten Quelldaten sinken die geteilten Wochenenden damit von 7–9 auf 2–3, bei gleichzeitig mehr vollständig freien Wochenenden (69–74 statt 66–68); der von Hand erstellte Vergleichsplan liegt bei 5 und 71. Die [Releasehinweise](docs/release-0.22.0.md) nennen die Messreihe und die Auswirkung auf gespeicherte Projekte.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -63,7 +63,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.21.0-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.22.0-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 

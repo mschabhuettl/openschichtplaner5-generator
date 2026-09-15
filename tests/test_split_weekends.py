@@ -53,7 +53,7 @@ def test_split_weekends_high_weight_assigns_both_days_to_one_person():
     assert len({a.employee_id for a in result.assignments}) == 1
 
 
-def test_split_weekends_friday_night_does_not_require_sunday_assignment():
+def test_split_weekends_friday_night_pulls_the_sunday_to_the_same_person():
     snapshot = case(shifts=[
         shift("fri_night", 9, 22, 8, "night"), shift("sun", 11, 8, 8),
     ])
@@ -73,13 +73,14 @@ def test_split_weekends_friday_night_does_not_require_sunday_assignment():
 
     assert result.solver_status == "OPTIMAL"
     assert validate(snapshot, result.assignments).complete
-    # Freitag 22 bis Samstag 06 erzeugt keinen Samstagsdienst für e0.
+    # Freitag 22 bis Samstag 06 verbraucht e0 den Samstagmorgen. Damit das
+    # Wochenende nicht geteilt ist, übernimmt e0 auch den Sonntag.
     assert {(a.employee_id, a.demand_id) for a in result.assignments} == {
-        ("e0", "fri_night"), ("e1", "sun"),
+        ("e0", "fri_night"), ("e0", "sun"),
     }
 
 
-def test_split_weekends_saturday_night_requires_real_sunday_assignment():
+def test_split_weekends_saturday_night_already_reaches_into_sunday():
     snapshot = case(shifts=[
         shift("sat_night", 10, 22, 8, "night"), shift("sun", 11, 18, 4),
     ])
@@ -100,9 +101,10 @@ def test_split_weekends_saturday_night_requires_real_sunday_assignment():
 
     assert result.solver_status == "OPTIMAL"
     assert validate(snapshot, result.assignments).complete
-    # Das Dienstende am Sonntag ersetzt keinen Sonntagsbeginn; 12 h Ruhe bleiben.
+    # Samstag 22 bis Sonntag 06 berührt beide Tage; e0 braucht dafür keinen
+    # zweiten Dienst, und die Eingabe bleibt unverändert.
     assert {(a.employee_id, a.demand_id) for a in result.assignments} == {
-        ("e0", "sat_night"), ("e0", "sun"),
+        ("e0", "sat_night"), ("e1", "sun"),
     }
 
 
