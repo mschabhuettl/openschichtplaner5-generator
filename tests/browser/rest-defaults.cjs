@@ -10,7 +10,7 @@ module.exports=async function restDefaults({page,base}){
   const deviating={...structuredClone(standard),id:'sp5:abweichend',min_rest_minutes:480};
   snapshot.profiles=[standard,deviating];
   snapshot.employees.forEach((e,i)=>e.profile_ids=[i?'sp5:unconfirmed':'sp5:abweichend']);
-  invalidateResult();renderRules();navigate('rules');
+  invalidateResult();renderRules();navigate('rules');selectConfig('profile');
  });
  const bar=page.locator('#restDefaults');
  await bar.waitFor();

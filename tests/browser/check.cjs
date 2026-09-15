@@ -44,6 +44,9 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       const target=page.locator(selector);
       const panel=await target.evaluate(element=>element.closest('[data-panel]')?.dataset.panel);
       if(panel)await navigate(panel);
+      // Einstellungsbereiche zeigen einen Abschnitt zur Zeit; erst auswählen.
+      const area=await target.evaluate(element=>element.closest('[data-config]')?.dataset.config);
+      if(area)await page.evaluate(name=>selectConfig(name),area);
       // Open disclosure controls through their actual keyboard/click interface.
       for(let remaining=5;remaining>0;remaining--){
         const closed=target.locator('xpath=ancestor::details[not(@open)]').first();
@@ -116,6 +119,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       await uploadProject({name:'synthetic-rest-adoption.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(legacy))});
       const beforeProposal=await page.evaluate(()=>({dirty,version:changeVersion,snapshot:currentSnapshot()}));
       await navigate('rules');
+      await page.evaluate(()=>selectConfig('profile'));
       const profileCard=page.locator('#profiles [data-profile-id]').first();
       await profileCard.locator(':scope > summary').click();
       assert.deepEqual(await page.evaluate(()=>({dirty,version:changeVersion,snapshot:currentSnapshot()})),beforeProposal,'Opening the default proposal leaves the project unchanged');
@@ -245,6 +249,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await referenceBox.getByRole('button',{name:'Team & Freigaben prüfen',exact:true}).click();
     assert.equal(await page.locator('#teamTitle').evaluate(e=>document.activeElement===e),true);
     await navigate('rules');await referenceBox.getByRole('button',{name:'Bedarf prüfen',exact:true}).click();
+    await page.evaluate(()=>selectConfig('bedarf'));
     assert.equal(await page.locator('#demands').evaluate(e=>document.activeElement===e&&e.closest('details').open),true);
     assert.equal(await page.evaluate(()=>JSON.stringify(currentSnapshot())),untouched,'Overview and navigation never change rules, approvals or assignments');
     await referenceFilter.selectOption('matched');
@@ -265,6 +270,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       await referenceBox.getByRole('button',{name:'Bedarfe am Datum prüfen',exact:true}).click();
       assert.equal(await page.locator('[data-collection-search="demands"]').inputValue(),'2026-02-02');
       assert.equal(await page.locator('[data-collection-search="demands"]').evaluate(e=>document.activeElement===e),true);
+      await page.evaluate(()=>selectConfig('bedarf'));
       assert.match(await page.locator('#demands').innerText(),/02\.02\.2026/);
     }
     assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())})),unfilteredState,'Reference review shortcuts do not change project data, approvals or validation state');
@@ -278,6 +284,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.match(await referenceBox.innerText(),/im aktuellen Projekt nicht mehr vorhanden/);
     const staleBefore=await page.evaluate(()=>JSON.stringify(currentSnapshot()));
     await referenceBox.getByRole('button',{name:'Bedarfe am Datum prüfen',exact:true}).click();
+    await page.evaluate(()=>selectConfig('bedarf'));
     assert.equal(await page.locator('#demands tbody tr').count(),0,'Unknown reference date does not invent demand');
     assert.equal(await page.evaluate(()=>JSON.stringify(currentSnapshot())),staleBefore);
     delete referenceFixture.metadata.reference_plan;
@@ -326,6 +333,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     issuesFixture.unresolved[17]=issuesFixture.unresolved[999]='Gezielter synthetischer Hinweis';
     const issuesPath=path.join(state,'import-issues.json');fs.writeFileSync(issuesPath,JSON.stringify(issuesFixture));
     await uploadProject(issuesPath);await navigate('rules');
+    await page.evaluate(()=>selectConfig('offen'));
     const issuesBox=page.locator('#unresolved'),issueSearch=issuesBox.getByRole('searchbox',{name:'Offene Angaben suchen',exact:true});
     assert.equal(await issuesBox.locator('.card').count(),1001);
     assert.match(await issuesBox.innerText(),/1001 Offene Angaben/);
@@ -364,6 +372,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const choiceState=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot()),result:document.querySelector('#result').textContent,validation:document.querySelector('#validation').textContent}));
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});
+      await page.evaluate(()=>selectConfig('profile'));
       await page.locator('#profiles').getByRole('combobox',{name:'Bestätigtes Profil',exact:true}).selectOption('synthetic-confirmed-choice');
       await page.locator('#profiles').getByRole('combobox',{name:'Team',exact:true}).selectOption(choiceFixture.employees[0].team_ids[0]);
       await page.locator('#serviceGroups tbody tr').first().locator('select').selectOption('night');
@@ -435,6 +444,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     ];
     const namedIssuesPath=path.join(state,'named-import-issues.json');fs.writeFileSync(namedIssuesPath,JSON.stringify(namedIssues));
     await uploadProject(namedIssuesPath);await navigate('rules');
+    await page.evaluate(()=>selectConfig('offen'));
     const namedState=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())}));
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});
@@ -445,6 +455,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});
       await issueSearch.fill('Testperson 001');
+      await page.evaluate(()=>selectConfig('offen'));
       await page.waitForFunction(()=>document.querySelectorAll('#unresolved .card').length===1);
       assert.equal(await issuesBox.locator('.card').count(),1);
       await issuesBox.getByRole('button',{name:'Person prüfen',exact:true}).click();
@@ -455,6 +466,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert.equal(await page.locator('[data-collection-search="demands"]').inputValue(),'2026-02-02');
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
       await issueSearch.fill('');
+      await page.evaluate(()=>selectConfig('offen'));
       await page.waitForFunction(()=>document.querySelectorAll('#unresolved .card').length===3);
     }
     assert.match(await issuesBox.locator('.card').nth(1).innerText(),/Person ist im aktuellen Projekt nicht vorhanden/);
@@ -531,9 +543,11 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     }
     await page.locator('#automaticReadinessDetails').getByRole('button',{name:'Regelprofile prüfen',exact:true}).click();
+    await page.evaluate(()=>selectConfig('profile'));
     assert.equal(await page.locator('#profiles h3').first().evaluate(e=>document.activeElement===e),true);
     await navigate('calculate');await category.selectOption('unresolved');
     await page.locator('#automaticReadinessDetails').getByRole('button',{name:'Offene Angaben prüfen',exact:true}).click();
+    await page.evaluate(()=>selectConfig('offen'));
     assert.equal(await page.locator('#unresolved').evaluate(e=>document.activeElement===e&&e.offsetParent!==null),true);
     await navigate('calculate');await category.selectOption('all');
     assert.deepEqual(await page.evaluate(()=>({snapshot:JSON.stringify(currentSnapshot()),version:changeVersion,dirty,readiness:currentReadiness()})),beforeCategory);
@@ -851,6 +865,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(original.id,newJob.snapshot_id);
     // Every profile field is editable without JSON, with persisted nullable caps.
     await navigate('rules');
+    await page.evaluate(()=>selectConfig('profile'));
     const profile = page.locator('#profiles details').first();
     await profile.locator('summary').click();
     const expected = {
@@ -1014,6 +1029,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const shortageDemand=shortageReport.diagnostics.find(d=>d.code==='candidate_shortage').demand_id;
     await shortageItem.getByRole('button',{name:'Bedarf öffnen'}).click();
     assert(await page.locator('[data-panel="rules"]').isVisible());
+    await page.evaluate(()=>selectConfig('bedarf'));
     assert.equal(await page.locator('#demands .collection-toolbar input').inputValue(),shortageDemand);
     await navigate('calculate');
     await page.uncheck('#partial');

@@ -43,8 +43,21 @@ module.exports=async function guidance({page,base}){
  assert(await page.locator('#weights').isVisible());
 
  // Von den einzelnen Bedarfen zur Tabelle über alle Tage.
+ await page.evaluate(()=>selectConfig('bedarf'));
  await page.getByRole('button',{name:'Zur Bedarfstabelle',exact:true}).click();
  await page.locator('[data-panel="demand"]').waitFor({state:'visible'});
+
+ // Einstellungen: ein Bereich zur Zeit, über eine Unternavigation erreichbar.
+ await page.locator('.main-nav [data-navigate="rules"]').click();
+ await page.locator('[data-panel="rules"]').waitFor({state:'visible'});
+ const bereiche=page.locator('#rulesNav button');
+ assert.equal(await bereiche.count(),6,'Sechs Einstellungsbereiche');
+ for(const [name,sichtbar] of [['Regelprofile','#profiles'],['Ziele','#weights'],['Bedarf','#demands']]){
+  await bereiche.filter({hasText:name}).click();
+  assert.equal(await page.locator(sichtbar).isVisible(),true,`${name} ist sichtbar`);
+  assert.equal(await page.locator('#rulesNav button.active').innerText(),name);
+  assert.equal(await page.locator('[data-config]:not([hidden])').count(),1,'Genau ein Bereich ist offen');
+ }
 
  // Ohne offene Vorschläge wird kein Übernehmen angeboten.
  await page.locator('.main-nav [data-navigate="team"]').click();

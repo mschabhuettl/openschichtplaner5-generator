@@ -590,3 +590,29 @@ tr.excluded td:first-child::after { content: " · ausgenommen"; font-size: 11px;
   .flow-cell.arriving, .flow-cell.leaving { animation: none; }
   .flow-cell { transition: none; }
 }
+
+/* ----------------------------------------------- Konfigurationsbereiche
+
+   Statt gestapelter Klappfächer eine Unternavigation: ein Bereich zur Zeit,
+   überall gleich erreichbar. Der Klappmechanismus bleibt im Markup, wird aber
+   nicht mehr bedient — die Auswahl übernimmt die Steuerung.
+   ------------------------------------------------------------------ */
+
+.config-layout { display: grid; grid-template-columns: 186px minmax(0, 1fr); gap: 22px; align-items: start; }
+.sub-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 84px; }
+.sub-nav button {
+  justify-content: flex-start; text-align: left; width: 100%;
+  border: 0; background: transparent; color: var(--ink-2); font-size: 13px; font-weight: 500;
+  padding: 8px 11px; min-height: 34px; border-radius: var(--r-sm);
+}
+.sub-nav button:hover { background: var(--surface-2); }
+.sub-nav button.active { background: var(--accent-bg); color: var(--accent-ink); font-weight: 650; }
+.config-body { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.config-body > details > summary { cursor: default; }
+.config-body > details > summary::after { display: none; }
+
+@media (max-width: 900px) {
+  .config-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .sub-nav { flex-direction: row; overflow-x: auto; position: static; padding-bottom: 4px; }
+  .sub-nav button { width: auto; white-space: nowrap; }
+}

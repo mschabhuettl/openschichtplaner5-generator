@@ -14,6 +14,7 @@ module.exports=async function importIssues({page,base}){
   ];
   invalidateResult();renderRules();navigate('rules');
  });
+ await page.evaluate(()=>selectConfig('offen'));
  const bar=page.locator('#unresolvedBulk');
  await bar.waitFor();
  assert.equal(await page.locator('#unresolvedBulkTitle').textContent(),'54 offene Importangaben');

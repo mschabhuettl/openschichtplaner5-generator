@@ -53,7 +53,17 @@ function collection(parent,key,items,{label='Einträge',size=30,search=null,redr
  content.dataset.query=state.query;requestAnimationFrame(()=>{if(content.isConnected)content.scrollTo(...scroll);});
  return {items,content,offset:0,total:items.length};
 }
-function detailsVisible(id){const details=$(id)?.closest('details');return !details||details.open;}
+function jumpTo(id){
+ const ziel=$(id);if(!ziel)return null;
+ const bereich=ziel.closest('[data-config]');if(bereich)selectConfig(bereich.dataset.config);
+ const klappe=ziel.closest('details');if(klappe)klappe.open=true;
+ ziel.tabIndex=-1;ziel.focus();ziel.scrollIntoView({block:'start'});
+ return ziel;
+}
+function detailsVisible(id){
+ const bereich=$(id)?.closest('[data-config]');if(bereich&&bereich.hidden)return false;
+ const details=$(id)?.closest('details');return !details||details.open;
+}
 function renderActivePanel(force=false){
  if(!snapshot)return;
  if(!force&&renderedPanels.get(activePanel)===changeVersion)return;
@@ -531,7 +541,7 @@ function renderReferenceImport(){
  const list=el('ul',undefined,box);for(const [key,count] of Object.entries(counts))if(key!=='unknown'||count)el('li',`${labels[key]}: ${count}`,list);
  el('p','Keine Zuordnung: Datum, Dienst und Bedarf prüfen; zusätzlich Team, Arbeitsplatz und Maximum 0 beachten. Mehrdeutig: mehrere passende Bedarfsgruppen fachlich unterscheiden. Es wird kein Bedarf ergänzt und keine Freigabe erteilt.',box);
  const actions=el('div',undefined,box);actions.className='actions';
- button(actions,'Bedarf prüfen',()=>{const target=$('demands');target.closest('details').open=true;renderDemands();target.tabIndex=-1;target.focus();target.scrollIntoView({block:'start'});});
+ button(actions,'Bedarf prüfen',()=>{renderDemands();jumpTo('demands');});
  button(actions,'Team & Freigaben prüfen',()=>window.PlannerUI.navigate('team',{focus:true,scroll:true}));
  el('p','Danach Regelprofile und offene Importangaben fachlich bearbeiten. Unter Planen zeigt die automatische Vorprüfung den aktuellen Eingabestand; erst die Berechnung und Ergebnisprüfung belegen einen gültigen Plan.',box).className='helper-text';
  if(!rows.length)return;
@@ -832,6 +842,27 @@ function renderLiveProgress(steps,elapsed,limit){
  const letzteBelegung=[...steps].reverse().find(step=>Array.isArray(step.grid));
  renderFlowBoard(letzteBelegung?letzteBelegung.grid:null);
 }
+let configPanel='dienste';
+function selectConfig(name){
+ const bereiche=[...document.querySelectorAll('[data-config]')];
+ if(!bereiche.length)return;
+ if(!bereiche.some(bereich=>bereich.dataset.config===name))name=bereiche[0].dataset.config;
+ const gewechselt=configPanel!==name;
+ configPanel=name;
+ for(const bereich of bereiche)bereich.hidden=bereich.dataset.config!==name;
+ // Bisher zeichnete das Aufklappen; jetzt zeichnet der Wechsel. Eine erneute
+ // Auswahl desselben Bereichs zeichnet nicht und verwirft damit keine Eingabe.
+ if(gewechselt&&snapshot)for(const zeichne of ({dienste:[renderShifts,renderPositions],bedarf:[renderDemands],
+  profile:[renderProfiles],offen:[renderUnresolved],daten:[syncJson]}[name]??[]))zeichne();
+ for(const knopf of document.querySelectorAll('[data-config-to]')){
+  const gewählt=knopf.dataset.configTo===name;
+  knopf.classList.toggle('active',gewählt);
+  if(gewählt)knopf.setAttribute('aria-current','true');else knopf.removeAttribute('aria-current');
+ }
+}
+for(const knopf of document.querySelectorAll('[data-config-to]'))
+ knopf.addEventListener('click',()=>selectConfig(knopf.dataset.configTo));
+selectConfig(configPanel);
 const diagnosticTitles={excluded:'Von der Planung ausgenommen',candidate_shortage:'Zu wenige geeignete Personen',shared_candidate_shortage:'Gemeinsamer Kandidatenengpass',vacancy:'Offene Stellen',maximum:'Höchstbesetzung',fixed:'Fixierte Einteilungen',duplicate:'Doppelte Einteilungen',reference:'Ungültige Verweise',context_assignment:'Planungszeitraum',interval_mismatch:'Dienstzeiten',unresolved:'Offene Angaben',profile:'Regelprofile',qualification:'Qualifikationen',approval:'Freigaben',split_weekend_approval:'Geteiltes Wochenende ohne Freigabe',split_weekend_demand:'Geteiltes Wochenende durch den Bedarf',rest:'Ruhezeiten',overlap:'Überlappende Dienste',interleaving:'Geteilte Dienste',availability:'Verfügbarkeit',kind:'Dienstart',boundary_kind:'Tag-/Nachtart der Randarbeit',boundary_period:'Randarbeit im Planungszeitraum',boundary_duplicate:'Doppelt erfasste Randarbeit',weekend:'Wochenenden',holiday:'Feiertage',employment:'Beschäftigungszeitraum',team:'Teamzuordnung',restriction:'Dienstsperren',absence:'Abwesenheiten',personal_work:'Persönliche Arbeit ohne Zeitangabe',night_block:'Ruhe nach Nachtblock',daily_limit:'Tägliche Höchstzeit',weekly_limit:'Wöchentliche Höchstzeit',period_limit:'Höchstzeit im Planungszeitraum',target_unreachable:'Periodensoll im Zuschnitt nicht erreichbar',work_days:'Höchstens erlaubte Arbeitstage',nights:'Höchstens erlaubte Nächte',weekends:'Höchstens erlaubte Wochenenden',consecutive_work:'Aufeinanderfolgende Arbeitstage',consecutive_nights:'Aufeinanderfolgende Nächte',weekly_rest:'Zusammenhängende Wochenruhe',context:'Angrenzende Dienste und Zeiträume',mentoring:'Erforderliche Betreuung',size_limit:'Planungsgröße',numeric_range:'Zahlenbereich',date_range:'Datumsbereich',created_at:'Datenstand',empty_id:'Fehlende Kennungen',duplicate_id:'Doppelte Kennungen',interval:'Dienstzeiten',demand:'Besetzungsbedarf',validity:'Gültigkeitszeitraum',assignment_reference:'Einteilungen',input:'Eingabedaten'};
 const diagnosticActions={
  boundary_kind:'Unter Regeln und Bedarf gesammelt einstellen: Wiederkehrende Dienste gesammelt einstellen. Je Dienst und Zeitmuster einmal Tag oder Nacht.',
@@ -875,6 +906,7 @@ function rawDiagnosticMessage(d){
 }
 function openRulesReview(id){
  navigate('rules');const target=$(id);if(!target)return;
+ const bereich=target.closest('[data-config]');if(bereich)selectConfig(bereich.dataset.config);
  const disclosure=target.closest('details');if(disclosure)disclosure.open=true;
  const heading=target.querySelector('h3')??target;heading.tabIndex=-1;heading.focus();target.scrollIntoView({block:'start'});
 }

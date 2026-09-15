@@ -164,6 +164,8 @@
   byId('limit').addEventListener('input',()=>{byId('limit').dataset.touched='1';});
   byId('toWeights').addEventListener('click',()=>{
     navigate('rules',{focus:true,scroll:true});
+    // Die Einstellungsbereiche zeigen einen Abschnitt zur Zeit.
+    if(typeof selectConfig==='function')selectConfig('ziele');
     const section=byId('weightsSection');section.open=true;
     section.scrollIntoView({block:'center',behavior:'smooth'});
   });
