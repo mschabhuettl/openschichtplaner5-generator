@@ -239,7 +239,8 @@ def create_project(data: ProjectCreateRequest) -> Snapshot:
         shifts=shifts, demands=demands, profiles=[profile],
         objectives=Objectives(workday_transitions=400, isolated_days=3000,
                               split_weekends=10000, block_shape=15,
-                              nights=30, weekends=30),
+                              nights=30, weekends=30,
+                              hours_fairness=0),
         metadata={
             'project_name': data.project_name,
             'created_with': 'project-setup',

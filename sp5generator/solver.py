@@ -38,6 +38,13 @@ from .validator import PreparedValidator, validate
 # Auftragsprozess rechnet parallel und wiederholt bei einem Absturz einspurig.
 SEARCH_WORKERS = 1
 
+# Erfüllungsgrad in Millionsteln des persönlichen Solls: so lässt sich der
+# Abstand zwischen Personen ganzzahlig und ohne Division im Modell messen.
+HOURS_SCALE = 1_000_000
+# Oberhalb von 150 Prozent des eigenen Solls zieht eine Person den
+# gemeinsamen Maßstab nicht weiter nach oben.
+HOURS_CAP = HOURS_SCALE * 3 // 2
+
 
 def parallel_workers():
     """Suchprozesse für eine Auftragsrechnung.
@@ -785,6 +792,13 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
     worked_vars = {}
     nights_vars = {}
     weekend_vars = {}
+    # Ein gemeinsamer Erfüllungsgrad, den die Suche frei wählt: bestraft wird
+    # der Abstand jeder Person zu ihm, nicht die Summe der Fehlstunden. Die
+    # Summe ist bei feststehendem Bedarf konstant und lenkt deshalb nichts.
+    fairness_level = (
+        model.new_int_var(0, HOURS_SCALE, "hours_level")
+        if snapshot.objectives.hours_fairness else None
+    )
     for e in snapshot.employees:
         if monotonic() >= deadline:
             return timed_out()
@@ -1144,6 +1158,31 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
             sum(paid) + e.balance_minutes + e.credit_minutes - optimization_target,
         )
         cost("hours", deviation, snapshot.objectives.hours)
+        if (
+            fairness_level is not None
+            and optimization_target > 0
+            and candidate_stats[e.id]["eligible_demands"]
+        ):
+            # Wer nirgends einsetzbar ist, bliebe sonst der Maßstab für alle.
+            faktor = max(1, round(HOURS_SCALE / optimization_target))
+            grenze = faktor * upper
+            erfuellt = model.new_int_var(-grenze, grenze, "fill:" + e.id)
+            model.add(erfuellt == faktor * (
+                sum(paid) + e.balance_minutes + e.credit_minutes
+            ))
+            # Ein einzelnes verzerrtes Periodensoll darf nicht den Maßstab
+            # für alle setzen: oberhalb des Deckels zählt der Abstand nicht
+            # weiter. Ein zu hoher Einsatz bleibt über das Stundenziel bewertet.
+            gedeckelt = model.new_int_var(-grenze, HOURS_CAP, "fill_cap:" + e.id)
+            model.add_min_equality(gedeckelt, [erfuellt, HOURS_CAP])
+            abstand = model.new_int_var(0, grenze + HOURS_SCALE, "gap:" + e.id)
+            model.add_abs_equality(abstand, gedeckelt - fairness_level)
+            # In Promille rechnen: die Größenordnung bleibt vergleichbar mit
+            # den übrigen Zielen, die Genauigkeit bleibt erhalten.
+            promille = model.new_int_var(0, (grenze + HOURS_SCALE) // 1000 + 1,
+                                         "gap_promille:" + e.id)
+            model.add_division_equality(promille, abstand, 1000)
+            cost("hours_fairness", promille, snapshot.objectives.hours_fairness)
         if e.contractual_weekly_minutes is not None and snapshot.objectives.hours:
             # Soft calendar-week workload, never an invented hard cap. Full
             # allowance at edges: do not infer weekdays or divide monthly targets.

@@ -72,38 +72,318 @@
     <main id="mainContent" tabindex="-1">
       <div id="notice" role="status" aria-live="polite" class="notice">Bereit für Ihren nächsten Dienstplan.</div>
       <section class="panel projects-panel" data-panel="projects" aria-labelledby="projectsTitle">
-        <div class="page-heading"><div><div class="eyebrow">IHR ARBEITSBEREICH</div><h1 id="projectsTitle">Planungsprojekte</h1><p>Projekte verwalten, Teams vorbereiten und verlässliche Dienstpläne erstellen.</p></div><div class="project-entry-actions"><button id="openImport" type="button"><svg class="icon"><use href="#icon-upload"/></svg>SP5 importieren</button><button id="newProject" class="primary" type="button"><svg class="icon"><use href="#icon-plus"/></svg>Neues Projekt</button></div></div>
-        <div class="project-overview" aria-label="Projektübersicht"><div><span class="metric-label">Gespeicherte Projekte</span><strong id="projectTotal">—</strong></div><div><span class="metric-label">Berechnungen</span><strong id="jobTotal">—</strong></div><div><span class="metric-label">Aktuell in Arbeit</span><strong id="activeJobTotal">—</strong></div><div class="overview-hint"><svg class="icon"><use href="#icon-folder"/></svg><p>Projekte und Ergebnisse bleiben in Ihrem lokalen Arbeitsbereich gespeichert.</p></div></div>
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">IHR ARBEITSBEREICH
+            </div>
+            <h1 id="projectsTitle">Planungsprojekte
+            </h1>
+            <p>Projekte verwalten, Teams vorbereiten und verlässliche Dienstpläne erstellen.
+            </p>
+          </div>
+          <div class="project-entry-actions">
+            <button id="openImport" type="button"><svg class="icon"><use href="#icon-upload"/></svg>SP5 importieren
+            </button>
+            <button id="newProject" class="primary" type="button"><svg class="icon"><use href="#icon-plus"/></svg>Neues Projekt
+            </button>
+          </div>
+        </div>
+        <div class="project-overview" aria-label="Projektübersicht">
+          <div><span class="metric-label">Gespeicherte Projekte</span><strong id="projectTotal">—</strong>
+          </div>
+          <div><span class="metric-label">Berechnungen</span><strong id="jobTotal">—</strong>
+          </div>
+          <div><span class="metric-label">Aktuell in Arbeit</span><strong id="activeJobTotal">—</strong>
+          </div>
+          <div class="overview-hint"><svg class="icon"><use href="#icon-folder"/></svg>
+            <p>Projekte und Ergebnisse bleiben in Ihrem lokalen Arbeitsbereich gespeichert.
+            </p>
+          </div>
+        </div>
         <div class="section-heading"><h2>Meine Projekte <span id="projectCount" class="count-badge">0</span></h2><label class="search-field"><span class="sr-only">Projekte durchsuchen</span><input id="projectSearch" type="search" placeholder="Projekt suchen …"></label></div>
         <div id="projectCards" class="project-grid"><div class="empty-state compact"><div class="empty-icon"><svg class="icon"><use href="#icon-folder"/></svg></div><h3>Projekte werden geladen</h3><p>Ihr Arbeitsbereich ist gleich bereit.</p></div></div>
-        <nav id="projectPagination" class="pagination project-pagination" aria-label="Projektseiten" hidden><span id="projectPageStatus" role="status" aria-live="polite"></span><div class="pagination-buttons"><button id="projectPagePrevious" type="button" aria-label="Vorherige Projektseite">Zurück</button><button id="projectPageNext" type="button" aria-label="Nächste Projektseite">Weiter</button></div></nav>
+        <nav id="projectPagination" class="pagination project-pagination" aria-label="Projektseiten" hidden><span id="projectPageStatus" role="status" aria-live="polite"></span>
+          <div class="pagination-buttons">
+            <button id="projectPagePrevious" type="button" aria-label="Vorherige Projektseite">Zurück
+            </button>
+            <button id="projectPageNext" type="button" aria-label="Nächste Projektseite">Weiter
+            </button>
+          </div>
+        </nav>
         <div class="section-heading history-heading"><div><h2>Letzte Berechnungen</h2><p>Ergebnisse öffnen oder eine laufende Berechnung weiterverfolgen.</p></div><button id="refreshJobs" type="button" class="quiet">Aktualisieren</button></div>
         <div id="jobCards" class="job-list"><div class="list-empty">Berechnungen werden geladen …</div></div>
-        <details class="surface import-panel" id="importDetails"><summary><span class="summary-icon"><svg class="icon"><use href="#icon-upload"/></svg></span><span><strong>Vorhandene Daten importieren</strong><small>SP5-Verzeichnis, konfigurierte API oder Projektdatei</small></span></summary><div class="details-content"><p class="helper-text">Ein SP5-Import liest Ihre Quelle. Die Dienstplanung wird anschließend als eigenes Projekt bearbeitet.</p><section class="import-stage"><h3><span>1</span>Quelle &amp; Teams</h3><p>Nur die ausgewählten Teams werden in das neue Projekt eingelesen.</p><div class="grid import-grid"><label>Datenquelle<select id="sourceType"><option value="directory">Lokales SP5-Verzeichnis</option><option value="api">Konfigurierte SP5-API</option></select></label><label id="directoryLabel">Verzeichnispfad auf Server/Container<input id="directory" placeholder="/source"></label><button id="inspect" type="button">Teams laden</button><fieldset class="team-picker"><legend>Teams auswählen</legend><div id="teamTree"><p>Zuerst Teams laden.</p></div><small id="teamCount">Keine Teams ausgewählt</small></fieldset></div></section><section class="import-stage"><h3><span>2</span>Zeitraum &amp; Vergleich</h3><p>Ist und Soll sind unterschiedliche Vergleichsgrundlagen. Die Auswahl bestätigt keine Freigaben.</p><div class="grid import-grid"><label>Zeitzone (IANA)<input id="timezone" value="UTC"></label><label>Planung ab<input id="start" type="date" value="2026-01-05"></label><label>Planung bis<input id="end" type="date" value="2026-01-18"></label><label>Vergleichsdienste im Planungszeitraum<select id="referencePlan" aria-describedby="referencePlanHelp"><option value="ist">Istplan</option><option value="soll">Sollplan</option></select></label><label>Bestehender Plan im Planungszeitraum<select id="existingPlanMode" aria-describedby="referencePlanHelp"><option value="reference">Als Vergleich verwenden · neu planen</option><option value="fixed">Bestehende Einteilungen fixieren</option></select><small id="referencePlanHelp">Die Auswahl betrifft normale Vergleichsdienste im Planungszeitraum. Abwesenheiten, Sonderdienste und Randkontext bleiben aus dem Istplan. Die historische Planbasis betrifft frühere Einsätze. Zuordnen ist keine Dienstfreigabe.</small></label><label>Besetzungsbedarf<select id="demandSource" aria-describedby="demandSourceHelp"><option value="requirements" selected>Aus der Bedarfstabelle der Quelle</option><option value="observed">Aus dem beobachteten Plan ableiten</option></select><small id="demandSourceHelp">Der abgeleitete Bedarf stammt nicht aus der Quelle, sondern aus dem beobachteten Plan des Zeitraums; die beobachtete Besetzung gilt je Dienst, Arbeitsplatz und Tag als Unter- und Obergrenze.</small></label></div></section><details class="import-options"><summary>Optionale Einrichtung &amp; Wiederverwendung<span>Historie, Zeitregel und Folgezeitraum</span></summary><div class="import-options-content"><fieldset id="followPeriodPreparation"><legend>Folgezeitraum vorbereiten</legend><p id="followPeriodBase">Zuerst das bisherige Projekt öffnen.</p><label>Länge des nächsten Zeitraums<select id="followPeriodMode"><option value="same">Gleiche Anzahl Kalendertage</option><option value="month">Bis zum Monatsende</option></select></label><p id="followPeriodPreview" role="status" aria-live="polite"></p><button id="prepareNextPeriod" type="button" disabled>Planungsdaten vorbelegen</button><p class="helper-text">Beginn direkt nach dem geöffneten Projekt. Übernimmt nur Planungsdaten, Zeitzone und die drei vorausgehenden Monate als Historienvorschlag. Quelle und Teams prüfen; noch kein Import. Einstellungenübernahme und Freigaben bleiben ausdrückliche Entscheidungen. Gültigkeiten werden nicht verlängert.</p></fieldset><section class="import-stage"><h3>Historische Vorschläge</h3><div class="grid import-grid"><label>Historische Planbasis<select id="historyPlan"><option value="ist">Istplan</option><option value="soll">Sollplan</option><option value="both">Ist- und Sollplan</option></select></label><label><input id="autoHistory" type="checkbox">Wiederholt beobachtete Dienste automatisch freigeben (alle Arbeitsplätze, nur Planungszeitraum)</label><label>Mindestanzahl bisheriger Einsatztage pro Dienst<input id="historyMinDays" type="number" min="2" max="1097" value="3"></label><label>Historie ab<input id="historyStart" type="date"></label><label>Historie bis<input id="historyEnd" type="date"></label></div></section><fieldset class="setup-options"><legend>Einrichtungsassistent</legend><label><input id="reuseSetup" type="checkbox">Einstellungen aus dem aktuell geöffneten Projekt übernehmen (identische SP5-Datenquelle)</label><small>Vorheriges Projekt zuerst öffnen. Nur übereinstimmende IDs; Gültigkeiten werden nicht verlängert. Bei temporärem Betrieb zuvor die Projektsicherung öffnen.</small><label><input id="autoKind" type="checkbox" aria-describedby="autoKindHelp">Tag/Nacht beim Import nach Zeitregel zuordnen</label><small id="autoKindHelp">Ohne diese Zuordnung muss später jedes Dienst- und Randzeitmuster von Hand als Tag oder Nacht bestätigt werden, bevor gerechnet werden kann. Das geht gesammelt unter Regeln und Bedarf, ist aber ein zusätzlicher Schritt.</small><label>Nacht ab<input id="setupNightStart" type="time" value="22:00"></label><label>Nacht bis<input id="setupNightEnd" type="time" value="06:00"></label><label>Mindestens Nachtminuten<input id="setupNightMin" type="number" min="1" max="1440" value="180"></label><small>Bearbeitbare Vorschlagsregel, keine gesetzliche Vorgabe. Dienstfreigaben aus Historie oben zusätzlich einschalten.</small></fieldset></div></details><div class="actions"><button id="import" class="primary" type="button">Daten importieren</button><button id="demo" type="button">Demoprojekt ausprobieren</button><label class="file-upload">Projektdatei öffnen<input type="file" id="file" accept=".json"></label></div><p class="helper-text small-text">Der Verzeichnispfad bezieht sich auf den Server; in Docker kann die Quelle z. B. unter /source eingebunden werden. API-Adresse und Zugang werden auf dem Server konfiguriert.</p></div></details>
-        <details class="legacy-access"><summary>Gespeicherten Stand direkt auswählen</summary><div class="actions"><label>Projekt<select id="saved" aria-label="Gespeicherter Stand"></select></label><button id="restore" type="button">Stand öffnen</button><label>Berechnung<select id="savedJobs"><option value="">Keine Berechnungen vorhanden</option></select></label><button id="restoreJob" type="button" disabled>Berechnung öffnen</button></div></details>
+        <details class="surface import-panel" id="importDetails">
+          <summary><span class="summary-icon"><svg class="icon"><use href="#icon-upload"/></svg></span><span><strong>Vorhandene Daten importieren</strong>
+            <small>SP5-Verzeichnis, konfigurierte API oder Projektdatei
+            </small></span>
+          </summary>
+          <div class="details-content">
+            <p class="helper-text">Ein SP5-Import liest Ihre Quelle. Die Dienstplanung wird anschließend als eigenes Projekt bearbeitet.
+            </p>
+            <section class="import-stage">
+              <h3><span>1</span>Quelle &amp; Teams
+              </h3>
+              <p>Nur die ausgewählten Teams werden in das neue Projekt eingelesen.
+              </p>
+              <div class="grid import-grid">
+                <label>Datenquelle<select id="sourceType"><option value="directory">Lokales SP5-Verzeichnis</option><option value="api">Konfigurierte SP5-API</option></select>
+                </label>
+                <label id="directoryLabel">Verzeichnispfad auf Server/Container<input id="directory" placeholder="/source">
+                </label>
+                <button id="inspect" type="button">Teams laden
+                </button>
+                <fieldset class="team-picker">
+                  <legend>Teams auswählen
+                  </legend>
+                  <div id="teamTree">
+                    <p>Zuerst Teams laden.
+                    </p>
+                  </div>
+                  <small id="teamCount">Keine Teams ausgewählt
+                  </small>
+                </fieldset>
+              </div>
+            </section>
+            <section class="import-stage">
+              <h3><span>2</span>Zeitraum &amp; Vergleich
+              </h3>
+              <p>Ist und Soll sind unterschiedliche Vergleichsgrundlagen. Die Auswahl bestätigt keine Freigaben.
+              </p>
+              <div class="grid import-grid">
+                <label>Zeitzone (IANA)<input id="timezone" value="UTC">
+                </label>
+                <label>Planung ab<input id="start" type="date" value="2026-01-05">
+                </label>
+                <label>Planung bis<input id="end" type="date" value="2026-01-18">
+                </label>
+                <label>Vergleichsdienste im Planungszeitraum<select id="referencePlan" aria-describedby="referencePlanHelp"><option value="ist">Istplan</option><option value="soll">Sollplan</option></select>
+                </label>
+                <label>Bestehender Plan im Planungszeitraum<select id="existingPlanMode" aria-describedby="referencePlanHelp"><option value="reference">Als Vergleich verwenden · neu planen</option><option value="fixed">Bestehende Einteilungen fixieren</option></select>
+                  <small id="referencePlanHelp">Die Auswahl betrifft normale Vergleichsdienste im Planungszeitraum. Abwesenheiten, Sonderdienste und Randkontext bleiben aus dem Istplan. Die historische Planbasis betrifft frühere Einsätze. Zuordnen ist keine Dienstfreigabe.
+                  </small>
+                </label>
+                <label>Besetzungsbedarf<select id="demandSource" aria-describedby="demandSourceHelp"><option value="requirements" selected>Aus der Bedarfstabelle der Quelle</option><option value="observed">Aus dem beobachteten Plan ableiten</option></select>
+                  <small id="demandSourceHelp">Der abgeleitete Bedarf stammt nicht aus der Quelle, sondern aus dem beobachteten Plan des Zeitraums; die beobachtete Besetzung gilt je Dienst, Arbeitsplatz und Tag als Unter- und Obergrenze.
+                  </small>
+                </label>
+              </div>
+            </section>
+            <details class="import-options">
+              <summary>Optionale Einrichtung &amp; Wiederverwendung<span>Historie, Zeitregel und Folgezeitraum</span>
+              </summary>
+              <div class="import-options-content">
+                <fieldset id="followPeriodPreparation">
+                  <legend>Folgezeitraum vorbereiten
+                  </legend>
+                  <p id="followPeriodBase">Zuerst das bisherige Projekt öffnen.
+                  </p>
+                  <label>Länge des nächsten Zeitraums<select id="followPeriodMode"><option value="same">Gleiche Anzahl Kalendertage</option><option value="month">Bis zum Monatsende</option></select>
+                  </label>
+                  <p id="followPeriodPreview" role="status" aria-live="polite">
+                  </p>
+                  <button id="prepareNextPeriod" type="button" disabled>Planungsdaten vorbelegen
+                  </button>
+                  <p class="helper-text">Beginn direkt nach dem geöffneten Projekt. Übernimmt nur Planungsdaten, Zeitzone und die drei vorausgehenden Monate als Historienvorschlag. Quelle und Teams prüfen; noch kein Import. Einstellungenübernahme und Freigaben bleiben ausdrückliche Entscheidungen. Gültigkeiten werden nicht verlängert.
+                  </p>
+                </fieldset>
+                <section class="import-stage">
+                  <h3>Historische Vorschläge
+                  </h3>
+                  <div class="grid import-grid">
+                    <label>Historische Planbasis<select id="historyPlan"><option value="ist">Istplan</option><option value="soll">Sollplan</option><option value="both">Ist- und Sollplan</option></select>
+                    </label>
+                    <label><input id="autoHistory" type="checkbox">Wiederholt beobachtete Dienste automatisch freigeben (alle Arbeitsplätze, nur Planungszeitraum)
+                    </label>
+                    <label>Mindestanzahl bisheriger Einsatztage pro Dienst<input id="historyMinDays" type="number" min="2" max="1097" value="3">
+                    </label>
+                    <label>Historie ab<input id="historyStart" type="date">
+                    </label>
+                    <label>Historie bis<input id="historyEnd" type="date">
+                    </label>
+                  </div>
+                </section>
+                <fieldset class="setup-options">
+                  <legend>Einrichtungsassistent
+                  </legend>
+                  <label><input id="reuseSetup" type="checkbox">Einstellungen aus dem aktuell geöffneten Projekt übernehmen (identische SP5-Datenquelle)
+                  </label>
+                  <small>Vorheriges Projekt zuerst öffnen. Nur übereinstimmende IDs; Gültigkeiten werden nicht verlängert. Bei temporärem Betrieb zuvor die Projektsicherung öffnen.
+                  </small>
+                  <label><input id="autoKind" type="checkbox" aria-describedby="autoKindHelp">Tag/Nacht beim Import nach Zeitregel zuordnen
+                  </label>
+                  <small id="autoKindHelp">Ohne diese Zuordnung muss später jedes Dienst- und Randzeitmuster von Hand als Tag oder Nacht bestätigt werden, bevor gerechnet werden kann. Das geht gesammelt unter Regeln und Bedarf, ist aber ein zusätzlicher Schritt.
+                  </small>
+                  <label>Nacht ab<input id="setupNightStart" type="time" value="22:00">
+                  </label>
+                  <label>Nacht bis<input id="setupNightEnd" type="time" value="06:00">
+                  </label>
+                  <label>Mindestens Nachtminuten<input id="setupNightMin" type="number" min="1" max="1440" value="180">
+                  </label>
+                  <small>Bearbeitbare Vorschlagsregel, keine gesetzliche Vorgabe. Dienstfreigaben aus Historie oben zusätzlich einschalten.
+                  </small>
+                </fieldset>
+              </div>
+            </details>
+            <div class="actions">
+              <button id="import" class="primary" type="button">Daten importieren
+              </button>
+              <button id="demo" type="button">Demoprojekt ausprobieren
+              </button>
+              <label class="file-upload">Projektdatei öffnen<input type="file" id="file" accept=".json">
+              </label>
+            </div>
+            <p class="helper-text small-text">Der Verzeichnispfad bezieht sich auf den Server; in Docker kann die Quelle z. B. unter /source eingebunden werden. API-Adresse und Zugang werden auf dem Server konfiguriert.
+            </p>
+          </div>
+        </details>
+        <details class="legacy-access">
+          <summary>Gespeicherten Stand direkt auswählen
+          </summary>
+          <div class="actions">
+            <label>Projekt<select id="saved" aria-label="Gespeicherter Stand"></select>
+            </label>
+            <button id="restore" type="button">Stand öffnen
+            </button>
+            <label>Berechnung<select id="savedJobs"><option value="">Keine Berechnungen vorhanden</option></select>
+            </label>
+            <button id="restoreJob" type="button" disabled>Berechnung öffnen
+            </button>
+          </div>
+        </details>
       </section>
       <div id="workspace" hidden>
         <section class="panel" data-panel="team" hidden aria-labelledby="teamTitle">
           <div class="section-heading page-section-heading"><div><h2 id="teamTitle">Team &amp; Freigaben</h2><p>Wer kann welchen Dienst übernehmen? Freigaben und persönliche Vorgaben an einem Ort.</p></div><button type="button" class="quiet" data-navigate="rules">Weiter zu Regeln<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
           <p id="mappingWarning" class="inline-warning" hidden>Alter SP5-Snapshot: Die frühere Arbeitsplatz-Zuordnung kann nicht automatisch in Dienste umgewandelt werden. Bitte mit den gewünschten Teams und Zeiträumen neu importieren.</p>
-          <div class="surface matrix-surface"><div class="bulk-approve" id="historyBulk" data-pending="0"><div><strong id="historyBulkTitle">Historische Vorschläge</strong><small>Übernimmt alle Vorschläge im gesamten Projekt – unabhängig von Suche und sichtbaren Zeilen. Bestehende Freigaben und Qualifikationen bleiben unverändert.</small></div><button id="confirmHistory" type="button" class="primary">Alle historischen Vorschläge übernehmen</button></div><div class="surface-toolbar"><label class="search-field"><span class="sr-only">Person oder Dienst suchen</span><input id="matrixSearch" type="search" placeholder="Person oder Dienst suchen …"></label><button id="transpose" type="button" aria-pressed="false" class="quiet">Achsen tauschen</button></div><div class="matrix-legend"><span><i class="legend-dot allowed"></i>Freigegeben</span><span><i class="legend-dot prohibited"></i>Keine Freigabe</span><span><i class="legend-dot suggested"></i>Historischer Vorschlag</span><span><i class="legend-dot partial"></i>Eingeschränkt</span></div><div id="matrix" class="scroll sheet"></div><div class="surface-footer"><span class="helper-text">Klicken oder Leertaste: Freigabe im Planungszeitraum ändern.</span></div></div>
+          <div class="surface matrix-surface">
+            <div class="bulk-approve" id="historyBulk" data-pending="0">
+              <div><strong id="historyBulkTitle">Historische Vorschläge</strong>
+                <small>Übernimmt alle Vorschläge im gesamten Projekt – unabhängig von Suche und sichtbaren Zeilen. Bestehende Freigaben und Qualifikationen bleiben unverändert.
+                </small>
+              </div>
+              <button id="confirmHistory" type="button" class="primary">Alle historischen Vorschläge übernehmen
+              </button>
+            </div>
+            <div class="surface-toolbar">
+              <label class="search-field"><span class="sr-only">Person oder Dienst suchen</span><input id="matrixSearch" type="search" placeholder="Person oder Dienst suchen …">
+              </label>
+              <button id="transpose" type="button" aria-pressed="false" class="quiet">Achsen tauschen
+              </button>
+            </div>
+            <div class="matrix-legend"><span><i class="legend-dot allowed"></i>Freigegeben</span><span><i class="legend-dot prohibited"></i>Keine Freigabe</span><span><i class="legend-dot suggested"></i>Historischer Vorschlag</span><span><i class="legend-dot partial"></i>Eingeschränkt</span>
+            </div>
+            <div id="matrix" class="scroll sheet">
+            </div>
+            <div class="surface-footer"><span class="helper-text">Klicken oder Leertaste: Freigabe im Planungszeitraum ändern.</span>
+            </div>
+          </div>
           <div id="details"></div>
-          <details class="surface" open><summary>Persönliche Vorgaben <span class="summary-description">Dienstart, Sollstunden und Regelprofile</span></summary><div class="details-content"><p class="helper-text">„Nur“ ist verbindlich. „Bevorzugt“ ist ein Wunsch. Bei Sollstunden und „Planen“ wechseln Eingabetaste, ↓ und ↑ zwischen den sichtbaren Zeilen.</p><div id="people" class="scroll"></div></div></details>
-          <details class="surface" id="teamTransfer"><summary>Team als Tabelle bearbeiten <span class="summary-description">CSV für Excel: Name, Sollminuten, Team- und Profilkennungen</span></summary><div class="details-content"><p class="helper-text">Der Export enthält alle geladenen Personen. Bearbeitet werden ausschließlich vorhandene Personen: Eine unbekannte Kennung legt niemanden an, und eine fehlende Zeile löscht niemanden. Dienstfreigaben, Qualifikationen, Verfügbarkeiten und Einteilungen bleiben unverändert.</p><div class="actions"><button id="teamExport" type="button">Team als CSV herunterladen</button><label class="file-upload">Bearbeitete CSV prüfen<input type="file" id="teamImport" accept=".csv,text/csv"></label></div><div id="teamTransferPreview" role="status" aria-live="polite"></div></div></details><details class="surface"><summary>Historische Basis &amp; Herkunft</summary><div class="details-content"><p id="source" class="helper-text"></p><p class="helper-text">Historische Einsätze sind keine Qualifikationsnachweise; vorgeschlagene Freigaben müssen ausdrücklich bestätigt werden. Eingeschränkte Freigaben gelten für einzelne Arbeitsplätze oder Teilzeiträume; ein Klick erweitert sie auf den gesamten Dienst und Zeitraum. Betreuung bleibt erhalten.</p><div id="history"></div></div></details>
+          <details class="surface" open>
+            <summary>Persönliche Vorgaben <span class="summary-description">Dienstart, Sollstunden und Regelprofile</span>
+            </summary>
+            <div class="details-content">
+              <p class="helper-text">„Nur“ ist verbindlich. „Bevorzugt“ ist ein Wunsch. Bei Sollstunden und „Planen“ wechseln Eingabetaste, ↓ und ↑ zwischen den sichtbaren Zeilen.
+              </p>
+              <div id="people" class="scroll">
+              </div>
+            </div>
+          </details>
+          <details class="surface" id="teamTransfer">
+            <summary>Team als Tabelle bearbeiten <span class="summary-description">CSV für Excel: Name, Sollminuten, Team- und Profilkennungen</span>
+            </summary>
+            <div class="details-content">
+              <p class="helper-text">Der Export enthält alle geladenen Personen. Bearbeitet werden ausschließlich vorhandene Personen: Eine unbekannte Kennung legt niemanden an, und eine fehlende Zeile löscht niemanden. Dienstfreigaben, Qualifikationen, Verfügbarkeiten und Einteilungen bleiben unverändert.
+              </p>
+              <div class="actions">
+                <button id="teamExport" type="button">Team als CSV herunterladen
+                </button>
+                <label class="file-upload">Bearbeitete CSV prüfen<input type="file" id="teamImport" accept=".csv,text/csv">
+                </label>
+              </div>
+              <div id="teamTransferPreview" role="status" aria-live="polite">
+              </div>
+            </div>
+          </details>
+          <details class="surface">
+            <summary>Historische Basis &amp; Herkunft
+            </summary>
+            <div class="details-content">
+              <p id="source" class="helper-text">
+              </p>
+              <p class="helper-text">Historische Einsätze sind keine Qualifikationsnachweise; vorgeschlagene Freigaben müssen ausdrücklich bestätigt werden. Eingeschränkte Freigaben gelten für einzelne Arbeitsplätze oder Teilzeiträume; ein Klick erweitert sie auf den gesamten Dienst und Zeitraum. Betreuung bleibt erhalten.
+              </p>
+              <div id="history">
+              </div>
+            </div>
+          </details>
           <div class="panel-footer"><span>Freigaben und persönliche Vorgaben werden im Projekt gespeichert.</span><button id="save" class="primary" type="button">Änderungen dauerhaft speichern</button></div>
         </section>
         <section class="panel" data-panel="rules" hidden aria-labelledby="rulesTitle">
           <div class="section-heading page-section-heading"><div><h2 id="rulesTitle">Regeln</h2><p>Dienste, Grenzen und Ziele der Planung – ein Bereich nach dem anderen.</p></div><button type="button" class="quiet" data-navigate="demand">Weiter zum Bedarf<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
           <section id="referenceImport" class="surface padded" aria-labelledby="referenceImportTitle" hidden></section>
           <div class="config-layout">
-            <nav id="rulesNav" class="sub-nav" aria-label="Einstellungsbereiche"><button type="button" data-config-to="dienste">Dienste</button><button type="button" data-config-to="bedarf">Einzelne Bedarfe</button><button type="button" data-config-to="profile">Regelprofile</button><button type="button" data-config-to="offen">Offene Angaben</button><button type="button" data-config-to="ziele">Ziele</button><button type="button" data-config-to="daten">Projektdaten</button></nav>
+            <nav id="rulesNav" class="sub-nav" aria-label="Einstellungsbereiche">
+              <button type="button" data-config-to="dienste">Dienste
+              </button>
+              <button type="button" data-config-to="bedarf">Einzelne Bedarfe
+              </button>
+              <button type="button" data-config-to="profile">Regelprofile
+              </button>
+              <button type="button" data-config-to="offen">Offene Angaben
+              </button>
+              <button type="button" data-config-to="ziele">Ziele
+              </button>
+              <button type="button" data-config-to="daten">Projektdaten
+              </button>
+            </nav>
             <div class="config-body">
             <details class="surface" data-config="dienste" open><summary>Schichten &amp; Qualifikationen<span class="summary-description">Zeitfenster und Anforderungen</span></summary><div class="details-content"><div id="shifts" class="scroll"></div><div id="positions" class="scroll"></div></div></details>
-            <details class="surface" data-config="bedarf" open><summary>Besetzungsbedarf<span class="summary-description">Einzelne Bedarfe: Minimum und Maximum je Dienst, Tag und Arbeitsplatz</span></summary><div class="details-content"><p class="helper-text">Hier steht jeder Bedarf einzeln. Um viele Tage auf einmal zu ändern, gibt es die Bedarfstabelle mit Dienstmustern als Zeilen und Kalendertagen als Spalten. <button type="button" class="quiet" data-navigate="demand">Zur Bedarfstabelle</button></p><div id="demands" class="scroll"></div></div></details>
+            <details class="surface" data-config="bedarf" open>
+              <summary>Besetzungsbedarf<span class="summary-description">Einzelne Bedarfe: Minimum und Maximum je Dienst, Tag und Arbeitsplatz</span>
+              </summary>
+              <div class="details-content">
+                <p class="helper-text">Hier steht jeder Bedarf einzeln. Um viele Tage auf einmal zu ändern, gibt es die Bedarfstabelle mit Dienstmustern als Zeilen und Kalendertagen als Spalten. 
+                  <button type="button" class="quiet" data-navigate="demand">Zur Bedarfstabelle
+                  </button>
+                </p>
+                <div id="demands" class="scroll">
+                </div>
+              </div>
+            </details>
             <div class="surface padded" data-config="profile" id="profiles"></div>
-            <div class="surface padded unresolved-surface" data-config="offen"><div class="section-heading"><div><h3>Offene Angaben</h3><p class="helper-text">Unklare importierte Bedeutungen zuerst fachlich korrigieren.</p></div></div><div class="bulk-approve" id="unresolvedBulk" data-pending="0" hidden><div><strong id="unresolvedBulkTitle">Offene Importangaben</strong><small id="unresolvedBulkBreakdown"></small></div><button id="confirmUnresolved" type="button" class="primary">Angezeigte Angaben als geprüft markieren</button></div><div id="unresolved"></div></div>
+            <div class="surface padded unresolved-surface" data-config="offen">
+              <div class="section-heading">
+                <div>
+                  <h3>Offene Angaben
+                  </h3>
+                  <p class="helper-text">Unklare importierte Bedeutungen zuerst fachlich korrigieren.
+                  </p>
+                </div>
+              </div>
+              <div class="bulk-approve" id="unresolvedBulk" data-pending="0" hidden>
+                <div><strong id="unresolvedBulkTitle">Offene Importangaben</strong>
+                  <small id="unresolvedBulkBreakdown">
+                  </small>
+                </div>
+                <button id="confirmUnresolved" type="button" class="primary">Angezeigte Angaben als geprüft markieren
+                </button>
+              </div>
+              <div id="unresolved">
+              </div>
+            </div>
             <details class="surface" id="weightsSection" data-config="ziele" open><summary>Optimierungswünsche<span class="summary-description">Gewichte für weiche Ziele</span></summary><div class="details-content"><p class="helper-text">Gewichte priorisieren Wünsche. Verbindliche Regeln und Freigaben gelten weiterhin.</p><div id="weights" class="grid"></div></div></details>
-            <details class="surface advanced-settings" data-config="daten" open><summary>Erweiterte Projektdaten<span class="summary-description">Vollständiger JSON-Datenvertrag</span></summary><div class="details-content"><textarea id="json" rows="18" spellcheck="false" aria-label="Projekt als JSON bearbeiten"></textarea><div class="actions"><button id="refreshJson" type="button">Aktuelle Daten anzeigen</button><button id="applyJson" type="button">JSON-Änderungen übernehmen</button></div></div></details>
+            <details class="surface advanced-settings" data-config="daten" open>
+              <summary>Erweiterte Projektdaten<span class="summary-description">Vollständiger JSON-Datenvertrag</span>
+              </summary>
+              <div class="details-content"><textarea id="json" rows="18" spellcheck="false" aria-label="Projekt als JSON bearbeiten"></textarea>
+                <div class="actions">
+                  <button id="refreshJson" type="button">Aktuelle Daten anzeigen
+                  </button>
+                  <button id="applyJson" type="button">JSON-Änderungen übernehmen
+                  </button>
+                </div>
+              </div>
+            </details>
             </div>
           </div>
         </section>
@@ -111,7 +391,20 @@
           <div class="section-heading page-section-heading"><div><h2 id="demandTitle">Bedarf</h2><p>Mindestbesetzung nach Funktion oder Datum bearbeiten und mit den Vertragssollstunden abgleichen.</p></div><button type="button" class="quiet" data-navigate="calculate">Weiter zur Berechnung<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
           <div id="demandSummary" class="surface padded demand-summary" aria-live="polite" aria-atomic="true"></div>
           <div class="surface demand-surface">
-            <div class="surface-toolbar demand-view-toolbar"><div class="actions" role="group" aria-label="Bedarfsansicht"><button id="demandViewDates" type="button" aria-pressed="true">Nach Datum</button><button id="demandViewFunctions" type="button" aria-pressed="false">Nach Funktion</button></div><p class="helper-text">Eingabetaste, ↓ und ↑ übernehmen den Feldwert und wechseln in derselben Spalte zwischen den sichtbaren Zeilen.</p><p id="demandFunctionHelp" class="helper-text" hidden>Eine Zahl setzt die Mindestbesetzung jedes Bedarfs dieser Funktion und Tagesart im Planungszeitraum. Werktage sind Montag bis Freitag ohne Feiertage. Feiertage stammen aus den im Projekt markierten Diensten und haben Vorrang vor den anderen Tagesarten. „uneinheitlich“ bleibt bis zu einer Eingabe erhalten. Tagesarten ohne Bedarfe bleiben leer und gesperrt. Übersteigt das Minimum die Höchstbesetzung, wird diese mit angehoben.</p><p id="demandBoardHelp" class="helper-text">Eine Zahl direkt im Tag ändern oder den Zeilenwert für alle Tage, Werktage (Mo–Fr) oder Wochenenden (Sa–So) übernehmen. Überschriebene Werte sind markiert; Tage ohne passenden Dienst oder eindeutige Zuordnung bleiben gesperrt. Enthält eine Zelle mehrere Bedarfe, wird die Summe im Verhältnis ihrer ursprünglichen Mindestbesetzung verteilt; die einzelnen Bedarfe und ihre Arbeitsplätze bleiben erhalten. Übersteigt das Minimum die Höchstbesetzung, wird diese mit angehoben.</p></div>
+            <div class="surface-toolbar demand-view-toolbar">
+              <div class="actions" role="group" aria-label="Bedarfsansicht">
+                <button id="demandViewDates" type="button" aria-pressed="true">Nach Datum
+                </button>
+                <button id="demandViewFunctions" type="button" aria-pressed="false">Nach Funktion
+                </button>
+              </div>
+              <p class="helper-text">Eingabetaste, ↓ und ↑ übernehmen den Feldwert und wechseln in derselben Spalte zwischen den sichtbaren Zeilen.
+              </p>
+              <p id="demandFunctionHelp" class="helper-text" hidden>Eine Zahl setzt die Mindestbesetzung jedes Bedarfs dieser Funktion und Tagesart im Planungszeitraum. Werktage sind Montag bis Freitag ohne Feiertage. Feiertage stammen aus den im Projekt markierten Diensten und haben Vorrang vor den anderen Tagesarten. „uneinheitlich“ bleibt bis zu einer Eingabe erhalten. Tagesarten ohne Bedarfe bleiben leer und gesperrt. Übersteigt das Minimum die Höchstbesetzung, wird diese mit angehoben.
+              </p>
+              <p id="demandBoardHelp" class="helper-text">Eine Zahl direkt im Tag ändern oder den Zeilenwert für alle Tage, Werktage (Mo–Fr) oder Wochenenden (Sa–So) übernehmen. Überschriebene Werte sind markiert; Tage ohne passenden Dienst oder eindeutige Zuordnung bleiben gesperrt. Enthält eine Zelle mehrere Bedarfe, wird die Summe im Verhältnis ihrer ursprünglichen Mindestbesetzung verteilt; die einzelnen Bedarfe und ihre Arbeitsplätze bleiben erhalten. Übersteigt das Minimum die Höchstbesetzung, wird diese mit angehoben.
+              </p>
+            </div>
             <div id="demandBoard" class="scroll" role="region" aria-label="Mindestbesetzung nach Dienstmuster und Tag" aria-describedby="demandBoardHelp" tabindex="0"></div>
             <div class="surface-footer"><span class="helper-text">Änderungen werden mit dem Projekt gespeichert. „Zeile zurücksetzen“ stellt den Stand beim Öffnen des Projekts wieder her.</span></div>
           </div>
@@ -185,10 +478,51 @@
           </div>
         </section>
         <section class="panel plan-panel" data-panel="plan" hidden aria-labelledby="planTitle">
-          <div class="section-heading page-section-heading"><div><h2 id="planTitle">Ihr Dienstplan</h2><p>Besetzung prüfen, Einteilungen anpassen und den fertigen Plan exportieren.</p></div><div class="actions export-actions"><button data-export="csv" type="button">CSV</button><button data-export="xlsx" class="primary" type="button"><svg class="icon"><use href="#icon-download"/></svg>Excel exportieren</button></div></div>
+          <div class="section-heading page-section-heading">
+            <div>
+              <h2 id="planTitle">Ihr Dienstplan
+              </h2>
+              <p>Besetzung prüfen, Einteilungen anpassen und den fertigen Plan exportieren.
+              </p>
+            </div>
+            <div class="actions export-actions">
+              <button data-export="csv" type="button">CSV
+              </button>
+              <button data-export="xlsx" class="primary" type="button"><svg class="icon"><use href="#icon-download"/></svg>Excel exportieren
+              </button>
+            </div>
+          </div>
           <div id="result" class="result-summary"></div>
-          <div id="planEmpty" class="empty-state plan-empty"><div class="empty-icon"><svg class="icon"><use href="#icon-calendar"/></svg></div><div><h3>Ihr Plan wartet auf die erste Besetzung.</h3><p>Starten Sie eine Berechnung oder fügen Sie Einteilungen manuell hinzu.</p></div><button type="button" class="primary" data-navigate="calculate">Plan berechnen<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
-          <div class="surface calendar-surface"><div class="surface-toolbar calendar-toolbar"><div class="month-navigation"><button id="prevMonth" type="button" class="icon-button" aria-label="Vorheriger Monat">‹</button><strong id="planMonth"></strong><button id="nextMonth" type="button" class="icon-button" aria-label="Nächster Monat">›</button></div><label class="calendar-view"><span class="sr-only">Ansicht</span><select id="planView"><option value="employees">Dienstplan · Personen</option><option value="positions">Einsatzplan · Funktionen / Arbeitsplätze</option></select></label></div><div id="calendar" class="scroll sheet"></div><div class="surface-footer"><div class="matrix-legend"><span><i class="legend-dot day"></i>Tagdienst</span><span><i class="legend-dot night"></i>Nachtdienst</span></div><span class="helper-text">Einteilung anklicken, um sie zu bearbeiten.</span></div></div>
+          <div id="planEmpty" class="empty-state plan-empty">
+            <div class="empty-icon"><svg class="icon"><use href="#icon-calendar"/></svg>
+            </div>
+            <div>
+              <h3>Ihr Plan wartet auf die erste Besetzung.
+              </h3>
+              <p>Starten Sie eine Berechnung oder fügen Sie Einteilungen manuell hinzu.
+              </p>
+            </div>
+            <button type="button" class="primary" data-navigate="calculate">Plan berechnen<svg class="icon"><use href="#icon-arrow"/></svg>
+            </button>
+          </div>
+          <div class="surface calendar-surface">
+            <div class="surface-toolbar calendar-toolbar">
+              <div class="month-navigation">
+                <button id="prevMonth" type="button" class="icon-button" aria-label="Vorheriger Monat">‹
+                </button><strong id="planMonth"></strong>
+                <button id="nextMonth" type="button" class="icon-button" aria-label="Nächster Monat">›
+                </button>
+              </div>
+              <label class="calendar-view"><span class="sr-only">Ansicht</span><select id="planView"><option value="employees">Dienstplan · Personen</option><option value="positions">Einsatzplan · Funktionen / Arbeitsplätze</option></select>
+              </label>
+            </div>
+            <div id="calendar" class="scroll sheet">
+            </div>
+            <div class="surface-footer">
+              <div class="matrix-legend"><span><i class="legend-dot day"></i>Tagdienst</span><span><i class="legend-dot night"></i>Nachtdienst</span>
+              </div><span class="helper-text">Einteilung anklicken, um sie zu bearbeiten.</span>
+            </div>
+          </div>
           <details id="assignmentDetails" class="surface"><summary>Einteilungen bearbeiten &amp; fixieren</summary><div class="details-content"><div id="plan" class="scroll"></div></div></details>
           <div class="plan-actions"><div class="actions"><button id="saveDraft" type="button" class="primary">Entwurf dauerhaft speichern</button><button id="validate" type="button">Entwurf prüfen</button><button id="recompute" type="button">Mit Fixierungen neu berechnen</button></div><span class="helper-text">Änderungen am Entwurf werden vor dem Export erneut geprüft.</span></div>
           <details id="validationDetails" class="surface"><summary>Prüfbericht &amp; Auswertung</summary><div class="details-content"><pre id="validation"></pre><button data-export="json" type="button" class="quiet">Prüfergebnis als JSON exportieren</button></div></details>
