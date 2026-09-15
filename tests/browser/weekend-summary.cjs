@@ -17,7 +17,7 @@ module.exports=async function weekendSummary({page,base}){
     approvals:[{function_id:'service-a',workplace_id:'workplace-a',valid_from:'2025-01-01',valid_until:'2027-12-31',supervised:false}],
     qualifications:[],availability:[],unavailable:[],allowed_kinds:['day','night'],
     preferred_kind:null,preferred_functions:[],allow_weekends:true,allow_holidays:true,
-    profile_ids:['synthetic-profile'],target_minutes:0,contractual_weekly_minutes:null,
+    profile_ids:['synthetic-profile'],target_minutes:480,contractual_weekly_minutes:null,
     balance_minutes:0,credit_minutes:0,employment_fraction:100,
     historical_nights:0,historical_weekends:0,historical_holidays:0,mentor_capacity:0,
    })),
@@ -51,6 +51,8 @@ module.exports=async function weekendSummary({page,base}){
  assert.match(forced,/1 geteiltes Wochenende/,'The plan reports its counted split weekends');
  assert.match(forced,/1 davon erzwingt der Bedarf selbst; so viele bleiben/,'Unequal weekend demand is named as the cause');
  assert.match(forced,/Zusammenhängende Freizeit: \d+ Blöcke/,'Free time is reported in plain words');
+ assert.match(forced,/Sollerfüllung: Median [\d,]+ % · \d+ von \d+ Personen im Zielband 90–110 %/,
+  'The report says how evenly the contracts are met');
 
  // Der Suchverlauf erklärt in Klartext, wie der Plan zustande kam.
  const trace=page.locator('#result details.trace-box');

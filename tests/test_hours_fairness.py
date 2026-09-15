@@ -1,5 +1,7 @@
 """Der Fehlbetrag wird verteilt, statt einzelne Personen leer ausgehen zu lassen."""
 
+import pytest
+
 from sp5generator.models import Objectives
 from sp5generator.solver import solve
 from test_core_rules import case, shift
@@ -69,3 +71,29 @@ def test_people_without_any_eligible_duty_do_not_set_the_standard():
 
     assert result.validation.complete
     assert minutes(snapshot, result) == [0, 480, 960]
+
+
+def test_the_report_names_how_evenly_the_contracts_are_met():
+    snapshot = sharing_case(fairness=300)
+
+    result = solve(snapshot, time_limit=5)
+
+    zahlen = result.metrics["hours_attainment"]
+    assert zahlen["people"] == 2
+    # Eine Person bei 960 von 1440 Minuten, eine bei 480: 67 und 33 Prozent.
+    assert zahlen["lowest"] == pytest.approx(33.3, abs=0.1)
+    assert zahlen["highest"] == pytest.approx(66.7, abs=0.1)
+    assert zahlen["under_50"] == 1 and zahlen["from_50"] == 1
+    assert zahlen["none"] == 0 and zahlen["over_110"] == 0
+
+
+def test_people_without_a_possible_duty_are_left_out_of_the_report():
+    snapshot = sharing_case(fairness=300)
+    snapshot.employees.append(snapshot.employees[0].model_copy(deep=True, update={
+        "id": "e_extern", "name": "Testperson extern", "team_ids": ["anderes"],
+    }))
+
+    result = solve(snapshot, time_limit=5)
+
+    # Wer nirgends einsetzbar ist, verfälscht die Quote nicht.
+    assert result.metrics["hours_attainment"]["people"] == 2

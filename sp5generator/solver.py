@@ -169,6 +169,34 @@ class _Zwischenstand(cp_model.CpSolverSolutionCallback):
             pass
 
 
+def _hours_metrics(snapshot, paid_by_person, assignable):
+    """Wie gleichmäßig ist das Vertragssoll erfüllt?
+
+    Gezählt wird nur, wer ein Soll hat und überhaupt einsetzbar ist: Personen
+    ohne jede mögliche Stelle würden das Bild sonst nach unten ziehen, ohne
+    dass die Planung daran etwas ändern könnte.
+    """
+    quoten = sorted(
+        100 * paid_by_person.get(e.id, 0) / e.target_minutes
+        for e in snapshot.employees
+        if e.target_minutes and e.id in assignable
+    )
+    if not quoten:
+        return {"people": 0}
+    faecher = {"none": 0, "under_50": 0, "from_50": 0, "on_target": 0, "over_110": 0}
+    for q in quoten:
+        schluessel = ("none" if q == 0 else "under_50" if q < 50
+                      else "from_50" if q < 90 else "on_target" if q <= 110 else "over_110")
+        faecher[schluessel] += 1
+    return {
+        "people": len(quoten),
+        "median": round(quoten[len(quoten) // 2], 1),
+        "lowest": round(quoten[0], 1),
+        "highest": round(quoten[-1], 1),
+        **faecher,
+    }
+
+
 def _forced_split_weekends(snapshot):
     """Teilungen, die schon der Bedarf erzwingt, samt Hinweisen.
 
@@ -346,6 +374,15 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
         kwargs.setdefault("metrics", {})["split_weekends_blocked_by_approval"] = 0
         kwargs.setdefault("metrics", {})["split_weekends_forced_by_demand"] = 0
         kwargs.setdefault("metrics", {})["split_weekends_in_plan"] = 0
+        bezahlt = defaultdict(int)
+        for a in assignments:
+            if snapshot.period_start <= shift_day[demands[a.demand_id].shift_id] <= snapshot.period_end:
+                bezahlt[a.employee_id] += shifts[demands[a.demand_id].shift_id].paid_minutes
+        kwargs.setdefault("metrics", {})["hours_attainment"] = _hours_metrics(
+            snapshot, bezahlt,
+            {eid for eid, stat in (employee_candidates or {}).items()
+             if stat["eligible_demands"]},
+        )
         kwargs.setdefault("metrics", {})["free_time"] = _free_time_metrics(
             snapshot.period_start,
             snapshot.period_end,

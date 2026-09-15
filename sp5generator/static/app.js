@@ -1036,6 +1036,12 @@ async function poll(){
     if(blocked)parts.push(`Bei ${blocked} könnte die eingeteilte Person mit einer Dienstfreigabe beide Tage übernehmen.`);
     el('p',parts.join(' '),$('result'));
    }
+   if(m.hours_attainment?.people){
+    const h=m.hours_attainment,teile=[`${h.on_target} von ${h.people} Personen im Zielband 90–110 %`];
+    if(h.none||h.under_50)teile.push(`${h.none+h.under_50} unter 50 %${h.none?` (davon ${h.none} ohne Dienst)`:''}`);
+    if(h.over_110)teile.push(`${h.over_110} über 110 %`);
+    el('p',`Sollerfüllung: Median ${h.median.toLocaleString('de-DE')} % · `+teile.join(' · ')+'.',$('result'));
+   }
    if(m.free_time?.blocks)el('p',`Zusammenhängende Freizeit: ${m.free_time.blocks} Blöcke, im Schnitt ${m.free_time.mean_length.toLocaleString('de-DE')} Tage, ${m.free_time.three_or_more} ab drei Tagen, ${m.free_time.single_days} einzelne freie Tage, ${m.free_time.free_weekends} vollständig freie Wochenenden.`,$('result'));
    if(m.missing_approvals?.length){
     const gaps=m.missing_approvals,gapIdx=dataIndex();

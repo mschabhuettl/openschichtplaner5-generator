@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.23.0** nutzt für eine Auftragsrechnung mehrere Suchprozesse statt nur einen. An echten Quelldaten sinken damit bei gleicher Rechenzeit die offenen Pflichtstellen von 12–13 auf 8, die geteilten Wochenenden von 6–7 auf 2 und die gewichtete Bewertung um gut ein Viertel. Endet der Rechenprozess ohne Ergebnis, wiederholt das Programm einmal einspurig – ein seltener Absturz kostet Zeit, nicht den Plan. Aufrufe aus Tests und Kommandozeile bleiben einspurig und damit reproduzierbar. Die [Releasehinweise](docs/release-0.23.0.md) enthalten die Messreihe und die Grenzen.
+**Version 0.24.0** verteilt den Fehlbetrag, statt ihn einzelnen aufzuladen. Liegt der Bedarf unter der Summe aller Verträge, ist die Summe der Fehlstunden konstant — das bisherige Stundenziel war gegen die Verteilung blind. Ein neues Ziel bestraft den Abstand jeder Person zu einem gemeinsamen Erfüllungsgrad. An echten Quelldaten steigt der Median von 75 auf 83 Prozent, die Zahl der Personen über 110 Prozent sinkt von 15 auf 9, die unter 50 Prozent von 8 auf 6. Der Bericht nennt die Verteilung jetzt in Klartext. Die [Releasehinweise](docs/release-0.24.0.md) enthalten die Messreihe.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -63,7 +63,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.23.0-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.24.0-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
