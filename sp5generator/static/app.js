@@ -66,7 +66,7 @@ function renderActivePanel(force=false){
 
 const $=id=>document.getElementById(id);
 const el=(tag,text,parent)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(parent)parent.append(n);return n;};
-const notice=(text,error=false)=>{$('notice').textContent=text;$('notice').classList.toggle('error',error);};
+const notice=(text,error=false)=>{$('notice').textContent=text;$('notice').classList.toggle('error',error);$('notice').hidden=!text;};
 async function responseError(response){
  let payload;
  try{payload=await response.json();}catch{payload=null;}

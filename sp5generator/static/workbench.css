@@ -51,20 +51,32 @@ button.quiet:hover { color: var(--teal-dark); background: var(--teal-light); }
 .sidebar-project > span:not(.sidebar-label), .sidebar-project small { color: #b5c5d9; font-size: 11px; }
 .sidebar-progress span { background: #81aeff; }
 .sidebar-bottom, .local-status { color: #a9bad0; font-size: 11px; }
-.topbar { min-height: 64px; padding: 12px 32px; }
-.breadcrumb, .topbar .save-indicator { font-size: 12px; }
+.topbar { min-height: 60px; padding: 10px 28px; gap: 24px; }
+.topbar .save-indicator { font-size: 12px; white-space: nowrap; max-width: none; }
+
+/* Projekt, Kennzahlen und Aktionen stehen in einer Zeile statt in drei Blöcken. */
+.project-bar { min-width: 0; flex: 1 1 auto; }
+.project-bar #projectName {
+  border: 0; padding: 0; background: transparent; width: 100%; max-width: 420px;
+  font-size: 17px; font-weight: 650; color: var(--ink); line-height: 1.25;
+}
+.project-bar #projectName:hover { background: var(--subtle); }
+.project-bar #projectName:focus { background: var(--subtle); outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 5px; }
+.project-bar .project-meta { margin-top: 2px; font-size: 11px; gap: 6px; flex-wrap: wrap; }
+
+.topbar-facts { display: flex; align-items: baseline; gap: 22px; flex: 0 0 auto; }
+.topbar-facts .fact { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.topbar-facts .fact strong { font-size: 18px; color: var(--ink); font-weight: 650; }
+.topbar-facts .fact-label { font-size: 11px; color: var(--muted); display: flex; gap: 5px; }
+.topbar-facts .fact-label span:not(:empty)::before { content: '·'; margin-right: 5px; }
+.topbar-facts .fact strong.bad { color: var(--danger); }
+
+@media (max-width: 1100px) { .topbar-facts { display: none; } }
 main { padding: 22px 32px 0; max-width: 1800px; }
 .notice { padding: 11px 16px; border-radius: 7px; background: #edf3fb; border-color: #d9e5f5; color: #324f73; font-size: 13px; }
 .notice.error { background: #fff1ef; color: #9a3028; border-color: #f1c9c5; }
-.project-header { margin: 22px 0 18px; }
 #projectName { font-size: 26px; color: var(--ink); }
 .project-meta, .project-card-period, .project-card-footer { font-size: 12px; color: var(--muted); }
-.workspace-metrics { background: transparent; border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 0; gap: 0; }
-.workspace-metric { padding: 0 20px; }
-.workspace-metric:first-child { padding-left: 0; }
-.workspace-metric .metric-label { color: var(--muted); font-size: 11px; }
-.workspace-metric strong { font-size: 22px; color: var(--ink); }
-.workspace-metric > div > span { color: var(--muted); font-size: 11px; }
 .page-heading, .page-section-heading { margin: 26px 0 20px; }
 .page-heading h1 { font-size: 32px; }
 .page-section-heading h2 { font-size: 25px; }
@@ -164,11 +176,6 @@ body[data-active-panel=plan] .sheet { max-height: 72vh; }
   .page-heading p, .page-section-heading p { font-size: 13px; }
   #projectName, body[data-active-panel=plan] #projectName { font-size: 22px; }
   .project-meta { font-size: 11px; }
-  .workspace-metrics { grid-template-columns: 1fr 1fr; padding: 0; gap: 0; }
-  .workspace-metric, .workspace-metric:first-child { padding: 12px 10px; }
-  .workspace-metric strong { font-size: 21px; }
-  .workspace-metric .metric-label { font-size: 11px; }
-  .workspace-metric > div > span { font-size: 11px; }
   .surface > summary { padding: 17px 18px; font-size: 15px; }
   .surface > summary .summary-description { font-size: 12px; }
   .import-grid, .setup-options { grid-template-columns: minmax(0, 1fr); gap: 16px; }
@@ -190,8 +197,6 @@ body[data-active-panel=plan] .sheet { max-height: 72vh; }
   .job-badge, .job-row-date { font-size: 11px; }
 }
 /* Calculation already contains the complete planning facts and live check status. */
-body[data-active-panel=calculate] .workspace-metrics { display: none; }
-body[data-active-panel=calculate] .project-header { border-bottom: 1px solid var(--border); padding-bottom: 18px; }
 .calculation-foundation { padding-block: 18px; }
 .calculation-foundation .planning-facts { gap: 12px 24px; }
 .calculation-foundation .readiness-note { margin-top: 16px; }

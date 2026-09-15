@@ -32,8 +32,8 @@
   const projectName = project => project.project_name || project.metadata?.project_name || project.name || project.metadata?.name || `Planung ${date(project.period_start,{month:'long',year:'numeric'})}`;
   const number = value => Number(value||0).toLocaleString('de-DE');
   const busy = () => !!(current.solving || current.jobId || current.projectBusy || ['save','saveDraft'].some(id=>byId(id)?.dataset.busy==='true'));
-  const show = (id, visible) => {byId(id).hidden = !visible;};
-  const text = (id, value) => {byId(id).textContent = value;};
+  const show = (id, visible) => {const node=byId(id);if(node)node.hidden = !visible;};
+  const text = (id, value) => {const node=byId(id);if(node)node.textContent = value;};
   function navigate(panel,options={}) {
     if(!Object.hasOwn(names,panel))return false;
     if(panel!=='projects'&&!current.snapshot)return false;
@@ -47,7 +47,6 @@
       button.classList.toggle('active',selected);
       if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
     });
-    text('breadcrumbCurrent',names[panel]);
     document.title=`${names[panel]} · OpenSchichtplaner5 Generator`;
     dispatch('navigate',{panel});
     if(options.focus){const heading=document.querySelector(`[data-panel="${panel}"] h1, [data-panel="${panel}"] h2`);if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}}
@@ -115,7 +114,7 @@
     current={...current,...detail};
     const project=current.snapshot;
     document.querySelectorAll('[data-requires-project]').forEach(button=>button.disabled=!project);
-    ['topSaveIndicator','headerSave','headerBackup','sidebarProject'].forEach(id=>show(id,!!project));
+    ['topSaveIndicator','headerSave','backup'].forEach(id=>show(id,!!project));
     byId('newProject').disabled=busy();
     if(previousBusy!==busy()) {renderProjects();renderJobs();}
     lastUiBusy=busy();
@@ -139,7 +138,6 @@
     if(document.activeElement!==byId('projectName'))byId('projectName').value=title;
     byId('projectName').readOnly=busy();
     text('projectPeriod',period(project));text('projectTimezone',project.timezone||'');text('projectKind',project.source==='synthetic'?'Demoprojekt':project.metadata?.created_with==='project-setup'?'Eigenes Projekt':'Importiertes Projekt');
-    text('sidebarProjectName',title);text('sidebarPeriod',period(project));byId('sidebarCoverage').style.width=coverage+'%';text('sidebarCoverageText',`${number(filled)} von ${number(minimum)} Stellen belegt`);
     text('metricPeople',number(employees.length));text('navPeople',number(employees.length));
     const teamCount=new Set(employees.flatMap(person=>person.team_ids||[])).size;text('metricTeams',teamCount?`${number(teamCount)} ${teamCount===1?'Team':'Teams'}`:'im Projekt');
     text('metricDays',number(days));text('metricCoverage',`${coverage} %`);text('metricAssignments',`${number(filled)} / ${number(minimum)} Stellen`);
@@ -147,7 +145,6 @@
     text('navBlockers',number(hints));byId('navBlockers').title='Hinweise aus der aktuellen Eingabeprüfung';show('navBlockers',checked&&hints>0);show('navRunning',!!(current.solving||current.jobId));
     byId('topSaveIndicator').classList.toggle('dirty',!!(current.dirty||current.jsonDirty));
     byId('headerSave').disabled=busy()||byId('save').disabled;
-    byId('headerBackup').disabled=byId('backup').disabled;
     text('calcPeriod',`${date(project.period_start)} – ${date(project.period_end)}`);text('calcDays',number(days));text('calcTimezone',project.timezone||'—');
     text('calcPeople',number(employees.length));text('calcShifts',number(shifts.length));text('calcDemand',number(minimum));text('calcFixed',number(assignments.filter(assignment=>assignment.fixed).length));text('calcProfiles',number(profiles.length));
     // Rechenzeit zum Zuschnitt: die Suchgröße wächst mit Personen mal Bedarfen.
@@ -176,8 +173,7 @@
   byId('projectName').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();byId('projectName').blur();}if(event.key==='Escape'&&current.snapshot){byId('projectName').value=projectName(current.snapshot);byId('projectName').blur();}});
   byId('openImport').addEventListener('click',()=>{byId('importDetails').open=true;byId('importDetails').scrollIntoView({block:'start'});byId('sourceType').focus({preventScroll:true});});
   byId('headerSave').addEventListener('click',()=>byId('save').click());
-  byId('headerBackup').addEventListener('click',()=>byId('backup').click());
-  const saveObserver=new MutationObserver(()=>{byId('headerSave').disabled=busy()||byId('save').disabled;byId('headerBackup').disabled=byId('backup').disabled;});
+  const saveObserver=new MutationObserver(()=>{byId('headerSave').disabled=busy()||byId('save').disabled;});
   saveObserver.observe(byId('save'),{attributes:true,attributeFilter:['disabled']});saveObserver.observe(byId('backup'),{attributes:true,attributeFilter:['disabled']});
   window.addEventListener('planner:state',event=>refresh(event.detail));
   document.addEventListener('planner:state',event=>{if(!event.bubbles)refresh(event.detail);});

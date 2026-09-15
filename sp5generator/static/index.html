@@ -41,13 +41,32 @@
       <button class="nav-item" type="button" data-navigate="calculate" data-requires-project disabled><svg class="icon"><use href="#icon-spark"/></svg><span>Planen</span><span id="navRunning" class="running-dot" hidden></span></button>
       <button class="nav-item" type="button" data-navigate="plan" data-requires-project disabled><svg class="icon"><use href="#icon-calendar"/></svg><span>Dienstplan</span></button>
     </nav>
-    <div class="sidebar-project" id="sidebarProject" hidden><span class="sidebar-label">Aktuelles Projekt</span><strong id="sidebarProjectName"></strong><span id="sidebarPeriod"></span><div class="sidebar-progress"><span id="sidebarCoverage"></span></div><small id="sidebarCoverageText"></small></div>
     <div class="sidebar-bottom"><div class="local-status"><span></span>Lokaler Arbeitsbereich</div><span id="version">Version wird geladen …</span><form id="logout" method="post" action="/logout" hidden><button type="submit">Abmelden</button></form></div>
   </aside>
   <div class="app-main">
     <header class="topbar">
-      <div class="breadcrumb"><span>Arbeitsbereich</span><span class="breadcrumb-separator">/</span><strong id="breadcrumbCurrent">Projekte</strong></div>
-      <div class="topbar-actions"><span id="topSaveIndicator" class="save-indicator" hidden><span class="status-dot"></span><span id="saveStatus" role="status" aria-live="polite">Kein Projekt geöffnet</span></span><button id="headerBackup" class="icon-button" type="button" title="Projekt als JSON sichern" aria-label="Projekt als JSON sichern" hidden><svg class="icon"><use href="#icon-download"/></svg></button><button id="headerSave" type="button" class="primary small" hidden><svg class="icon"><use href="#icon-check"/></svg>Speichern</button></div>
+      <div class="project-bar">
+        <label for="projectName" class="sr-only">Projektname</label>
+        <input id="projectName" aria-label="Projektname" maxlength="120" placeholder="Projekt benennen">
+        <div class="project-meta">
+          <span id="projectPeriod"></span>
+          <span class="meta-divider">·</span>
+          <span id="metricDays">0</span> Tage
+          <span class="meta-divider">·</span>
+          <span id="projectTimezone"></span>
+          <span id="projectKind" class="subtle-badge"></span>
+        </div>
+      </div>
+      <div class="topbar-facts" aria-label="Planungsübersicht">
+        <span class="fact"><strong id="metricPeople">0</strong><span class="fact-label">Personen<span id="metricTeams"></span></span></span>
+        <span class="fact"><strong id="metricCoverage">0 %</strong><span class="fact-label">belegt<span id="metricAssignments"></span></span></span>
+        <span class="fact"><strong id="metricBlockers">0</strong><span class="fact-label" id="metricBlockersLabel">offene Angaben</span></span>
+      </div>
+      <div class="topbar-actions">
+        <span id="topSaveIndicator" class="save-indicator" hidden><span class="status-dot"></span><span id="saveStatus" role="status" aria-live="polite">Kein Projekt geöffnet</span></span>
+        <button id="backup" class="icon-button" type="button" title="Projekt als JSON sichern" aria-label="Projekt als JSON sichern" hidden><svg class="icon"><use href="#icon-download"/></svg></button>
+        <button id="headerSave" type="button" class="primary small" hidden><svg class="icon"><use href="#icon-check"/></svg>Speichern</button>
+      </div>
     </header>
     <main id="mainContent" tabindex="-1">
       <div id="notice" role="status" aria-live="polite" class="notice">Bereit für Ihren nächsten Dienstplan.</div>
@@ -63,8 +82,6 @@
         <details class="legacy-access"><summary>Gespeicherten Stand direkt auswählen</summary><div class="actions"><label>Projekt<select id="saved" aria-label="Gespeicherter Stand"></select></label><button id="restore" type="button">Stand öffnen</button><label>Berechnung<select id="savedJobs"><option value="">Keine Berechnungen vorhanden</option></select></label><button id="restoreJob" type="button" disabled>Berechnung öffnen</button></div></details>
       </section>
       <div id="workspace" hidden>
-        <div class="project-header"><div class="project-identity"><label for="projectName" class="eyebrow">AKTUELLES PROJEKT</label><input id="projectName" aria-label="Projektname" maxlength="120" placeholder="Projekt benennen"><div class="project-meta"><span id="projectPeriod"></span><span class="meta-divider">·</span><span id="projectTimezone"></span><span id="projectKind" class="subtle-badge"></span></div></div><button id="backup" class="quiet" type="button"><svg class="icon"><use href="#icon-download"/></svg>Projekt sichern</button></div>
-        <div class="workspace-metrics" aria-label="Planungsübersicht"><div class="workspace-metric"><span class="metric-label">Personen</span><div><strong id="metricPeople">0</strong><span id="metricTeams"></span></div></div><div class="workspace-metric"><span class="metric-label">Planungszeitraum</span><div><strong id="metricDays">0</strong><span>Tage</span></div></div><div class="workspace-metric"><span class="metric-label">Bedarf belegt</span><div><strong id="metricCoverage">0 %</strong><span id="metricAssignments"></span></div></div><div class="workspace-metric"><span class="metric-label">Eingabeprüfung</span><div><strong id="metricBlockers">0</strong><span id="metricBlockersLabel">offene Angaben</span></div></div></div>
         <section class="panel" data-panel="team" hidden aria-labelledby="teamTitle">
           <div class="section-heading page-section-heading"><div><h2 id="teamTitle">Team &amp; Freigaben</h2><p>Wer kann welchen Dienst übernehmen? Freigaben und persönliche Vorgaben an einem Ort.</p></div><button type="button" class="quiet" data-navigate="rules">Weiter zu Regeln<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
           <p id="mappingWarning" class="inline-warning" hidden>Alter SP5-Snapshot: Die frühere Arbeitsplatz-Zuordnung kann nicht automatisch in Dienste umgewandelt werden. Bitte mit den gewünschten Teams und Zeiträumen neu importieren.</p>
