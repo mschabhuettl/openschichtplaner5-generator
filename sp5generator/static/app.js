@@ -1170,7 +1170,8 @@ function pendingHistoryApprovals(){
  }
  return pairs;
 }
-function updateHistoryApplyLabel(){const count=pendingHistoryApprovals().length;$('confirmHistory').textContent=`Alle ${count} historischen Vorschläge übernehmen`;$('historyBulk').dataset.pending=String(count);$('historyBulkTitle').textContent=count?`${count} historische Vorschläge offen`:'Keine offenen historischen Vorschläge';}
+function updateHistoryApplyLabel(){const count=pendingHistoryApprovals().length;$('confirmHistory').textContent=`Alle ${count} historischen Vorschläge übernehmen`;$('historyBulk').dataset.pending=String(count);$('historyBulkTitle').textContent=count?`${count} historische Vorschläge offen`:'Keine offenen historischen Vorschläge';// Ohne offene Vorschläge gibt es nichts zu übernehmen; der Streifen entfällt.
+ $('historyBulk').hidden=!count;}
 action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${periodText(snapshot.period_start,snapshot.period_end)} freigeben – unabhängig von Suche und sichtbaren Zeilen? Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
 $('start').addEventListener('change',historyDefaults);
 {

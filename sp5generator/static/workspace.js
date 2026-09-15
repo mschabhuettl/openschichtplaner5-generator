@@ -150,11 +150,26 @@
     byId('headerBackup').disabled=byId('backup').disabled;
     text('calcPeriod',`${date(project.period_start)} – ${date(project.period_end)}`);text('calcDays',number(days));text('calcTimezone',project.timezone||'—');
     text('calcPeople',number(employees.length));text('calcShifts',number(shifts.length));text('calcDemand',number(minimum));text('calcFixed',number(assignments.filter(assignment=>assignment.fixed).length));text('calcProfiles',number(profiles.length));
+    // Rechenzeit zum Zuschnitt: die Suchgröße wächst mit Personen mal Bedarfen.
+    const suggestion=Math.min(600,Math.max(30,Math.round(employees.length*demands.length/1500)*10));
+    const limitField=byId('limit');
+    if(previousId!==project.id)delete limitField.dataset.touched;
+    if(!limitField.dataset.touched)limitField.value=String(suggestion);
+    text('limitSuggestion',`Vorschlag für diesen Zuschnitt: ${number(suggestion)} Sekunden `
+     +`(${number(employees.length)} Personen, ${number(demands.length)} Bedarfe). `
+     +'1–600 Sekunden möglich; die Berechnung kann früher fertig sein.');
     text('calculationReadiness',readinessMessages[readiness.state]||readinessMessages.unchecked);
     byId('calculationReadiness').classList.toggle('warning',['issues','error','draft'].includes(readiness.state));show('calculationProgress',!!(current.solving||current.jobId));show('planEmpty',!assignments.length);
     if(previousId!==project.id)renderProjects();
   }
   document.querySelectorAll('[data-navigate]').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.navigate,{focus:true,scroll:true})));
+  // Eine eigene Eingabe bleibt stehen, auch wenn sich der Zuschnitt neu berechnet.
+  byId('limit').addEventListener('input',()=>{byId('limit').dataset.touched='1';});
+  byId('toWeights').addEventListener('click',()=>{
+    navigate('rules',{focus:true,scroll:true});
+    const section=byId('weightsSection');section.open=true;
+    section.scrollIntoView({block:'center',behavior:'smooth'});
+  });
   document.querySelector('.brand').addEventListener('click',event=>{event.preventDefault();navigate('projects',{focus:true,scroll:true});});
   byId('projectSearch').addEventListener('input',()=>{renderProjects();});
   byId('projectName').addEventListener('change',()=>{const name=byId('projectName').value.trim();if(name)dispatch('rename',{name});else if(current.snapshot)byId('projectName').value=projectName(current.snapshot);});

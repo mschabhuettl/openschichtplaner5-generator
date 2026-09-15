@@ -47,9 +47,8 @@ module.exports=async function allProposals({page,base}){
   assert.deepEqual(result[34].approvals.slice(0,2),before,'Existing approvals retained exactly');
   assert(result[34].approvals.some(a=>a.function_id==='service-18'&&a.valid_until>before[1].valid_until&&a.supervised),'Partial supervision preserved');
   assert(result[34].approvals.some(a=>a.workplace_id==='restricted-workplace'),'Restricted suggestion keeps exact workplace');
-  assert.equal(await page.locator('#confirmHistory').textContent(),'Alle 0 historischen Vorschläge übernehmen');
-  assert.match(await page.locator('#historyBulkTitle').textContent(),/^Keine offenen historischen Vorschläge$/);
-  page.once('dialog',()=>{throw Error('No duplicate approval confirmation expected');});await page.click('#confirmHistory');
-  assert.deepEqual(await page.evaluate(()=>snapshot.employees),result,'Repeated apply is idempotent');
+  // Nichts mehr zu übernehmen: der Streifen verschwindet, statt eine Null anzubieten.
+  assert.equal(await page.locator('#historyBulk').isVisible(),false,'No bulk bar without open proposals');
+  assert.deepEqual(await page.evaluate(()=>snapshot.employees),result,'Applying everything changes nothing further');
   console.log('All historical proposals: >30 people, >16 services, search, cancellation, scope, supervision and repeat passed.');
 };
