@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.18.0** vermeidet einzeln liegende Arbeitstage: Ein neues weiches Ziel bestraft einen Arbeitstag, dessen Vor- und Folgetag beide frei sind. An echten Quelldaten sinkt deren Anteil von 43 auf 34 Prozent, ohne dass die Besetzung leidet. Neue Importe beginnen damit; gespeicherte Projekte bleiben unverändert. Die [Releasehinweise](docs/release-0.18.0.md) trennen Prüfstand und offene Grenzen, einschließlich des verbleibenden Abstands zu einem von Hand erstellten Plan.
+**Version 0.19.0** plant Wochenenden als Paar und formt Dienstblöcke: Ein Wochenende wird ganz oder gar nicht gearbeitet, entschieden in einer eigenen Rangstufe zwischen Abdeckung und Qualität, und ein Kostenprofil je Blocklänge hält Dienstblöcke in einem Bereich, der zusammenhängende Freizeit lässt. Eine nachgelagerte Reparaturphase löst Wochenenden und einzelne Personenpläne noch einmal auf; an echten Quelldaten sinken die fehlenden Mindeststellen damit von 51 auf 10. Dazu kommen ein eigener Bereich zum Überschreiben des Bedarfs, ein Häkchen zum Ausschluss einzelner Personen aus der Planung und Kennzahlen zur Freizeitstruktur. Die [Releasehinweise](docs/release-0.19.0.md) trennen Prüfstand und offene Grenzen, einschließlich der bewiesenen Untergrenze von sieben geteilten Wochenenden unter den geltenden Freigaben.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -63,7 +63,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.18.0-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.19.0-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
