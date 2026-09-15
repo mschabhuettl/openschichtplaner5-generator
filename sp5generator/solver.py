@@ -1,5 +1,6 @@
 """Local CP-SAT optimization with independently checked incumbent separation."""
 
+import os
 from collections import Counter, defaultdict
 from datetime import timedelta
 from math import isfinite
@@ -31,9 +32,21 @@ from .timeutils import (
 from .validator import PreparedValidator, validate
 
 
-# OR-Tools 9.15 can segfault during parallel quality search on a valid demo
-# model. Use the verified single-worker path for every production solve.
+# OR-Tools 9.15 kann bei paralleler Qualitätssuche an einem gültigen
+# Demomodell abstürzen. Die Bibliotheksvorgabe bleibt deshalb einspurig: so
+# bleiben Aufrufe aus Tests und Kommandozeile reproduzierbar. Der
+# Auftragsprozess rechnet parallel und wiederholt bei einem Absturz einspurig.
 SEARCH_WORKERS = 1
+
+
+def parallel_workers():
+    """Suchprozesse für eine Auftragsrechnung.
+
+    Mehrere Prozesse liefern an echten Daten deutlich bessere Pläne, sind aber
+    nicht reproduzierbar: dieselbe Eingabe kann verschiedene gleich gültige
+    Pläne ergeben.
+    """
+    return max(1, min(8, os.cpu_count() or 1))
 
 # Zusammenhängende Freizeit entsteht aus wenigen, längeren Dienstblöcken;
 # beide teilen sich denselben Zeitraum. Vier bis fünf Tage sind daher
@@ -265,9 +278,11 @@ def _split_weekend_approval_diagnostics(snapshot, assignments):
     return diagnostics, len(split_weekends)
 
 
-def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None):
+def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
+          workers=None):
     if not isfinite(time_limit):
         raise ValueError('Zeitlimit muss eine endliche Zahl in Sekunden sein.')
+    workers = SEARCH_WORKERS if workers is None else max(1, int(workers))
     started = monotonic()
     deadline = started + time_limit
     # Die Reparaturphase braucht ein eigenes Budget; sonst schöpfen die
@@ -284,7 +299,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None):
     parameters = {
         "time_limit": time_limit,
         "partial": partial,
-        "workers": SEARCH_WORKERS,
+        "workers": workers,
         "random_seed": 0,
         "objective_semantics": "lexicographic vacancies, then configured weighted costs",
         "phase_seconds": timings,
@@ -459,7 +474,8 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None):
             ]
             if deadline - monotonic() <= round_budget:
                 break
-            repaired = solve(candidate, round_budget, partial=True, _repair=False)
+            repaired = solve(candidate, round_budget, partial=True, _repair=False,
+                             workers=workers)
             trace = {
                 "phase": "repair",
                 "neighborhood": neighborhood,
@@ -1406,7 +1422,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None):
             "lexicographic vacancies, then split weekends, then configured weighted costs"
         )
     solver = cp_model.CpSolver()
-    solver.parameters.num_search_workers = SEARCH_WORKERS
+    solver.parameters.num_search_workers = workers
     solver.parameters.random_seed = 0
     solver.parameters.symmetry_level = 0
     separation_rounds = 0

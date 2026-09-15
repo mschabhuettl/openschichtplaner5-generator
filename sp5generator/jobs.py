@@ -421,7 +421,7 @@ class Store:
             return output
 
 
-def _solve_child(path, job, parent_pid):
+def _solve_child(path, job, parent_pid, workers=1):
     # Linux prevents orphaned optimization after an abrupt worker exit.
     import sys
 
@@ -473,6 +473,7 @@ def _solve_child(path, job, parent_pid):
             Snapshot.model_validate_json(job["payload"]),
             **json.loads(job["parameters"]),
             progress=melden,
+            workers=workers,
         )
         store = Store(path)
         with store.connect() as conn:
@@ -486,6 +487,15 @@ def _solve_child(path, job, parent_pid):
                 "UPDATE jobs SET state='failed',error='Calculation failed; input and environment need local review',finished_at=? WHERE id=? AND state='running'",
                 (time.time(), job["id"]),
             )
+
+
+def _retry_single_worker(state, attempt, stopping):
+    """Nur ein abgestürzter erster Versuch wird einspurig wiederholt.
+
+    Ein abgebrochener, abgelaufener oder bereits abgeschlossener Auftrag wird
+    nicht erneut gerechnet; ein zweiter Absturz gilt als Fehlschlag.
+    """
+    return state == "running" and attempt == 0 and not stopping
 
 
 def _terminate_child(child):
@@ -548,23 +558,38 @@ def run_worker(path, once=False, ready=None):
                     break
                 time.sleep(0.25)
                 continue
-            child = multiprocessing.get_context("spawn").Process(
-                target=_solve_child, args=(store.path, job, os.getpid())
-            )
-            child.start()
-            deadline = (
-                time.monotonic() + json.loads(job["parameters"])["time_limit"] + 120
-            )
-            while child.is_alive():
+            from .solver import parallel_workers
+
+            versuche = (parallel_workers(), 1)
+            for nummer, arbeiter in enumerate(versuche):
+                child = multiprocessing.get_context("spawn").Process(
+                    target=_solve_child,
+                    args=(store.path, job, os.getpid(), arbeiter),
+                )
+                child.start()
+                deadline = (
+                    time.monotonic() + json.loads(job["parameters"])["time_limit"] + 120
+                )
+                abgelaufen = False
+                while child.is_alive():
+                    with store.connect() as conn:
+                        state = conn.execute(
+                            "SELECT state FROM jobs WHERE id=?", (job["id"],)
+                        ).fetchone()[0]
+                    abgelaufen = time.monotonic() > deadline
+                    if stopping or state == "cancelled" or abgelaufen:
+                        _terminate_child(child)
+                        break
+                    child.join(0.2)
+                child.join()
                 with store.connect() as conn:
                     state = conn.execute(
                         "SELECT state FROM jobs WHERE id=?", (job["id"],)
                     ).fetchone()[0]
-                if stopping or state == "cancelled" or time.monotonic() > deadline:
-                    _terminate_child(child)
+                if abgelaufen or arbeiter == 1:
                     break
-                child.join(0.2)
-            child.join()
+                if not _retry_single_worker(state, nummer, stopping):
+                    break
             with store.connect() as conn:
                 conn.execute(
                     "UPDATE jobs SET state='failed',error=?,finished_at=? WHERE id=? AND state='running'",

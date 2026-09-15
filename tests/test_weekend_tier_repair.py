@@ -57,7 +57,7 @@ def controlled_repair(monkeypatch, snapshot, initial, candidate):
             return cp_model.FEASIBLE
         return status
 
-    def recursive_solve(source, time_limit=30, partial=False, _repair=True):
+    def recursive_solve(source, time_limit=30, partial=False, _repair=True, workers=None):
         assert partial and not _repair and not inside_round[0]
         inside_round[0] = True
         try:

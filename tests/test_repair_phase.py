@@ -77,7 +77,7 @@ def controlled_run(
             elapsed[0] += outer_search_seconds
         return cp_model.FEASIBLE if restricted else status
 
-    def recursive_solve(candidate, time_limit=30, partial=False, _repair=True):
+    def recursive_solve(candidate, time_limit=30, partial=False, _repair=True, workers=None):
         assert partial and not _repair
         assert not state['inside_round'], 'repair rounds must not recurse again'
         # Check the actual argument before our own observation copy; copying
