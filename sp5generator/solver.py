@@ -77,9 +77,60 @@ def _free_time_metrics(period_start, period_end, worked_days_by_person):
     }
 
 
-def _split_weekend_approval_diagnostics(snapshot, assignments):
+def _forced_split_weekends(snapshot):
+    """Teilungen, die schon der Bedarf erzwingt, samt Hinweisen.
+
+    Wer an einem Wochenendtag höchstens einen Dienst übernimmt, deckt die
+    Mindestbesetzung des stärker besetzten Tages nur, wenn mindestens die
+    Differenz zur Höchstbesetzung des anderen Tages an genau einem der beiden
+    Tage arbeitet. Solche Teilungen bleiben, gleich wie die Freigaben liegen.
+    """
     if not snapshot.objectives.split_weekends:
-        return []
+        return [], 0
+    shifts = {s.id: s for s in snapshot.shifts}
+    minimum, maximum, unlimited = defaultdict(int), defaultdict(int), set()
+    for demand in snapshot.demands:
+        day = day_of(shifts[demand.shift_id], snapshot.timezone)
+        if day is None or day.weekday() < 5:
+            continue
+        if not snapshot.period_start <= day <= snapshot.period_end:
+            continue
+        minimum[day] += demand.minimum
+        if demand.maximum is None:
+            unlimited.add(day)
+        else:
+            maximum[day] += demand.maximum
+    diagnostics, total = [], 0
+    for monday in sorted({day - timedelta(days=day.weekday()) for day in minimum}):
+        saturday, sunday = monday + timedelta(days=5), monday + timedelta(days=6)
+        if saturday < snapshot.period_start or sunday > snapshot.period_end:
+            continue
+        forced = 0
+        for day, other in ((saturday, sunday), (sunday, saturday)):
+            if other not in unlimited:
+                forced = max(forced, minimum[day] - maximum[other])
+        if forced <= 0:
+            continue
+        total += forced
+        wer = "Eine Person muss" if forced == 1 else f"{forced} Personen müssen"
+        diagnostics.append(Diagnostic(
+            code="split_weekend_demand",
+            date=str(saturday),
+            message=f"Wochenende vom {saturday}: Der Bedarf verlangt am Samstag "
+            f"{minimum[saturday]} und am Sonntag {minimum[sunday]} Besetzungen. "
+            f"{wer} daher genau einen der beiden Tage arbeiten. Diese Teilungen "
+            "entstehen aus dem Bedarf; keine Freigabe und keine Rechnung lösen sie "
+            "auf. Sie verschwinden erst, wenn beide Tage gleich stark besetzt "
+            "werden. Die Zahl gilt, solange niemand an einem Tag zwei Dienste "
+            "übernimmt.",
+        ))
+    return diagnostics, total
+
+
+def _split_weekend_approval_diagnostics(snapshot, assignments):
+    """Geteilte Wochenenden des gewählten Plans, und welche eine Freigabe löste."""
+    if not snapshot.objectives.split_weekends:
+        return [], 0
     shifts = {s.id: s for s in snapshot.shifts}
     demands = {d.id: d for d in snapshot.demands}
     starts = defaultdict(set)
@@ -104,7 +155,7 @@ def _split_weekend_approval_diagnostics(snapshot, assignments):
             if missing_day not in days:
                 split_weekends.append((employee_id, saturday, missing_day))
     if not split_weekends:
-        return []
+        return [], 0
 
     missing_days = {day for _, _, day in split_weekends}
     demands_by_day = defaultdict(list)
@@ -137,7 +188,7 @@ def _split_weekend_approval_diagnostics(snapshot, assignments):
             "zusammenlegen; ohne sie bleibt die Teilung bestehen. Eine Freigabe entsteht "
             "dadurch nicht und wird auch nicht angenommen.",
         ))
-    return diagnostics
+    return diagnostics, len(split_weekends)
 
 
 def solve(snapshot, time_limit=30, partial=False, _repair=True):
@@ -183,6 +234,8 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
     def result(status, assignments=None, validation=None, **kwargs):
         assignments = assignments or []
         kwargs.setdefault("metrics", {})["split_weekends_blocked_by_approval"] = 0
+        kwargs.setdefault("metrics", {})["split_weekends_forced_by_demand"] = 0
+        kwargs.setdefault("metrics", {})["split_weekends_in_plan"] = 0
         kwargs.setdefault("metrics", {})["free_time"] = _free_time_metrics(
             snapshot.period_start,
             snapshot.period_end,
@@ -254,9 +307,17 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True):
             best = repair(best)
         # Report only after plan selection, including repair and fallbacks.
         # These hints never enter independent validation or search decisions.
-        hints = _split_weekend_approval_diagnostics(snapshot, best.assignments)
+        hints, split_total = _split_weekend_approval_diagnostics(
+            snapshot, best.assignments
+        )
         best.validation.diagnostics.extend(hints)
         best.metrics["split_weekends_blocked_by_approval"] = len(hints)
+        # Die gewichtete Wertung sieht nur Teilungen mit Arbeitsmöglichkeit an
+        # beiden Tagen. Berichtet wird die gezählte Gesamtzahl des Plans.
+        best.metrics["split_weekends_in_plan"] = split_total
+        forced, forced_total = _forced_split_weekends(snapshot)
+        best.validation.diagnostics.extend(forced)
+        best.metrics["split_weekends_forced_by_demand"] = forced_total
         # Result construction copies the parameters dictionary. Synchronize
         # later search status and timings when returning an earlier incumbent.
         best.parameters = dict(parameters)
