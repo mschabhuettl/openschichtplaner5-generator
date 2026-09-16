@@ -628,3 +628,12 @@ tr.excluded td:first-child::after { content: " · ausgenommen"; font-size: 11px;
 .demand-row-bulk > summary { cursor: pointer; font-size: 11.5px; font-weight: 600; color: var(--accent-ink); margin-top: 4px; }
 .demand-row-bulk[open] { padding-bottom: 6px; }
 .demand-row-bulk label { margin-top: 7px; }
+
+/* Bezeichnung und Zusatz stehen untereinander; nebeneinander laufen sie
+   zusammen („Dienst A08:00–13:00", „Mo05.01.2026"). */
+.demand-table th strong, .demand-table th small,
+.matrix-table th strong, .matrix-table th small,
+.calendar-table th strong, .calendar-table th small { display: block; }
+.demand-table th small, .matrix-table th small, .calendar-table th small {
+  font-weight: 400; font-size: 11px; color: var(--muted); margin-top: 1px;
+}
