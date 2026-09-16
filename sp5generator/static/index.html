@@ -393,17 +393,17 @@
           <div class="surface demand-surface">
             <div class="surface-toolbar demand-view-toolbar">
               <div class="actions" role="group" aria-label="Bedarfsansicht">
-                <button id="demandViewDates" type="button" aria-pressed="true">Nach Datum
-                </button>
-                <button id="demandViewFunctions" type="button" aria-pressed="false">Nach Funktion
-                </button>
+                <button id="demandViewDates" type="button" aria-pressed="true">Nach Datum</button>
+                <button id="demandViewFunctions" type="button" aria-pressed="false">Nach Funktion</button>
               </div>
-              <p class="helper-text">Eingabetaste, ↓ und ↑ übernehmen den Feldwert und wechseln in derselben Spalte zwischen den sichtbaren Zeilen.
-              </p>
-              <p id="demandFunctionHelp" class="helper-text" hidden>Eine Zahl setzt die Mindestbesetzung jedes Bedarfs dieser Funktion und Tagesart im Planungszeitraum. Werktage sind Montag bis Freitag ohne Feiertage. Feiertage stammen aus den im Projekt markierten Diensten und haben Vorrang vor den anderen Tagesarten. „uneinheitlich“ bleibt bis zu einer Eingabe erhalten. Tagesarten ohne Bedarfe bleiben leer und gesperrt. Übersteigt das Minimum die Höchstbesetzung, wird diese mit angehoben.
-              </p>
-              <p id="demandBoardHelp" class="helper-text">Eine Zahl direkt im Tag ändern oder den Zeilenwert für alle Tage, Werktage (Mo–Fr) oder Wochenenden (Sa–So) übernehmen. Überschriebene Werte sind markiert; Tage ohne passenden Dienst oder eindeutige Zuordnung bleiben gesperrt. Enthält eine Zelle mehrere Bedarfe, wird die Summe im Verhältnis ihrer ursprünglichen Mindestbesetzung verteilt; die einzelnen Bedarfe und ihre Arbeitsplätze bleiben erhalten. Übersteigt das Minimum die Höchstbesetzung, wird diese mit angehoben.
-              </p>
+              <details class="demand-guide">
+                <summary>Wie das Eintragen funktioniert</summary>
+                <div class="demand-guide-content">
+                  <p class="helper-text">Eingabetaste, ↓ und ↑ übernehmen den Feldwert und wechseln in derselben Spalte zwischen den sichtbaren Zeilen.
+                  <p id="demandFunctionHelp" class="helper-text" hidden>Eine Zahl setzt die Mindestbesetzung jedes Bedarfs dieser Funktion und Tagesart im Planungszeitraum. Werktage sind Montag bis Freitag ohne Feiertage. Feiertage stammen aus den im Projekt markierten Diensten und haben Vorrang vor den anderen Tagesarten. „uneinheitlich“ bleibt bis zu einer Eingabe erhalten. Tagesarten ohne Bedarfe bleiben leer und gesperrt. Übersteigt das Minimum die Höchstbesetzung, wird diese mit angehoben.
+                  <p id="demandBoardHelp" class="helper-text">Eine Zahl direkt im Tag ändern oder den Zeilenwert für alle Tage, Werktage (Mo–Fr) oder Wochenenden (Sa–So) übernehmen. Überschriebene Werte sind markiert; Tage ohne passenden Dienst oder eindeutige Zuordnung bleiben gesperrt. Enthält eine Zelle mehrere Bedarfe, wird die Summe im Verhältnis ihrer ursprünglichen Mindestbesetzung verteilt; die einzelnen Bedarfe und ihre Arbeitsplätze bleiben erhalten. Übersteigt das Minimum die Höchstbesetzung, wird diese mit angehoben.
+                </div>
+              </details>
             </div>
             <div id="demandBoard" class="scroll" role="region" aria-label="Mindestbesetzung nach Dienstmuster und Tag" aria-describedby="demandBoardHelp" tabindex="0"></div>
             <div class="surface-footer"><span class="helper-text">Änderungen werden mit dem Projekt gespeichert. „Zeile zurücksetzen“ stellt den Stand beim Öffnen des Projekts wieder her.</span></div>

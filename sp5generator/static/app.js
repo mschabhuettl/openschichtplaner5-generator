@@ -386,8 +386,12 @@ function renderDemandBoard(){
   const tr=el('tr',undefined,body);tr.dataset.demandRow=row.key;
   const heading=el('th',undefined,tr);heading.scope='row';heading.className='demand-row';el('strong',row.name,heading);
   const times=row.times.map(([a,start,b,end])=>`${start}–${end}${b!==a?' (Folgetag)':''}`).join(' / ');el('small',times,heading);
-  const bulkLabel=el('label','Zeilenwert',heading),bulk=el('input',undefined,bulkLabel);bulk.type='number';bulk.min='0';bulk.step='1';bulk.className='demand-bulk-value';tableInputNavigation(bulk,'bulk');bulk.setAttribute('aria-label',`${row.name} · ${times}: Wert für Sammelbearbeitung`);
-  const actions=el('div',undefined,heading);actions.className='demand-row-actions';
+  // Die Sammelbearbeitung machte jede Zeile rund 230 Pixel hoch; eingeklappt
+  // passen statt drei Dienstmustern gut ein Dutzend ins Bild.
+  const bulkBox=el('details',undefined,heading);bulkBox.className='demand-row-bulk';
+  el('summary','Ganze Zeile setzen',bulkBox);
+  const bulkLabel=el('label','Zeilenwert',bulkBox),bulk=el('input',undefined,bulkLabel);bulk.type='number';bulk.min='0';bulk.step='1';bulk.className='demand-bulk-value';tableInputNavigation(bulk,'bulk');bulk.setAttribute('aria-label',`${row.name} · ${times}: Wert für Sammelbearbeitung`);
+  const actions=el('div',undefined,bulkBox);actions.className='demand-row-actions';
   const controls=new Map();
   const changed=()=>{invalidateResult();renderDemandSummary();for(const refresh of controls.values())refresh();renderedPanels.set('demand',changeVersion);};
   const read=input=>{input.setCustomValidity('');if(input.value===''||!input.checkValidity()||!Number.isSafeInteger(Number(input.value))){input.setCustomValidity('Eine ganze Zahl ab 0 eingeben.');input.reportValidity();return null;}return Number(input.value);};

@@ -44,8 +44,10 @@ module.exports=async function demandBoard({page,base}){
  async function edit(row,day,minimum){await value(row,day).fill(String(minimum));await value(row,day).blur();}
  const demands=()=>page.evaluate(()=>structuredClone(snapshot.demands));
  const number=async selector=>Number((await page.locator(selector).innerText()).replace(/\./g,'').replace(',','.').replace(/[^\d.-]/g,''));
- async function reset(row){await row.getByRole('button',{name:'Zeile zurücksetzen',exact:true}).click();}
- async function bulk(row,minimum,label){await row.locator('input.demand-bulk-value').fill(String(minimum));await row.getByRole('button',{name:label,exact:true}).click();}
+ // Die Sammelbearbeitung ist eingeklappt; für die Prüfung zuerst öffnen.
+ async function openBulk(row){await row.evaluate(node=>{const box=node.querySelector('details.demand-row-bulk');if(box)box.open=true;});}
+ async function reset(row){await openBulk(row);await row.getByRole('button',{name:'Zeile zurücksetzen',exact:true}).click();}
+ async function bulk(row,minimum,label){await openBulk(row);await row.locator('input.demand-bulk-value').fill(String(minimum));await row.getByRole('button',{name:label,exact:true}).click();}
 
  // One row per service/time pattern, with the inclusive planning period as columns.
  assert.equal(await rows.count(),3,'Repeated daily shifts form one row; different names or times remain separate');
