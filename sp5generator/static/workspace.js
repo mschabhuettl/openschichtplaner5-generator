@@ -114,7 +114,10 @@
     current={...current,...detail};
     const project=current.snapshot;
     document.querySelectorAll('[data-requires-project]').forEach(button=>button.disabled=!project);
+    // Ohne Projekt trägt die Kopfleiste nichts: „Projekt benennen · 0 Tage ·"
+    // und „0 Personen, 0 % belegt" sind keine Auskunft, sondern Rauschen.
     ['topSaveIndicator','headerSave','backup'].forEach(id=>show(id,!!project));
+    for(const knoten of document.querySelectorAll('.project-bar,.topbar-facts'))knoten.hidden=!project;
     byId('newProject').disabled=busy();
     if(previousBusy!==busy()) {renderProjects();renderJobs();}
     lastUiBusy=busy();

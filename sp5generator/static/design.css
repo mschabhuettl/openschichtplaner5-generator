@@ -637,3 +637,6 @@ tr.excluded td:first-child::after { content: " · ausgenommen"; font-size: 11px;
 .demand-table th small, .matrix-table th small, .calendar-table th small {
   font-weight: 400; font-size: 11px; color: var(--muted); margin-top: 1px;
 }
+
+/* Klapptitel: Überschrift und Beschreibung nicht zusammenlaufen lassen. */
+.import-options > summary, .advanced-settings > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; }
