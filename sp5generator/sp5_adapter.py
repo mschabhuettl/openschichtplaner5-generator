@@ -105,33 +105,35 @@ def _nominal_bookings(db, employees, start, end, *, actual_bookings=None):
 
 
 def _typical_staffing(rows, calc, holidays, window_start, window_end, employees):
-    """Typical head count per duty, workplace and day type from a past window.
+    """Observed staffing volume per duty and day type in a past window.
 
-    Days without any duty count as zero, otherwise a service that only runs on
-    weekdays would look like a seven-day service. Holidays are staffed like a
-    Sunday, on the express instruction of the planning office; their duty times
+    Returned per (duty, day type): how many person-days were staffed, and over
+    how many comparable days. Workplaces are merged on purpose. One duty split
+    across many workplaces makes every single combination rare, and a statistic
+    over rare combinations throws most of the work away - measured against a
+    real year, keeping them apart lost four fifths of it. Holidays count as
+    Sundays, on the express instruction of the planning office; their duty times
     still come from the source's own holiday column.
     """
-    from statistics import median_low
-
     counted, seen, teams = {}, set(), {}
     for row in rows:
         day = calc.to_date(row.get("date"))
         eid = f"sp5:employee:{row.get('employee_id')}"
-        sid, wid = row.get("shift_id"), row.get("workplace_id")
+        sid = row.get("shift_id")
         if (day is None or not window_start <= day <= window_end
                 or eid not in employees or sid in (None, 0, "", "0")
                 or row.get("kind") not in ("shift", "special_shift")
                 or (row.get("kind") == "special_shift" and row.get("spshi_type", 0) != 0)):
             continue
-        key = (eid, day, sid, wid, row.get("kind"), row.get("start_time"), row.get("end_time"))
+        key = (eid, day, sid, row.get("workplace_id"), row.get("kind"),
+               row.get("start_time"), row.get("end_time"))
         if key in seen:
             continue
         seen.add(key)
-        counted.setdefault((sid, wid, day), set()).add(eid)
+        counted.setdefault((sid, day), set()).add(eid)
         # The group the duty was booked under, not every group its holder belongs to.
         stated = row.get("group_id")
-        teams.setdefault((sid, wid), set()).update(
+        teams.setdefault(sid, set()).update(
             {f"sp5:group:{stated}"} if stated not in (None, 0, "", "0")
             else employees[eid].team_ids
         )
@@ -143,17 +145,13 @@ def _typical_staffing(rows, calc, holidays, window_start, window_end, employees)
         day_type.setdefault(6 if idx == calc.HOLIDAY_INDEX else idx, []).append(day)
         day = day + timedelta(days=1)
 
-    levels, spread = {}, {}
-    for post in sorted(teams, key=str):
+    volume = {}
+    for sid in sorted(teams, key=str):
         for kind, days in day_type.items():
-            series = sorted(len(counted.get((*post, d), ())) for d in days)
-            if not series or not series[-1]:
-                continue
-            # The lower median keeps a derived requirement from inventing a post
-            # that was staffed on fewer than half of the comparable days.
-            levels[(*post, kind)] = median_low(series)
-            spread[(*post, kind)] = (series[0], series[-1], len(days))
-    return levels, spread, teams
+            series = [len(counted.get((sid, d), ())) for d in days]
+            if any(series):
+                volume[(sid, kind)] = (sum(series), len(days))
+    return volume, teams
 
 
 def _scope_schedule(db, scope, year, month, **kwargs):
@@ -562,75 +560,96 @@ def import_snapshot(
             rows.extend(_scope_schedule(db, scope, month.year, month.month, plan=reference_plan))
             month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
         selected_teams = {f"sp5:group:{gid}" for gid in scope}
-        levels, spread, post_teams = _typical_staffing(
+        volume, post_teams = _typical_staffing(
             rows, calc, holidays, history_start, history_end, employee_map
         )
-        skipped, derived = 0, {}
-        d = period_start
-        while d <= period_end:
-            idx = calc.day_index(d, holidays)
-            kind = 6 if idx == calc.HOLIDAY_INDEX else idx
-            for (sid, wid), teams in sorted(post_teams.items(), key=str):
-                people = levels.get((sid, wid, kind), 0)
-                demand_teams = sorted(
-                    teams & selected_teams, key=lambda team: int(team.rsplit(":", 1)[1])
-                )
-                if not people or sid not in native_shifts or not demand_teams:
-                    continue
-                native = native_shifts[sid]
-                try:
-                    windows = _parse_native_windows(native.get(f"STARTEND{idx}"))
-                    if not windows:
-                        skipped += 1
-                        continue
-                    segments = [
-                        Interval(
-                            start=_local(d, a, zone),
-                            end=_local(d, b + (1440 if b <= a else 0), zone),
-                        )
-                        for a, b in windows
-                    ]
-                except ValueError as exc:
+        target_days = {}
+        day = period_start
+        while day <= period_end:
+            idx = calc.day_index(day, holidays)
+            target_days.setdefault(6 if idx == calc.HOLIDAY_INDEX else idx, []).append(day)
+            day += timedelta(days=1)
+        # Erwartungstreu übertragen: die beobachtete Menge je Dienst und Tagart
+        # bleibt erhalten und wird gleichmäßig über die vergleichbaren Tage des
+        # Planungszeitraums gelegt. Ein Median oder ein je Tag gerundeter Wert
+        # verliert oder erfindet dagegen Arbeit, sobald ein Dienst nicht an
+        # jedem vergleichbaren Tag besetzt war.
+        planned = {}
+        for (sid, kind), (observed, compared) in volume.items():
+            days = target_days.get(kind, [])
+            total = round(observed / compared * len(days)) if days and compared else 0
+            for i, day in enumerate(days):
+                people = (i + 1) * total // len(days) - i * total // len(days)
+                if people:
+                    planned[(sid, day)] = people
+        skipped = 0
+        for (sid, day), people in sorted(planned.items(), key=lambda item: str(item[0])):
+            demand_teams = sorted(
+                post_teams[sid] & selected_teams,
+                key=lambda team: int(team.rsplit(":", 1)[1]),
+            )
+            if sid not in native_shifts or not demand_teams:
+                skipped += 1
+                continue
+            native = native_shifts[sid]
+            idx = calc.day_index(day, holidays)
+            try:
+                windows = _parse_native_windows(native.get(f"STARTEND{idx}"))
+                if not windows:
                     skipped += 1
-                    unresolved.append(f"SHIFT {sid} {d}: {exc}")
                     continue
-                shift_id = f"sp5:shift:{sid}:{d}"
-                shifts.setdefault(shift_id, Shift(
-                    id=shift_id, name=native.get("NAME", ""), kind="unconfirmed",
-                    team_id=demand_teams[0], segments=segments,
-                    paid_minutes=_minutes(native.get(f"DURATION{idx}")),
-                    holiday=d in holidays, source="sp5:SHIFT",
-                ))
-                position_id = f"sp5:position:{sid}:{wid}"
-                positions[position_id] = Position(
-                    id=position_id, name=native.get("NAME", ""),
-                    function_id=f"sp5:service:{sid}", workplace_id=f"sp5:workplace:{wid}",
-                    qualifications_required=False,
-                )
-                demands.append(Demand(
-                    id=f"sp5:demand:HISTORY:{sid}:{wid}:{d}",
-                    shift_id=shift_id, position_id=position_id,
-                    minimum=people, maximum=people, team_ids=demand_teams,
-                    source="sp5:HISTORY",
-                ))
-                low, high, days = spread[(sid, wid, kind)]
-                derived[f"{sid}:{wid}:{kind}"] = {
-                    "typical": people, "lowest": low, "highest": high, "days_compared": days,
-                }
-            d += timedelta(days=1)
+                segments = [
+                    Interval(
+                        start=_local(day, a, zone),
+                        end=_local(day, b + (1440 if b <= a else 0), zone),
+                    )
+                    for a, b in windows
+                ]
+            except ValueError as exc:
+                skipped += 1
+                unresolved.append(f"SHIFT {sid} {day}: {exc}")
+                continue
+            shift_id = f"sp5:shift:{sid}:{day}"
+            shifts.setdefault(shift_id, Shift(
+                id=shift_id, name=native.get("NAME", ""), kind="unconfirmed",
+                team_id=demand_teams[0], segments=segments,
+                paid_minutes=_minutes(native.get(f"DURATION{idx}")),
+                holiday=day in holidays, source="sp5:SHIFT",
+            ))
+            # Ein zusammengefasster Posten ist an keinen Arbeitsplatz gebunden.
+            position_id = f"sp5:position:{sid}:0"
+            positions[position_id] = Position(
+                id=position_id, name=native.get("NAME", ""),
+                function_id=f"sp5:service:{sid}", workplace_id="sp5:workplace:0",
+                qualifications_required=False,
+            )
+            demands.append(Demand(
+                id=f"sp5:demand:HISTORY:{sid}:{day}",
+                shift_id=shift_id, position_id=position_id,
+                minimum=people, maximum=people, team_ids=demand_teams,
+                source="sp5:HISTORY",
+            ))
         metadata["history_demand"] = {
             "window": {"start": str(history_start), "end": str(history_end)},
             "plan": reference_plan,
-            "posts": len(derived), "cells": len(demands),
+            "posts": len({sid for sid, _ in volume}), "cells": len(demands),
             "slots": sum(demand.minimum for demand in demands), "skipped": skipped,
-            "levels": derived,
+            "levels": {
+                f"{sid}:{kind}": {
+                    "observed": observed, "days_compared": compared,
+                    "projected": round(observed / compared
+                                       * len(target_days.get(kind, []))) if compared else 0,
+                }
+                for (sid, kind), (observed, compared) in sorted(volume.items(), key=str)
+            },
         }
         unresolved.append(
             f"Der Besetzungsbedarf wurde aus dem Zeitraum {history_start} bis {history_end} "
-            "abgeleitet und stammt nicht aus der Bedarfstabelle der Quelle. Je Dienst, "
-            "Arbeitsplatz und Wochentag steht die typische Besetzung (unterer Median) "
-            "vergleichbarer Tage; Feiertage werden wie Sonntage angesetzt. Schwankungen "
-            "zwischen niedrigster und höchster Besetzung stehen unter history_demand. "
+            "abgeleitet und stammt nicht aus der Bedarfstabelle der Quelle. Je Dienst und "
+            "Wochentag bleibt die beobachtete Menge erhalten und wird gleichmäßig auf die "
+            "vergleichbaren Tage verteilt; Feiertage zählen wie Sonntage. Arbeitsplätze sind "
+            "dabei zusammengefasst: der Bedarf nennt den Dienst, nicht den Platz. Beobachtete "
+            "Menge und Zahl der verglichenen Tage stehen je Posten unter history_demand. "
             "Vor der Planung fachlich bestätigen."
         )
     if demand_source == "observed":

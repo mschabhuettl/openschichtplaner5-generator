@@ -45,14 +45,22 @@ Neue Bedarfsquelle **„Aus der Historie ableiten (typischer Tag)"**: aus einem
 gewählten Fenster wird je Dienst, Arbeitsplatz und Wochentag die typische
 Besetzung vergleichbarer Tage übernommen.
 
+- **Die beobachtete Menge bleibt erhalten.** Je Dienst und Wochentag wird
+  gezählt, wie viele Personentage tatsächlich besetzt waren, und dieselbe Menge
+  wird gleichmäßig über die vergleichbaren Tage des Planungszeitraums gelegt.
+  Ein Median oder ein je Tag gerundeter Wert verliert oder erfindet Arbeit,
+  sobald ein Dienst nicht an jedem vergleichbaren Tag besetzt war – an einem
+  echten Jahr gemessen blieben vom tatsächlichen Volumen so nur 19 % übrig.
 - **Tage ohne Dienst zählen mit.** Sonst sähe ein reiner Werktagsdienst wie ein
   Siebentagedienst aus.
-- **Unterer Median**, nicht Mittelwert oder Höchstwert: ein Posten, der seltener
-  als an der Hälfte der vergleichbaren Tage besetzt war, wird nicht zur Vorgabe.
+- **Arbeitsplätze werden zusammengefasst.** Derselbe Dienst verteilt sich in
+  großen Häusern über viele Arbeitsplätze; jede einzelne Kombination ist dann
+  selten, und eine Ableitung darüber wirft den größten Teil der Arbeit weg. Der
+  abgeleitete Bedarf nennt deshalb den Dienst, nicht den Platz.
 - **Feiertage werden wie Sonntage besetzt**, behalten aber die Feiertagszeiten der
   Quelle.
-- Je Posten und Wochentag stehen **typische, niedrigste und höchste Besetzung**
-  sowie die Zahl der verglichenen Tage im Importbericht. Die Ableitung ist damit
+- Je Dienst und Wochentag stehen **beobachtete Menge, Zahl der verglichenen Tage
+  und übertragene Menge** im Importbericht. Die Ableitung ist damit
   nachvollziehbar und fachlich zu bestätigen, bevor damit geplant wird.
 - **Bedarfsfenster und Freigabefenster sind getrennt einstellbar.** Freigaben
   profitieren vom langen Rückblick, ein typischer Tag will einen aktuellen

@@ -1820,7 +1820,7 @@ def _history(source=None, **kw):
     )
 
 
-def test_history_demand_separates_day_types_and_counts_quiet_days_as_zero():
+def test_history_demand_separates_day_types_and_drops_days_nobody_ever_worked():
     snapshot = _history()
     levels = {
         demand.shift_id.rsplit(":", 1)[1]: (demand.minimum, demand.maximum)
@@ -1830,33 +1830,50 @@ def test_history_demand_separates_day_types_and_counts_quiet_days_as_zero():
     assert levels == {f"2026-03-0{day}": (2, 2) for day in range(2, 7)} | {"2026-03-07": (1, 1)}
     assert all(demand.source == "sp5:HISTORY" for demand in snapshot.demands)
     assert all(demand.team_ids == ["sp5:group:1"] for demand in snapshot.demands)
-    assert {demand.position_id for demand in snapshot.demands} == {"sp5:position:201:301"}
+    # Workplaces are merged: the requirement names the duty, not the place.
+    assert {demand.position_id for demand in snapshot.demands} == {"sp5:position:201:0"}
+    position, = snapshot.positions
+    assert position.workplace_id == "sp5:workplace:0"
     assert len({demand.id for demand in snapshot.demands}) == len(snapshot.demands)
     report = snapshot.metadata["history_demand"]
     assert report["window"] == {"start": "2026-02-02", "end": "2026-03-01"}
     assert (report["cells"], report["slots"], report["skipped"]) == (6, 11, 0)
-    assert report["levels"]["201:301:0"] == {
-        "typical": 2, "lowest": 2, "highest": 2, "days_compared": 4,
-    }
-    assert report["levels"]["201:301:5"]["typical"] == 1
-    assert "201:301:6" not in report["levels"]
+    assert report["levels"]["201:0"] == {"observed": 8, "days_compared": 4, "projected": 2}
+    assert report["levels"]["201:5"]["projected"] == 1
+    assert "201:6" not in report["levels"]
     assert any("2026-02-02 bis 2026-03-01" in note for note in snapshot.unresolved)
 
 
-def test_history_demand_uses_the_lower_median_of_comparable_days():
-    class Varying(HistoryPlanDatabase):
-        # Mondays: 2, 2, 1, 1 people -> lower median 1, not the average of 1.5.
-        def get_schedule(self, year, month, **kw):
-            rows = super().get_schedule(year, month, **kw)
-            return [row for row in rows
-                    if not (date.fromisoformat(row["date"]).weekday() == 0
-                            and date.fromisoformat(row["date"]).day > 15
-                            and row["employee_id"] == 102)]
+def test_history_demand_keeps_the_observed_volume():
+    """Die beobachtete Menge je Dienst und Tagart überlebt die Übertragung."""
+    snapshot = import_snapshot(
+        HistoryPlanDatabase(), date(2026, 3, 2), date(2026, 3, 29), "1", "UTC",
+        demand_source="history",
+        history_start=date(2026, 2, 2), history_end=date(2026, 3, 1),
+    )
+    # 4 Wochen x (5 Werktage x 2 + 1 Samstag x 1) = 44 Dienststellen.
+    assert sum(demand.minimum for demand in snapshot.demands) == 44
+    assert snapshot.metadata["history_demand"]["slots"] == 44
 
-    report = _history(Varying()).metadata["history_demand"]["levels"]["201:301:0"]
-    assert report == {"typical": 1, "lowest": 1, "highest": 2, "days_compared": 4}
-    monday, = [d for d in _history(Varying()).demands if d.shift_id.endswith("2026-03-02")]
-    assert (monday.minimum, monday.maximum) == (1, 1)
+
+def test_history_demand_spreads_a_partly_staffed_post_over_the_period():
+    """Ein Posten, der nur an der Hälfte der Tage besetzt war, verschwindet nicht."""
+
+    class Halb(HistoryPlanDatabase):
+        def get_schedule(self, year, month, **kw):
+            return [row for row in super().get_schedule(year, month, **kw)
+                    if date.fromisoformat(row["date"]).weekday() != 0
+                    or date.fromisoformat(row["date"]).day <= 15]
+
+    snapshot = import_snapshot(
+        Halb(), date(2026, 3, 2), date(2026, 3, 29), "1", "UTC",
+        demand_source="history",
+        history_start=date(2026, 2, 2), history_end=date(2026, 3, 1),
+    )
+    montage = sorted(d.minimum for d in snapshot.demands
+                     if date.fromisoformat(d.id.rsplit(":", 1)[1]).weekday() == 0)
+    # 2 von 4 Montagen mit je 2 Personen -> 4 Dienststellen auf 4 Montage verteilt.
+    assert montage == [1, 1, 1, 1]
 
 
 def test_history_demand_staffs_holidays_like_sundays_but_keeps_holiday_times():
@@ -1903,9 +1920,9 @@ def test_history_demand_without_any_recorded_duty_derives_nothing():
     assert snapshot.metadata["history_demand"]["cells"] == 0
 
 
-@pytest.mark.parametrize("staffed_mondays,expected", [(4, 2), (3, 2), (2, None), (1, None)])
-def test_history_demand_counts_days_without_any_duty(staffed_mondays, expected):
-    """A post that stood empty on half the comparable days is not a requirement."""
+@pytest.mark.parametrize("staffed_mondays,expected", [(4, 2), (3, 2), (2, 1), (1, None)])
+def test_history_demand_carries_over_what_was_really_worked(staffed_mondays, expected):
+    """Der Mittelwert der vergleichbaren Tage, nicht ein Schwellenwert."""
 
     class Sometimes(HistoryPlanDatabase):
         def get_schedule(self, year, month, **kw):
@@ -1918,21 +1935,6 @@ def test_history_demand_counts_days_without_any_duty(staffed_mondays, expected):
     snapshot = _history(Sometimes())
     monday = [d for d in snapshot.demands if d.shift_id.endswith("2026-03-02")]
     assert [d.minimum for d in monday] == ([expected] if expected else [])
-
-
-def test_the_demand_window_can_stand_apart_from_the_approval_window(tmp_path):
-    """Approvals want a long look back; a typical day wants a recent, comparable one."""
-    from sp5generator.sp5_adapter import import_snapshot as direct
-    wide = direct(HistoryPlanDatabase(), date(2026, 3, 2), date(2026, 3, 8), "1", "UTC",
-                  demand_source="history",
-                  history_start=date(2026, 2, 2), history_end=date(2026, 3, 1))
-    narrow = direct(HistoryPlanDatabase(), date(2026, 3, 2), date(2026, 3, 8), "1", "UTC",
-                    demand_source="history",
-                    history_start=date(2026, 2, 23), history_end=date(2026, 3, 1))
-    assert wide.metadata["history_demand"]["window"]["start"] == "2026-02-02"
-    assert narrow.metadata["history_demand"]["window"]["start"] == "2026-02-23"
-    assert narrow.metadata["history_demand"]["levels"]["201:301:0"]["days_compared"] == 1
-    assert wide.metadata["history_demand"]["levels"]["201:301:0"]["days_compared"] == 4
 
 
 def test_history_demand_belongs_to_the_group_the_duty_was_booked_under():
