@@ -1305,7 +1305,7 @@ def import_snapshot(
         objectives=Objectives(workday_transitions=400, isolated_days=3000,
                               split_weekends=10000, block_shape=15,
                               nights=30, weekends=30,
-                              hours_fairness=30),
+                              hours_fairness=30, duty_fairness=30),
         restrictions=restrictions,
         assignments=assignments,
         boundary_work=list(boundary_work.values()),

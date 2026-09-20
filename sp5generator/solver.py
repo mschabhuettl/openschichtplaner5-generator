@@ -866,6 +866,13 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
         model.new_int_var(0, HOURS_SCALE, "hours_level")
         if snapshot.objectives.hours_fairness else None
     )
+    # Dasselbe Prinzip auf die Dienstanzahl. In Plänen, deren Bedarf nur einen
+    # Bruchteil der vereinbarten Arbeitszeit ausmacht, sagt die Sollerfüllung
+    # fast nichts; verteilt werden muss dann die Zahl der Dienste.
+    duty_level = (
+        model.new_int_var(0, len(snapshot.demands), "duty_level")
+        if snapshot.objectives.duty_fairness else None
+    )
     for e in snapshot.employees:
         if monotonic() >= deadline:
             return timed_out()
@@ -1250,6 +1257,15 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
                                          "gap_promille:" + e.id)
             model.add_division_equality(promille, abstand, 1000)
             cost("hours_fairness", promille, snapshot.objectives.hours_fairness)
+        if duty_level is not None and candidate_stats[e.id]["eligible_demands"]:
+            # Wer nirgends einsetzbar ist, bliebe sonst der Maßstab für alle.
+            obergrenze = max(1, len(normal_entries))
+            dienste = model.new_int_var(0, obergrenze, "duties:" + e.id)
+            model.add(dienste == sum(x for _, x in normal_entries))
+            abweichung = model.new_int_var(0, max(obergrenze, len(snapshot.demands)),
+                                           "duties_gap:" + e.id)
+            model.add_abs_equality(abweichung, dienste - duty_level)
+            cost("duty_fairness", abweichung, snapshot.objectives.duty_fairness)
         if e.contractual_weekly_minutes is not None and snapshot.objectives.hours:
             # Soft calendar-week workload, never an invented hard cap. Full
             # allowance at edges: do not infer weekdays or divide monthly targets.

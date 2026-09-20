@@ -169,6 +169,8 @@ class Objectives(Model):
     hours: int = Field(default=1, ge=0)
     # Gleichmäßige Sollerfüllung: nur bei aktiviertem Gewicht bewertet.
     hours_fairness: int = Field(default=0, ge=0)
+    # Gleichmäßige Dienstanzahl: nur bei aktiviertem Gewicht bewertet.
+    duty_fairness: int = Field(default=0, ge=0)
     nights: int = Field(default=10, ge=0)
     weekends: int = Field(default=10, ge=0)
     holidays: int = Field(default=10, ge=0)

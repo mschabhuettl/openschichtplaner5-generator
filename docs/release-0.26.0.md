@@ -70,6 +70,24 @@ Personen ohne jede Freigabe werden dabei ausdrücklich benannt statt stillschwei
 Person im selben Dienst bleibt ein Posten offen und wird als Lücke gemeldet – das
 ist gewollt und sichtbar.
 
+## Gleichmäßige Dienstanzahl
+
+Es gibt Dienstpläne, deren Bedarf nur einen Bruchteil der vereinbarten
+Arbeitszeit ausmacht: Bereitschaften, Journaldienste, Rufdienste neben dem
+Hauptberuf. Dort sagt die Sollerfüllung fast nichts – alle liegen nahe null, und
+das bisherige Ziel „Gleichmäßige Sollerfüllung" hatte keinen Ansatzpunkt. Die
+Folge war ein Plan, in dem ein Teil der Mannschaft alles trug und der Rest leer
+ausging.
+
+Neues weiches Ziel **„Gleichmäßige Dienstanzahl"**: die Suche wählt einen
+gemeinsamen Maßstab frei und bewertet den Abstand jeder Person dazu – gezählt
+werden Dienste, nicht Stunden. Wer im Zeitraum nirgends einsetzbar ist, wird
+davon ausgenommen und verzerrt den Maßstab nicht.
+
+Das Gewicht steht unter **Regeln → Gewichte**. Neu importierte SP5-Projekte
+bekommen es mit 30 voreingestellt; **bestehende gespeicherte Projekte bleiben bei
+0** und damit unverändert.
+
 ## Ersatzsuche bei Krankmeldung
 
 Der häufigste Notfall im Betrieb ist der kurzfristige Krankenstand. Dafür gab es
