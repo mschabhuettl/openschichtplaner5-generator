@@ -23,7 +23,7 @@ module.exports=async function demandBoard({page,base}){
   shifts:[],demands:[],assignments:[],boundary_work:[],restrictions:[],wishes:[],objectives:{},unresolved:[],metadata:{},
  };
  function addShift(id,name,day,start,end,paid){fixture.shifts.push({id,name,kind:'day',team_id:'team-a',segments:[{start:`${day}T${start}:00Z`,end:`${day}T${end}:00Z`}],paid_minutes:paid,holiday:false,source:'synthetic'});}
- function addDemand(id,shift,position,minimum,maximum){fixture.demands.push({id,shift_id:shift,position_id:position,minimum,maximum,team_ids:['team-a'],source:'synthetic'});}
+ function addDemand(id,shift,position,minimum,maximum){fixture.demands.push({id,shift_id:shift,position_id:position,minimum,maximum,team_ids:['team-a'],alternative_group:null,source:'synthetic'});}
  days.forEach((day,i)=>{
   addShift(`a-day-${i}`,'Dienst A',day,'08:00','16:00',480);
   if(i!==2)addDemand(`d-a-${i}`,`a-day-${i}`,'position-a',1,2);
@@ -167,7 +167,7 @@ module.exports=async function demandBoard({page,base}){
  // retains the source proportions even after a smaller total has rounded down.
  const aggregate=structuredClone(fixture);aggregate.id+='-aggregate';
  aggregate.positions.push({...aggregate.positions[0],id:'position-a-second',workplace_id:'workplace-b'});
- aggregate.demands.push({id:'d-a-second',shift_id:'a-day-0',position_id:'position-a-second',minimum:1,maximum:null,team_ids:['team-a'],source:'synthetic'});
+ aggregate.demands.push({id:'d-a-second',shift_id:'a-day-0',position_id:'position-a-second',minimum:1,maximum:null,team_ids:['team-a'],alternative_group:null,source:'synthetic'});
  await page.evaluate(value=>load(value,true),aggregate);await navigate('demand');
  assert.equal(await rows.count(),3,'Several workplace demands still form one service/time row');
  assert.equal(await value(dayRow,days[0]).inputValue(),'2','The cell displays the sum of workplace minima');
@@ -189,7 +189,7 @@ module.exports=async function demandBoard({page,base}){
  zoned.positions=zoned.positions.slice(0,1);zoned.shifts=[];zoned.demands=[];
  function zonedShift(id,name,start,end){
   zoned.shifts.push({...fixture.shifts[0],id,name,segments:[{start,end}]});
-  zoned.demands.push({id:`d-${id}`,shift_id:id,position_id:'position-a',minimum:1,maximum:2,team_ids:['team-a'],source:'synthetic'});
+  zoned.demands.push({id:`d-${id}`,shift_id:id,position_id:'position-a',minimum:1,maximum:2,team_ids:['team-a'],alternative_group:null,source:'synthetic'});
  }
  zonedShift('night-0','Nachtdienst','2026-01-05T10:00:00Z','2026-01-05T18:00:00Z');
  zonedShift('night-1','Nachtdienst','2026-01-06T10:00:00Z','2026-01-06T18:00:00Z');

@@ -29,7 +29,7 @@ module.exports=async function planningControls({page,base}){
   metadata:{history_matrix:[{employee_id:'person-0',observed_assignment_count:3,first_date:'2025-12-01',last_date:'2025-12-20',observed_shifts:[{name:'Dienst A',count:3}],suggested_approvals:[]}]},
  };
  function shift(id,name,day,start,end,paid,holiday=false){fixture.shifts.push({id,name,kind:'day',team_id:'team-a',segments:[{start:`${day}T${start}:00Z`,end:`${day}T${end}:00Z`}],paid_minutes:paid,holiday,source:'synthetic'});}
- function demand(id,shiftId,positionId,minimum=1){fixture.demands.push({id,shift_id:shiftId,position_id:positionId,minimum,maximum:2,team_ids:['team-a'],source:'synthetic'});}
+ function demand(id,shiftId,positionId,minimum=1){fixture.demands.push({id,shift_id:shiftId,position_id:positionId,minimum,maximum:2,team_ids:['team-a'],alternative_group:null,source:'synthetic'});}
  days.forEach((day,i)=>{
   shift(`a-${i}`,'Dienst A',day,'08:00','16:00',480,i===1);demand(`d-a-${i}`,`a-${i}`,'position-a');
   shift(`b-${i}`,'Dienst B',day,'08:00','12:00',240);demand(`d-b-${i}`,`b-${i}`,'position-b');
@@ -189,7 +189,7 @@ module.exports=async function planningControls({page,base}){
  function zonedDuty(id,start,holiday=false){
   const end=new Date(new Date(start).getTime()+4*60*60*1000).toISOString();
   zoned.shifts.push({...fixture.shifts[0],id,segments:[{start,end}],paid_minutes:240,holiday});
-  zoned.demands.push({id:`d-${id}`,shift_id:id,position_id:'position-a',minimum:1,maximum:2,team_ids:['team-a'],source:'synthetic'});
+  zoned.demands.push({id:`d-${id}`,shift_id:id,position_id:'position-a',minimum:1,maximum:2,team_ids:['team-a'],alternative_group:null,source:'synthetic'});
  }
  zonedDuty('local-monday','2026-01-04T11:30:00Z');
  zonedDuty('local-tuesday-holiday','2026-01-05T11:30:00Z',true);

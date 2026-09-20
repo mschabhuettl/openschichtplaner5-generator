@@ -133,6 +133,10 @@ class Demand(Model):
     # Groups whose source requirements this demand merges; they decide who may
     # staff it. Empty keeps the shift's own team as the only eligible group.
     team_ids: list[str] = Field(default_factory=list)
+    # Bedarfe mit derselben Kennung decken denselben Posten ab: erfüllt ist er,
+    # sobald sie zusammen die höchste geforderte Mindestbesetzung erreichen.
+    # Die Höchstbesetzung bleibt je Bedarf einzeln gültig.
+    alternative_group: str | None = None
     source: str = 'additional'
 
 class Assignment(Model):

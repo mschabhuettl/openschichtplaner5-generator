@@ -215,11 +215,19 @@ def _validate(snapshot, assignments, input_errors=None):
     for a in snapshot.assignments:
         if a.fixed and (a.employee_id, a.demand_id) not in seen:
             add("fixed", "Fixierte Einteilung fehlt.", a.employee_id, a.demand_id)
+    gruppen = defaultdict(list)
     for d in snapshot.demands:
-        count = len(by_demand[d.id])
-        if count < d.minimum:
-            add("vacancy", f"{d.minimum - count} unbesetzte Stelle(n).", demand=d.id)
-        if d.maximum is not None and count > d.maximum:
+        gruppen[d.alternative_group or ("einzeln", d.id)].append(d)
+    for mitglieder in gruppen.values():
+        # Alternativen decken denselben Posten: geprüft wird ihre Summe gegen
+        # die höchste geforderte Mindestbesetzung.
+        count = sum(len(by_demand[d.id]) for d in mitglieder)
+        bedarf = max(d.minimum for d in mitglieder)
+        if count < bedarf:
+            add("vacancy", f"{bedarf - count} unbesetzte Stelle(n).",
+                demand=mitglieder[0].id)
+    for d in snapshot.demands:
+        if d.maximum is not None and len(by_demand[d.id]) > d.maximum:
             add("maximum", "Höchstbesetzung überschritten.", demand=d.id)
     # Immutable context comes from input, never the returned assignments. It
     # cannot satisfy demand, mentoring, or paid period targets.

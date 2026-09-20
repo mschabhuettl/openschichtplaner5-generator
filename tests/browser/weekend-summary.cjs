@@ -28,8 +28,8 @@ module.exports=async function weekendSummary({page,base}){
     segments:[{start:`${day}T08:00:00Z`,end:`${day}T16:00:00Z`}],paid_minutes:480,holiday:false,source:'synthetic',
    })),
    demands:[
-    {id:'d-saturday',shift_id:'saturday',position_id:'position-a',minimum:saturdayMinimum,maximum:saturdayMinimum,team_ids:['team-a'],source:'synthetic'},
-    {id:'d-sunday',shift_id:'sunday',position_id:'position-a',minimum:1,maximum:1,team_ids:['team-a'],source:'synthetic'},
+    {id:'d-saturday',shift_id:'saturday',position_id:'position-a',minimum:saturdayMinimum,maximum:saturdayMinimum,team_ids:['team-a'],alternative_group:null,source:'synthetic'},
+    {id:'d-sunday',shift_id:'sunday',position_id:'position-a',minimum:1,maximum:1,team_ids:['team-a'],alternative_group:null,source:'synthetic'},
    ],
    assignments:[],boundary_work:[],restrictions:[],wishes:[],
    objectives:{split_weekends:1000,hours:0,nights:0,weekends:0,holidays:0,wishes:0,changes:0},

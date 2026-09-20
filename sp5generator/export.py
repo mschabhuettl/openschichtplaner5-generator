@@ -3,6 +3,7 @@
 import csv
 from collections import Counter
 from pathlib import Path
+from .domain import staffing_gaps
 from .models import Snapshot, Result
 
 
@@ -25,10 +26,7 @@ def vacancy_counts(snapshot: Snapshot, assignments):
             if assignment.employee_id in employee_ids
         }
     )
-    return {
-        demand.id: max(0, demand.minimum - counts[demand.id])
-        for demand in snapshot.demands
-    }
+    return staffing_gaps(snapshot, counts)
 
 
 def rows(snapshot: Snapshot, result: Result):

@@ -18,6 +18,7 @@ from .domain import (
     supervised,
     night_block_conflict,
     maximum_matching,
+    staffing_gaps,
 )
 from .timeutils import (
     bounds,
@@ -437,9 +438,9 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
             solver_status=status,
             assignments=assignments,
             vacancies={
-                d.id: d.minimum - counts[d.id]
-                for d in snapshot.demands
-                if counts[d.id] < d.minimum
+                demand_id: gap
+                for demand_id, gap in staffing_gaps(snapshot, counts).items()
+                if gap
             },
             validation=validation
             or Validation(valid=False, complete=False, diagnostics=[]),
@@ -742,10 +743,39 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
     # not drive the optimizer outside that supported result envelope.
     model.add(sum(xs.values()) <= MAX_ASSIGNMENTS)
     vacancies = []
+    # Alternativen decken denselben Posten ab: gefordert ist ihre Summe, nicht
+    # jeder Bedarf für sich. Die Höchstbesetzung bleibt je Bedarf einzeln.
+    alternativen = defaultdict(list)
+    for d in snapshot.demands:
+        alternativen[d.alternative_group].append(d)
+    alternativen.pop(None, None)
+    erledigt = set()
     for d in snapshot.demands:
         choices = by_demand[d.id]
         if d.maximum is not None:
             model.add(sum(choices) <= d.maximum)
+        gruppe = alternativen.get(d.alternative_group)
+        if gruppe is not None:
+            if d.alternative_group in erledigt:
+                continue
+            erledigt.add(d.alternative_group)
+            gemeinsam = [x for mitglied in gruppe for x in by_demand[mitglied.id]]
+            bedarf = max(mitglied.minimum for mitglied in gruppe)
+            if len(gemeinsam) < bedarf:
+                diagnostics.append(Diagnostic(
+                    code="candidate_shortage",
+                    message=f"{bedarf} benötigte Stellen; nur {len(gemeinsam)} individuell "
+                    "geeignete Personen über alle Alternativen dieses Postens.",
+                    demand_id=d.id,
+                    date=str(shift_day[d.shift_id]),
+                ))
+            if partial:
+                v = model.new_int_var(0, bedarf, "vacancy:" + str(d.alternative_group))
+                model.add_max_equality(v, [0, bedarf - sum(gemeinsam)])
+                vacancies.append(v)
+            else:
+                model.add(sum(gemeinsam) >= bedarf)
+            continue
         if len(choices) < d.minimum:
             # Eine Freigabe hilft nur dort, wo der Bedarf sonst unbesetzbar bleibt.
             for eid in approval_only.get(d.id, ()):
@@ -1787,10 +1817,9 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
             },
             "separation_rounds": separation_rounds,
             "objective_phase": phase,
-            "vacancy_count": sum(
-                max(0, d.minimum - sum(a.demand_id == d.id for a in assignments))
-                for d in snapshot.demands
-            ),
+            "vacancy_count": sum(staffing_gaps(snapshot, Counter(
+                a.demand_id for a in assignments
+            )).values()),
         }
         for e in snapshot.employees:
             selected = [

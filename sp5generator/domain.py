@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from collections import deque
+from collections import defaultdict, deque
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 from .models import Diagnostic
@@ -32,6 +32,25 @@ COLLECTION_LIMITS = {
     "demands": 20000, "profiles": 1000, "assignments": MAX_ASSIGNMENTS,
     "restrictions": 20000, "wishes": 20000, "boundary_work": 5000,
 }
+
+
+def staffing_gaps(snapshot, counts):
+    """Offene Mindeststellen je Bedarf; Alternativen zählen gemeinsam.
+
+    Bedarfe mit derselben `alternative_group` decken denselben Posten ab. Der
+    Fehlbestand einer Gruppe wird ihrem erstgenannten Bedarf zugeschrieben, die
+    übrigen Mitglieder gelten damit als gedeckt — sonst erschiene derselbe
+    Posten mehrfach als unbesetzt.
+    """
+    gruppen = defaultdict(list)
+    for demand in snapshot.demands:
+        gruppen[demand.alternative_group or ("einzeln", demand.id)].append(demand)
+    luecken = {demand.id: 0 for demand in snapshot.demands}
+    for mitglieder in gruppen.values():
+        bedarf = max(demand.minimum for demand in mitglieder)
+        besetzt = sum(counts.get(demand.id, 0) for demand in mitglieder)
+        luecken[mitglieder[0].id] = max(0, bedarf - besetzt)
+    return luecken
 
 
 def snapshot_hash(snapshot):
