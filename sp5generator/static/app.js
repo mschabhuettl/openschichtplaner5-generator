@@ -1235,7 +1235,16 @@ function matrixPositions(){
 function workplaceName(id){return dataIndex().workplaces.get(id)?.name??id;}
 function approvalPositions(){const positions=[...matrixPositions()];if(serviceMatrix())snapshot.positions.forEach(p=>positions.push({...p,name:`${p.name} · ${workplaceName(p.workplace_id)} (eingeschränkt)`}));return positions;}
 function matrixFiltered(){const q=fold($('matrixSearch').value.trim()),positions=matrixPositions();if(!q)return {employees:snapshot.employees,positions};const matchingPeople=snapshot.employees.filter(e=>fold(e.name).includes(q));const matchingPositions=positions.filter(p=>fold(p.name).includes(q));return {employees:matchingPositions.length?snapshot.employees:matchingPeople,positions:matchingPeople.length?positions:matchingPositions};}
-function matrixVisible(){return matrixFiltered();}
+function matrixVisible(){
+ const {employees,positions}=matrixFiltered();
+ const wahl=$('matrixFilter')?.value??'alle';
+ if(wahl==='alle')return {employees,positions};
+ const passt=e=>wahl==='ausgenommen'?!!e.excluded
+  :wahl==='ohne'?positions.some(p=>!approved(e,p))
+  :wahl==='vorschlag'?positions.some(p=>!approved(e,p)&&suggested(e,p))
+  :true;
+ return {employees:employees.filter(passt),positions};
+}
 function renderMatrix(){
  updateHistoryApplyLabel();
  $('mappingWarning').hidden=serviceMatrix()||!snapshot.source.startsWith('sp5');
@@ -1243,12 +1252,16 @@ function renderMatrix(){
  const box=$('matrix'),previous=box.querySelector('.collection-content'),scroll=[previous?.scrollLeft??0,previous?.scrollTop??0];box.replaceChildren();const filtered=matrixFiltered();collectionCount(box,filtered.employees.length,'Personen');collectionCount(box,filtered.positions.length,'Dienste');const grid=el('div',undefined,box);grid.className='collection-content';grid.tabIndex=0;grid.setAttribute('role','region');grid.setAttribute('aria-label','Freigabematrix – scrollbar');
  const body=table(grid,[transposed?(serviceMatrix()?'Dienst':'Funktion / Arbeitsplatz'):'Person',...cols.map(x=>x.name)]);const t=body.parentElement;t.className='matrix-table';t.setAttribute('aria-label','Freigabematrix für den Planungszeitraum');
  rows.forEach((row,ri)=>{const tr=el('tr',undefined,body);const h=el('th',undefined,tr);h.scope='row';if(!transposed)button(h,row.name||'Neue Person',()=>personDetails(row));else h.textContent=row.name;
+  if(!transposed){const frei=cols.filter(p=>approved(row,p)).length;
+   const bilanz=el('small',`${frei}/${cols.length}`,h);
+   bilanz.title=`${frei} von ${cols.length} Diensten freigegeben`;}
  cols.forEach((col,ci)=>{const e=transposed?col:row,p=transposed?row:col,allowed=approved(e,p),history=suggested(e,p);
  const supervised=allowed&&e.approvals.some(a=>relatedApproval(a,p)&&a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);const partial=!allowed&&e.approvals.some(a=>relatedApproval(a,p)&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
  const mixedSupervision=supervised&&e.approvals.some(a=>samePosition(a,p)&&!a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
  const workplacePartial=partial&&serviceMatrix()&&e.approvals.some(a=>relatedApproval(a,p)&&a.workplace_id!=='*'&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
  const text=allowed?(mixedSupervision?'✓ Teils betreut':supervised?'✓ Betreut':'✓ Frei'):(workplacePartial?'◐ Einzelne Arbeitsplätze':partial?'◐ Teilzeitraum':history?'◇ Vorschlag':'− Keine Freigabe');const td=el('td',undefined,tr);
- const b=button(td,text,()=>{setApproval(e,p,!allowed);renderMatrix();renderHistory();$('matrix').querySelector(`[data-row="${ri}"][data-col="${ci}"]`)?.focus();});b.className='matrix-cell '+(allowed?'allowed':partial?'partial':history?'suggested':'prohibited');b.dataset.row=ri;b.dataset.col=ci;b.dataset.employeeId=e.id;b.dataset.functionId=p.function_id;b.dataset.workplaceId=p.workplace_id;b.setAttribute('aria-pressed',String(allowed));b.setAttribute('aria-label',`${e.name} · ${p.name}: ${text}. ${allowed?'Freigabe im Zeitraum entfernen':(serviceMatrix()?'Dienst an allen Arbeitsplätzen für ganzen Planungszeitraum freigeben':'Für ganzen Planungszeitraum freigeben')}`);b.title=`${periodText(snapshot.period_start,snapshot.period_end)}. ${supervised?'Betreuung erforderlich. ':''}${p.qualifications_required?'Zusätzlicher Qualifikationsnachweis bleibt erforderlich.':''}`;
+ const zeichen=text.split(' ')[0];const b=button(td,zeichen,()=>{setApproval(e,p,!allowed);renderMatrix();renderHistory();$('matrix').querySelector(`[data-row="${ri}"][data-col="${ci}"]`)?.focus();});b.className='matrix-cell '+(allowed?'allowed':partial?'partial':history?'suggested':'prohibited');b.dataset.row=ri;b.dataset.col=ci;b.dataset.employeeId=e.id;b.dataset.functionId=p.function_id;b.dataset.workplaceId=p.workplace_id;b.setAttribute('aria-pressed',String(allowed));b.setAttribute('aria-label',`${e.name} · ${p.name}: ${text}. ${allowed?'Freigabe im Zeitraum entfernen':(serviceMatrix()?'Dienst an allen Arbeitsplätzen für ganzen Planungszeitraum freigeben':'Für ganzen Planungszeitraum freigeben')}`);b.title=`${periodText(snapshot.period_start,snapshot.period_end)}. ${supervised?'Betreuung erforderlich. ':''}${p.qualifications_required?'Zusätzlicher Qualifikationsnachweis bleibt erforderlich.':''}`;
+ b.title=text;b.setAttribute('aria-label',`${e.name}, ${p.name}: ${text}`);
  b.onkeydown=event=>{const delta={ArrowRight:[0,1],ArrowLeft:[0,-1],ArrowDown:[1,0],ArrowUp:[-1,0]}[event.key];if(!delta)return;event.preventDefault();$('matrix').querySelector(`[data-row="${ri+delta[0]}"][data-col="${ci+delta[1]}"]`)?.focus();};});});
  grid.scrollTo(...scroll);
  if(!rows.length||!cols.length)el('p','Keine passenden Personen oder Dienste. Suche leeren oder Teams und Planungszeitraum beim Import prüfen.',$('matrix'));
@@ -1320,6 +1333,7 @@ function pendingHistoryApprovals(){
 }
 function updateHistoryApplyLabel(){const count=pendingHistoryApprovals().length;$('confirmHistory').textContent=`Alle ${count} historischen Vorschläge übernehmen`;$('historyBulk').dataset.pending=String(count);$('historyBulkTitle').textContent=count?`${count} historische Vorschläge offen`:'Keine offenen historischen Vorschläge';// Ohne offene Vorschläge gibt es nichts zu übernehmen; der Streifen entfällt.
  $('historyBulk').hidden=!count;}
+$('matrixFilter').addEventListener('change',()=>renderMatrix());
 action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${periodText(snapshot.period_start,snapshot.period_end)} freigeben – unabhängig von Suche und sichtbaren Zeilen? Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
 $('start').addEventListener('change',historyDefaults);
 {

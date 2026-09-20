@@ -640,3 +640,22 @@ tr.excluded td:first-child::after { content: " · ausgenommen"; font-size: 11px;
 
 /* Klapptitel: Überschrift und Beschreibung nicht zusammenlaufen lassen. */
 .import-options > summary, .advanced-settings > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; }
+
+/* Freigabematrix für viele Personen: Zeichen statt Wortlaut in jeder Zelle,
+   der volle Text bleibt als zugänglicher Name und als Kurzhinweis erhalten.
+   So passen zwölf Dienstarten nebeneinander statt zwei. */
+.matrix-table .matrix-cell { min-width: 34px; padding: 3px 6px; font-size: 13px; letter-spacing: 0; }
+.matrix-table td { padding: 2px 3px; }
+/* Eine Zeile je Person, flach: Name als schlichter Textknopf, Bilanz daneben. */
+.matrix-table th[scope="row"] {
+  min-width: 170px; padding: 2px 12px;
+  display: flex; align-items: baseline; gap: 9px; white-space: nowrap;
+}
+.matrix-table th[scope="row"] > button {
+  border: 0; background: transparent; padding: 3px 0; min-height: 26px;
+  font-weight: 550; color: var(--ink); justify-content: flex-start;
+}
+.matrix-table th[scope="row"] > button:hover { background: transparent; color: var(--accent-ink); text-decoration: underline; }
+.matrix-table th[scope="row"] small { font-weight: 400; font-size: 11px; color: var(--faint); }
+.matrix-filter { flex-direction: row; align-items: center; gap: 8px; font-size: 12px; }
+.matrix-filter select { min-width: 210px; }

@@ -267,6 +267,15 @@
             <div class="surface-toolbar">
               <label class="search-field"><span class="sr-only">Person oder Dienst suchen</span><input id="matrixSearch" type="search" placeholder="Person oder Dienst suchen …">
               </label>
+              <label class="matrix-filter">
+                <span>Zeigen</span>
+                <select id="matrixFilter">
+                  <option value="alle">Alle Personen</option>
+                  <option value="ohne">Mit fehlender Freigabe</option>
+                  <option value="vorschlag">Mit offenem Vorschlag</option>
+                  <option value="ausgenommen">Von der Planung ausgenommen</option>
+                </select>
+              </label>
               <button id="transpose" type="button" aria-pressed="false" class="quiet">Achsen tauschen
               </button>
             </div>
