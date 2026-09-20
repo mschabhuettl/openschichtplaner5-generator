@@ -575,13 +575,30 @@ def import_snapshot(
         # verliert oder erfindet dagegen Arbeit, sobald ein Dienst nicht an
         # jedem vergleichbaren Tag besetzt war.
         planned = {}
-        for (sid, kind), (observed, compared) in volume.items():
-            days = target_days.get(kind, [])
-            total = round(observed / compared * len(days)) if days and compared else 0
-            for i, day in enumerate(days):
-                people = (i + 1) * total // len(days) - i * total // len(days)
-                if people:
-                    planned[(sid, day)] = people
+        for sid in sorted({post for post, _ in volume}, key=str):
+            shares = []
+            for kind, days in target_days.items():
+                observed, compared = volume.get((sid, kind), (0, 0))
+                if compared and days:
+                    shares.append((kind, observed / compared * len(days)))
+            if not shares:
+                continue
+            # Größte Reste: erst wird die Gesamtmenge des Dienstes gerundet, dann
+            # auf die Tagarten verteilt. Je Tagart einzeln zu runden ließe jeden
+            # selten besetzten Dienst verschwinden, obwohl er über alle Tagarten
+            # zusammen sehr wohl vorkommt.
+            whole = {kind: int(share) for kind, share in shares}
+            missing = round(sum(share for _, share in shares)) - sum(whole.values())
+            order = sorted(shares, key=lambda item: (item[1] - int(item[1]), -item[0]),
+                           reverse=missing > 0)
+            for kind, _ in order[:abs(missing)]:
+                whole[kind] += 1 if missing > 0 else -1
+            for kind, total in whole.items():
+                days = target_days[kind]
+                for i, day in enumerate(days):
+                    people = (i + 1) * max(0, total) // len(days) - i * max(0, total) // len(days)
+                    if people:
+                        planned[(sid, day)] = people
         skipped = 0
         for (sid, day), people in sorted(planned.items(), key=lambda item: str(item[0])):
             demand_teams = sorted(

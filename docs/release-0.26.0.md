@@ -63,8 +63,11 @@ Besetzung vergleichbarer Tage übernommen.
   und übertragene Menge** im Importbericht. Die Ableitung ist damit
   nachvollziehbar und fachlich zu bestätigen, bevor damit geplant wird.
 - **Bedarfsfenster und Freigabefenster sind getrennt einstellbar.** Freigaben
-  profitieren vom langen Rückblick, ein typischer Tag will einen aktuellen
-  Vergleichszeitraum. Ohne Angabe bleibt es beim bisherigen gemeinsamen Fenster.
+  profitieren vom langen Rückblick, der Bedarf will einen jahreszeitlich
+  vergleichbaren Zeitraum – am besten denselben Monat im Vorjahr. Ein
+  Jahresschnitt glättet Saisonspitzen weg: an echten Daten lieferte er 17 %
+  weniger Dienste als der Vergleichsmonat. Ohne Angabe bleibt es beim bisherigen
+  gemeinsamen Fenster.
 
 ## Ausbildung und Begleitung
 

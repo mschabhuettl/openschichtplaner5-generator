@@ -1920,9 +1920,15 @@ def test_history_demand_without_any_recorded_duty_derives_nothing():
     assert snapshot.metadata["history_demand"]["cells"] == 0
 
 
-@pytest.mark.parametrize("staffed_mondays,expected", [(4, 2), (3, 2), (2, 1), (1, None)])
+@pytest.mark.parametrize("staffed_mondays,expected", [(4, 11), (3, 10), (2, 10), (1, 10)])
 def test_history_demand_carries_over_what_was_really_worked(staffed_mondays, expected):
-    """Der Mittelwert der vergleichbaren Tage, nicht ein Schwellenwert."""
+    """Die Menge des Dienstes bleibt erhalten, nicht ein Schwellenwert je Tag.
+
+    Gerundet wird über alle Tagarten zusammen und dann nach größten Resten
+    verteilt. Eine einzelne Tagart kann dadurch um eins abweichen; ein selten
+    besetzter Dienst verschwindet dafür nicht, obwohl er über die Woche
+    zusammen sehr wohl vorkommt.
+    """
 
     class Sometimes(HistoryPlanDatabase):
         def get_schedule(self, year, month, **kw):
@@ -1933,8 +1939,24 @@ def test_history_demand_carries_over_what_was_really_worked(staffed_mondays, exp
                     if row["date"] not in quiet]
 
     snapshot = _history(Sometimes())
-    monday = [d for d in snapshot.demands if d.shift_id.endswith("2026-03-02")]
-    assert [d.minimum for d in monday] == ([expected] if expected else [])
+    assert sum(d.minimum for d in snapshot.demands) == expected
+
+
+def test_history_demand_keeps_a_rare_duty_that_a_daily_rounding_would_lose():
+    """Ein Dienst, der an keiner Tagart die halbe Besetzung erreicht, bleibt."""
+
+    class Selten(HistoryPlanDatabase):
+        # Genau ein Einsatz je Wochentag in vier Wochen: je Tagart 0,25.
+        def get_schedule(self, year, month, **kw):
+            erste = {"2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05",
+                     "2026-02-06", "2026-02-07"}
+            return [{**row, "employee_id": 101} for row in super().get_schedule(year, month, **kw)
+                    if row["date"] in erste]
+
+    snapshot = _history(Selten())
+    # 6 Einsätze auf 28 Tage -> rund 1,5 in der Zielwoche; je Tagart einzeln
+    # gerundet wäre jede Tagart 0 und der Dienst ganz verschwunden.
+    assert sum(d.minimum for d in snapshot.demands) == 2
 
 
 def test_history_demand_belongs_to_the_group_the_duty_was_booked_under():
