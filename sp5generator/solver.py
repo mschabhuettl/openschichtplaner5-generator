@@ -727,6 +727,38 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
     # Publish candidate facts only after the entire scan, never a timed-out
     # prefix. These are informational metrics, not relaxed validation rules.
     employee_candidates = candidate_stats
+    # Wie weit tragen die erteilten Freigaben überhaupt? Ohne diese Aussage
+    # sieht ein Rückstand nach einem Planungsfehler aus, obwohl er im Zuschnitt
+    # steckt: zu wenige Personen sind für zu wenige Dienstarten freigegeben.
+    demanded_functions = {
+        positions[d.position_id].function_id for d in snapshot.demands if d.minimum > 0
+    }
+    approved_per_function = Counter()
+    planable = [e for e in snapshot.employees if not e.excluded]
+    for e in planable:
+        for function in {a.function_id for a in e.approvals}:
+            approved_per_function[function] += 1
+    per_service = sorted(approved_per_function[f] for f in demanded_functions)
+    with_target = [e for e in planable if e.target_minutes > 0]
+    short = [e for e in with_target if e.target_minutes > reachable_minutes[e.id]]
+    approval_reach = {
+        "services": len(demanded_functions),
+        "people": len(planable),
+        "approvals": sum(per_service),
+        "approval_share_percent": round(
+            sum(per_service) / (len(demanded_functions) * len(planable)) * 100, 1
+        ) if demanded_functions and planable else 0.0,
+        "lowest_per_service": per_service[0] if per_service else 0,
+        "median_per_service": per_service[len(per_service) // 2] if per_service else 0,
+        "without_any_approval": sum(
+            1 for e in planable if not {a.function_id for a in e.approvals} & demanded_functions
+        ),
+        "target_out_of_reach": len(short),
+        "target_out_of_reach_minutes": sum(
+            e.target_minutes - reachable_minutes[e.id] for e in short
+        ),
+        "people_with_target": len(with_target),
+    }
     for e in snapshot.employees:
         if e.target_minutes > 0 and e.target_minutes > reachable_minutes[e.id]:
             diagnostics.append(
@@ -1593,6 +1625,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
                              for d in snapshot.demands)
         metrics = {
             "employees": {},
+            "approval_reach": approval_reach,
             "objective_phase": "vacancies" if partial else "validated_initial_solution",
             "separation_rounds": 0,
             "vacancy_count": warm_vacancies,
@@ -1821,6 +1854,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
         parameters.setdefault("first_feasible_seconds", monotonic() - started)
         metrics = {
             "employees": {},
+            "approval_reach": approval_reach,
             "objective_contributions": {
                 key: sum(
                     solver.value(expr) if not isinstance(expr, int) else expr

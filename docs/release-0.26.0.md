@@ -112,6 +112,37 @@ Das Gewicht steht unter **Regeln → Gewichte**. Neu importierte SP5-Projekte
 bekommen es mit 30 voreingestellt; **bestehende gespeicherte Projekte bleiben bei
 0** und damit unverändert.
 
+## Persönliche Höchstarbeitszeit
+
+Ohne persönliche Grenze kann eine Teilzeitkraft ein Vielfaches ihres Vertrags
+zugeteilt bekommen. An echten Daten bekam eine Kraft mit 40 Sollstunden 15
+Dienste und damit 355 % ihres Vertrags – bei im Median 13 möglichen Personen je
+Dienst, also ohne jede Alternativlosigkeit. Deckung und Blockziele wiegen
+schwerer als die weiche Stundenwertung, und die Stundenfairness deckelt den
+Abstand bei 150 %: darüber kostet Mehrarbeit gar nichts mehr.
+
+Neu ist eine **harte Grenze an der Person**: mehr wird im Planungszeitraum nicht
+eingeteilt, auch wenn dadurch Stellen offen bleiben – die erscheinen dann als
+gemeldete Lücke, nicht als stille Überlast. Einzeln unter den persönlichen
+Vorgaben, gesammelt unter **Team & Freigaben** als Anteil des jeweiligen Solls.
+Wer kein Soll hinterlegt hat, bekommt keine erfundene Grenze, sondern wird
+gezählt und genannt. Die Grenze bleibt leer, solange sie niemand setzt.
+
+## Freigabedecke: warum das Soll nicht erreicht wird
+
+Ein Rückstand beim Soll sieht nach einem Planungsfehler aus, steckt aber oft im
+Zuschnitt. Der Plan sagt das jetzt selbst: wie viele der möglichen Freigaben
+überhaupt erteilt sind, wie viele Personen je Dienstart freigegeben sind, wie
+viele Personen für keinen verlangten Dienst eine Freigabe haben – und wie viele
+ihr Soll damit **rechnerisch nicht erreichen können**, samt der Stundenzahl, die
+dadurch fehlt.
+
+An echten Daten: 6,3 % der möglichen Freigaben erteilt, im Median 4 freigegebene
+Personen je Dienstart, 12 Personen ohne jede Freigabe für einen verlangten
+Dienst, 14 Personen mit unerreichbarem Soll und 1.406 fehlenden Stunden. Dieser
+Rückstand verschwindet nicht durch bessere Planung, sondern erst, wenn mehr
+Personen für mehr Dienstarten freigegeben sind.
+
 ## Ersatzsuche bei Krankmeldung
 
 Der häufigste Notfall im Betrieb ist der kurzfristige Krankenstand. Dafür gab es
