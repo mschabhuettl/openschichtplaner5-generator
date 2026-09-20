@@ -186,7 +186,7 @@ function renderTeamScope(){
  const counts=TeamScope.overview(snapshot),idx=dataIndex();
  if(!counts.size)return;
  const scope=el('fieldset',undefined,box);scope.id='teamScopeFields';el('legend','Gruppen von der Planung ausnehmen',scope);
- el('p','Fremde Bereiche, Ehrenamt und ausgeschiedene Personen gehören nicht in diesen Plan. Ihre Daten bleiben erhalten; sie werden nur nicht eingeteilt. Wer noch in einer anderen Gruppe steht, wird dabei mit ausgenommen – das meldet der Hinweis.',scope);
+ el('p','Fremde Bereiche, Ehrenamt und ausgeschiedene Personen gehören nicht in diesen Plan. Ihre Daten bleiben erhalten; sie werden nur nicht eingeteilt. Gezählt wird die tatsächliche Mitgliedschaft, nicht die über eine übergeordnete Gruppe geerbte. Wer noch in einer anderen Gruppe steht, wird dabei mit ausgenommen – das meldet der Hinweis.',scope);
  let team=wahl.gruppe;
  const options=[...counts.entries()].sort((a,b)=>b[1].total-a[1].total)
   .map(([id,row])=>[id,`${idx.groups.get(id)?.name??id} · ${row.total} Personen${row.excluded?`, ${row.excluded} ausgenommen`:''}`]);

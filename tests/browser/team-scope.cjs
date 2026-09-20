@@ -49,3 +49,17 @@ assert.deepEqual(learning(t,'lehre',true),{changed:0,people:0,total:2,without:1}
 assert.deepEqual(learning(t,'lehre',false),{changed:2,people:1,total:2,without:1});
 assert.throws(()=>learning(t,'unbekannt',true),/keine Mitglieder/);
 for(const call of [()=>teaching(t,'',1),()=>learning(t,'',true)])assert.throws(call,/Gruppe wählen/);
+
+// A parent node inherited into team_ids must not sweep out everyone below it.
+const geerbt=()=>({metadata:{direct_group_memberships:{a:[12],b:[38],c:[12]}},employees:[
+ {id:'a',team_ids:['sp5:group:12','sp5:group:38'],excluded:false},
+ {id:'b',team_ids:['sp5:group:38'],excluded:false},
+ {id:'c',team_ids:['sp5:group:12','sp5:group:38'],excluded:false}]});
+let g=geerbt();
+assert.deepEqual(apply(g,'sp5:group:38',true),{changed:1,total:1,shared:0});
+assert.deepEqual(g.employees.map(e=>e.excluded),[false,true,false]);
+assert.deepEqual([...overview(geerbt()).entries()].sort(),
+ [['sp5:group:12',{total:2,excluded:0}],['sp5:group:38',{total:1,excluded:0}]]);
+// Without the source's own membership list the inherited ids remain the only answer.
+const ohne=geerbt();delete ohne.metadata;
+assert.deepEqual(apply(ohne,'sp5:group:38',true),{changed:3,total:3,shared:2});
