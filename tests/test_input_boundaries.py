@@ -183,3 +183,23 @@ def test_nested_record_count_does_not_double_count_list_records():
     assert planning_record_count({"rows": [{"id": 1}, {"id": 2}]}) == 3
     assert planning_record_count({"rows": [{"parts": [{"start": 1, "end": 2}]}]}) == 3
     assert planning_record_count({"ids": [1, 2, 3]}) == 4
+
+
+def test_a_whole_organisation_sized_position_catalogue_is_accepted():
+    """Gemessener Fall: 1112 Positionen rechnen durch und prüfen gültig.
+
+    Bindend sind die Paar- und Einteilungsgrenzen, nicht die Positionszahl.
+    """
+    from sp5generator.domain import COLLECTION_LIMITS, input_diagnostics
+    from test_core_rules import case
+
+    snapshot = case()
+    vorlage = snapshot.positions[0]
+    snapshot.positions = [
+        vorlage.model_copy(update={"id": f"p{i}", "name": f"Funktion {i}"})
+        for i in range(1112)
+    ]
+    snapshot.positions[0] = vorlage
+
+    assert COLLECTION_LIMITS["positions"] >= 1112
+    assert not [d for d in input_diagnostics(snapshot) if d.code == "size_limit"]

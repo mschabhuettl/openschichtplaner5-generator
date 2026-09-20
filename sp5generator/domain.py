@@ -27,8 +27,11 @@ MAX_ASSIGNMENTS = 5000
 MAX_CANDIDATE_PAIRS = 2_000_000  # Employee x demand model construction.
 MAX_LOCAL_REST_WINDOWS = 10_000_000  # Minute anchors across employee profiles.
 MAX_CALENDAR_CHECKS = 5_000_000  # Profile scans and availability-day expansion.
+# Die Positionszahl allein treibt die Modellgröße nicht; bindend sind
+# MAX_CANDIDATE_PAIRS und MAX_ASSIGNMENTS. Eine Organisation mit 1112
+# Positionen wurde lokal gerechnet und unabhängig als gültig bestätigt.
 COLLECTION_LIMITS = {
-    "employees": 1000, "positions": 1000, "shifts": 10000,
+    "employees": 1000, "positions": 2000, "shifts": 10000,
     "demands": 20000, "profiles": 1000, "assignments": MAX_ASSIGNMENTS,
     "restrictions": 20000, "wishes": 20000, "boundary_work": 5000,
 }

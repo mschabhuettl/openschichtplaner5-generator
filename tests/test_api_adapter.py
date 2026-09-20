@@ -1134,3 +1134,16 @@ def test_employee_source_contract_is_sanitized_and_retryable(transport, path, ca
 ])
 def test_unknown_employee_source_contract_stays_generic(transport, status, path, code, category):
     test_unrecognized_staffing_error_contract_stays_generic(transport, status, path, code, category)
+
+
+def test_conflicting_team_arguments_are_named_not_swallowed():
+    """Eine widersprüchliche Angabe darf nicht als Datenfehler erscheinen."""
+    with pytest.raises(APIImportError) as fehler:
+        import_api(
+            period_start=date(2026, 1, 5), period_end=date(2026, 1, 11),
+            team_id="sp5:group:1", team_ids=["sp5:group:2"],
+        )
+
+    text = str(fehler.value)
+    assert "team_id und team_ids nicht gleichzeitig" in text
+    assert "Importvertrag" not in text, "Der Sammelfang darf hier nicht greifen"

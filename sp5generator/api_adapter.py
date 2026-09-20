@@ -276,10 +276,17 @@ def import_api(
         raise APIImportError("Historische Plansicht muss ist, soll oder both sein.")
     if reference_plan not in ("ist", "soll"):
         raise APIImportError("Referenzplansicht muss ist oder soll sein.")
+    if team_id is not None and team_ids:
+        raise APIImportError(
+            "team_id und team_ids nicht gleichzeitig angeben: entweder eine "
+            "Hauptgruppe samt Untergruppen oder eine ausdrückliche Gruppenliste."
+        )
     try:
+        stufe = "Zugang"
         client = APIClient()
         client.authorize()
         db = _Database(client, None)
+        stufe = "Gruppenauswahl"
         scope = resolve_group_selection(db.get_groups(), team_id, team_ids)
         team = db.team = scope[0]
         db.scope = scope
@@ -288,7 +295,9 @@ def import_api(
             raise APIImportError(
                 "API-Personensicht ist für die ausgewählte Gruppe unvollständig."
             )
+        stufe = "Planungsdaten"
         snapshot = import_snapshot(db, period_start, period_end, timezone=timezone, team_ids=[str(g) for g in scope], existing_plan_mode=existing_plan_mode, reference_plan=reference_plan, demand_source=demand_source)
+        stufe = "Historie"
         matrix = historical_matrix(
             db, snapshot, history_start, history_end, history_plan
         )
@@ -296,8 +305,10 @@ def import_api(
     except APIImportError:
         raise
     except (ValueError, KeyError, TypeError, OverflowError):
+        # Die Stufe benennen, aber keine Quellwerte: sie könnten personenbezogen sein.
         raise APIImportError(
-            "API-Daten sind mit dem Importvertrag nicht kompatibel; Felder und Zeitangaben lokal prüfen."
+            f"API-Daten sind mit dem Importvertrag nicht kompatibel (Stufe: {stufe}); "
+            "Felder und Zeitangaben lokal prüfen."
         ) from None
     snapshot.metadata.update(
         {
