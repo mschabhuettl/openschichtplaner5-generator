@@ -405,7 +405,7 @@ function setDemandMinimum(row,cell,value){
 function renderDemandSummary(){
  const box=$('demandSummary');box.replaceChildren();
  const minimum=snapshot.demands.reduce((sum,d)=>{const shift=dataIndex().shifts.get(d.shift_id),day=shift?.segments[0]&&localDay(shift.segments[0].start);return sum+(day>=snapshot.period_start&&day<=snapshot.period_end?d.minimum*shift.paid_minutes:0);},0);
- const target=snapshot.employees.reduce((sum,e)=>sum+(e.target_minutes??0),0);
+ const target=snapshot.employees.reduce((sum,e)=>sum+(e.excluded?0:e.target_minutes??0),0);
  const ratio=target>0?minimum/target*100:null,balance=ratio===null?'no-target':ratio<80?'low':ratio>120?'high':'balanced';
  box.dataset.balance=balance;box.classList.toggle('warning',balance==='low'||balance==='high');
  const metrics=el('dl',undefined,box);metrics.className='demand-metrics';

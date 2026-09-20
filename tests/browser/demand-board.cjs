@@ -70,6 +70,11 @@ module.exports=async function demandBoard({page,base}){
 
  // Paid shift minutes times minimum staffing are compared with every period target.
  assert.equal(await number('#demandMinimumHours'),64);assert.equal(await number('#demandContractHours'),160);assert.equal(await number('#demandRatio'),40);
+ // Somebody taken out of the plan brings no contract hours to this comparison.
+ const wieder=await page.evaluate(()=>{const e=snapshot.employees.find(e=>e.target_minutes);e.excluded=true;renderDemandSummary();return e.target_minutes/60;});
+ assert.equal(await number('#demandContractHours'),160-wieder);
+ await page.evaluate(()=>{snapshot.employees.find(e=>e.excluded).excluded=false;renderDemandSummary();});
+ assert.equal(await number('#demandContractHours'),160);
  assert.equal(await page.locator('#demandSummary').getAttribute('data-balance'),'low');
  assert.equal(await page.locator('#demandSummary').evaluate(element=>element.classList.contains('warning')),true);
  assert.match(await page.locator('#demandBalanceNote').innerText(),/unbeschäftigt/i);
