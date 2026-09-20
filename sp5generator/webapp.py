@@ -34,6 +34,8 @@ class ApiImportRequest(BaseModel):
     history_min_days: int = Field(default=3, ge=2, le=1097)
     existing_plan_mode: Literal['reference', 'fixed'] = 'reference'
     demand_source: Literal['requirements', 'observed', 'history'] = 'requirements'
+    demand_history_start: date | None = None
+    demand_history_end: date | None = None
     history_start: date | None = None
     history_end: date | None = None
 
@@ -52,6 +54,12 @@ class JobRequest(BaseModel):
 class PlanRequest(BaseModel):
     snapshot: Snapshot
     assignments: list[Assignment] = Field(max_length=5000)
+
+
+class ReplacementRequest(PlanRequest):
+    employee_id: str = Field(max_length=200)
+    absent_from: date
+    absent_until: date
 
 
 class ProjectRevisionRequest(BaseModel):
@@ -434,6 +442,17 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     def validate_plan(data: PlanRequest):
         from .validator import validate
         return validate(data.snapshot, data.assignments)
+
+    @app.post('/api/replacement')
+    def find_replacement(data: ReplacementRequest):
+        from .replacement import replacement_candidates
+        try:
+            return replacement_candidates(
+                data.snapshot, data.assignments, data.employee_id,
+                data.absent_from, data.absent_until,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
 
     @app.post('/api/export/{format}')
     def export_plan(format: str, data: PlanRequest):

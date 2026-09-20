@@ -781,7 +781,45 @@ function renderRestDefaults(box){
  });
  confirm.id='confirmRestDefaults';confirm.className='primary';confirm.disabled=!ready.length;
 }
-function renderPlan(){renderCalendar();if($('assignmentDetails').open)renderAssignments();}
+function renderPlan(){renderCalendar();if($('assignmentDetails').open)renderAssignments();renderReplacementForm();}
+// A sick call is answered by phone, not by replanning: the search proposes people.
+const replacementChoice={person:'',from:'',bis:''};
+function renderReplacementForm(){
+ const box=$('replacementForm');if(!box)return;box.replaceChildren();
+ const idx=dataIndex(),name=id=>idx.employees.get(id)?.name??id;
+ const betroffen=[...new Set(assignments.map(a=>a.employee_id))].sort((a,b)=>name(a).localeCompare(name(b),'de'));
+ if(!betroffen.length){el('p','Noch keine Einteilungen: Erst planen, dann kann die Ersatzsuche antworten.',box).className='helper-text';return;}
+ if(!betroffen.includes(replacementChoice.person))replacementChoice.person=betroffen[0];
+ replacementChoice.from=replacementChoice.from||snapshot.period_start;
+ replacementChoice.bis=replacementChoice.bis||replacementChoice.from;
+ select(box,'Abwesende Person',replacementChoice.person,betroffen.map(id=>[id,name(id)]),v=>replacementChoice.person=v,{updatesProject:false});
+ field(box,'Abwesend ab',replacementChoice.from,v=>replacementChoice.from=v,'date');
+ field(box,'Abwesend bis',replacementChoice.bis,v=>replacementChoice.bis=v,'date');
+ button(box,'Ersatz suchen',async()=>{
+  const report=await api('/api/replacement','POST',{snapshot:currentSnapshot(),assignments,employee_id:replacementChoice.person,
+   absent_from:replacementChoice.from,absent_until:replacementChoice.bis});
+  renderReplacementResult(report);
+ }).id='findReplacement';
+}
+function renderReplacementResult(report){
+ const box=$('replacementResult');box.replaceChildren();
+ const idx=dataIndex(),name=id=>idx.employees.get(id)?.name??id;
+ if(!report.duties.length){el('p',`${name(report.employee_id)} hat in diesem Zeitraum keinen Dienst. Es wird nichts frei.`,box);return;}
+ const alle=report.covers_whole_absence;
+ el('p',alle.length
+  ?`${report.duties.length} Dienste werden frei. Durchgehend einspringen könnten: ${alle.map(name).join(', ')}.`
+  :`${report.duties.length} Dienste werden frei. Niemand kann alle übernehmen – die Dienste einzeln besetzen.`,box);
+ const sheet=el('div',undefined,box);sheet.className='scroll';
+ const body=table(sheet,['Tag','Dienst','Einspringen könnte','Wartet seit','Nicht möglich']);
+ for(const duty of report.duties){
+  const tr=el('tr',undefined,body);tr.dataset.demandId=duty.demand_id;
+  el('td',duty.date,tr);el('td',duty.shift_name||duty.shift_id,tr);
+  const erste=duty.candidates[0];
+  el('td',erste?duty.candidates.slice(0,5).map(c=>name(c.employee_id)).join(', '):'Niemand',tr);
+  el('td',erste?(erste.days_since_last_duty===null?'noch ohne Dienst':`${erste.days_since_last_duty} Tage`):'–',tr);
+  el('td',Object.entries(duty.blocked).map(([code,n])=>`${n}× ${replacementMessages[code]??eligibilityMessages[code]??code}`).join(' · ')||'–',tr);
+ }
+}
 function assignmentRows(){return assignments.map((a,index)=>({a,index}));}
 function renderAssignments(){
  $('plan').dataset.renderVersion=String(changeVersion);
@@ -937,6 +975,8 @@ const diagnosticActions={
  qualification:'Unter Team die Qualifikationsnachweise prüfen.',
  split_weekend_demand:'Unter Bedarf die Besetzung von Samstag und Sonntag angleichen. Solange beide Tage verschieden stark besetzt sind, bleibt die genannte Zahl geteilter Wochenenden unvermeidbar.'
 };
+// Reasons that only the stand-in search can produce; the rest are shared with the matrix.
+const replacementMessages={overlap:'Hat zur selben Zeit schon Dienst.',interleaving:'Ein eigener Dienst liegt dazwischen.',rest:'Die Ruhezeit zum eigenen Dienst wäre zu kurz.',already_on_duty:'Ist auf diesem Dienst bereits eingeteilt.',profile:'Für die berührten Tage fehlt ein bestätigtes Regelprofil.'};
 const eligibilityMessages={excluded:'Die Person ist von der Planung ausgenommen.',employment:'Der Dienst liegt außerhalb des Beschäftigungszeitraums.',team:'Die Person gehört nicht zum Team dieses Dienstes.',kind:'Diese Dienstart ist für die Person nicht erlaubt.',weekend:'Wochenenddienste sind für diese Person nicht erlaubt.',holiday:'Feiertagsdienste sind für diese Person nicht erlaubt.',approval:'Eine gültige Freigabe für diesen Dienst oder Arbeitsplatz fehlt.',qualification:'Ein gültiger Qualifikationsnachweis für diesen Dienst fehlt.',restriction:'Eine bestätigte Dienstsperre verhindert diese Einteilung.',absence:'Der Dienst überschneidet sich mit einer Abwesenheit.',availability:'Der vollständige Dienst liegt nicht innerhalb der erlaubten Zeitfenster.'};
 function updateUnresolvedBulk(shown,total){
  const bar=$('unresolvedBulk');bar.hidden=false;bar.dataset.pending=String(shown.length);

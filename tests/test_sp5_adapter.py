@@ -1918,3 +1918,18 @@ def test_history_demand_counts_days_without_any_duty(staffed_mondays, expected):
     snapshot = _history(Sometimes())
     monday = [d for d in snapshot.demands if d.shift_id.endswith("2026-03-02")]
     assert [d.minimum for d in monday] == ([expected] if expected else [])
+
+
+def test_the_demand_window_can_stand_apart_from_the_approval_window(tmp_path):
+    """Approvals want a long look back; a typical day wants a recent, comparable one."""
+    from sp5generator.sp5_adapter import import_snapshot as direct
+    wide = direct(HistoryPlanDatabase(), date(2026, 3, 2), date(2026, 3, 8), "1", "UTC",
+                  demand_source="history",
+                  history_start=date(2026, 2, 2), history_end=date(2026, 3, 1))
+    narrow = direct(HistoryPlanDatabase(), date(2026, 3, 2), date(2026, 3, 8), "1", "UTC",
+                    demand_source="history",
+                    history_start=date(2026, 2, 23), history_end=date(2026, 3, 1))
+    assert wide.metadata["history_demand"]["window"]["start"] == "2026-02-02"
+    assert narrow.metadata["history_demand"]["window"]["start"] == "2026-02-23"
+    assert narrow.metadata["history_demand"]["levels"]["201:301:0"]["days_compared"] == 1
+    assert wide.metadata["history_demand"]["levels"]["201:301:0"]["days_compared"] == 4

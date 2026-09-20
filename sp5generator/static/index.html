@@ -535,6 +535,14 @@
               </div><span class="helper-text">Einteilung anklicken, um sie zu bearbeiten.</span>
             </div>
           </div>
+          <details id="replacementPanel" class="surface"><summary>Krankmeldung &amp; Ersatzsuche <span class="summary-description">Wer kann kurzfristig einspringen?</span></summary>
+            <div class="details-content">
+              <p class="helper-text">Die Suche ändert den Plan nicht. Sie nennt je freigewordenem Dienst die Personen, die frei und freigegeben sind – zuerst die, deren letzter Dienst am längsten zurückliegt.
+              </p>
+              <div id="replacementForm" class="grid"></div>
+              <div id="replacementResult" role="status" aria-live="polite"></div>
+            </div>
+          </details>
           <details id="assignmentDetails" class="surface"><summary>Einteilungen bearbeiten &amp; fixieren</summary><div class="details-content"><div id="plan" class="scroll"></div></div></details>
           <div class="plan-actions"><div class="actions"><button id="saveDraft" type="button" class="primary">Entwurf dauerhaft speichern</button><button id="validate" type="button">Entwurf prüfen</button><button id="recompute" type="button">Mit Fixierungen neu berechnen</button></div><span class="helper-text">Änderungen am Entwurf werden vor dem Export erneut geprüft.</span></div>
           <details id="validationDetails" class="surface"><summary>Prüfbericht &amp; Auswertung</summary><div class="details-content"><pre id="validation"></pre><button data-export="json" type="button" class="quiet">Prüfergebnis als JSON exportieren</button></div></details>

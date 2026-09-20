@@ -260,6 +260,8 @@ def import_api(
     existing_plan_mode="reference",
     reference_plan="ist",
     demand_source: str = "requirements",
+    demand_history_start=None,
+    demand_history_end=None,
 ):
     """Read canonical snapshots and explicit history proposals through the existing API."""
     if not 0 <= (period_end - period_start).days < MAX_PLANNING_DAYS:
@@ -296,7 +298,7 @@ def import_api(
                 "API-Personensicht ist für die ausgewählte Gruppe unvollständig."
             )
         stufe = "Planungsdaten"
-        snapshot = import_snapshot(db, period_start, period_end, timezone=timezone, team_ids=[str(g) for g in scope], existing_plan_mode=existing_plan_mode, reference_plan=reference_plan, demand_source=demand_source, history_start=history_start, history_end=history_end)
+        snapshot = import_snapshot(db, period_start, period_end, timezone=timezone, team_ids=[str(g) for g in scope], existing_plan_mode=existing_plan_mode, reference_plan=reference_plan, demand_source=demand_source, history_start=demand_history_start or history_start, history_end=demand_history_end or history_end)
         stufe = "Historie"
         matrix = historical_matrix(
             db, snapshot, history_start, history_end, history_plan
