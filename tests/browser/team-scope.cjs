@@ -63,3 +63,21 @@ assert.deepEqual([...overview(geerbt()).entries()].sort(),
 // Without the source's own membership list the inherited ids remain the only answer.
 const ohne=geerbt();delete ohne.metadata;
 assert.deepEqual(apply(ohne,'sp5:group:38',true),{changed:3,total:3,shared:2});
+
+const {capFromTarget,clearCaps}=require('../../sp5generator/static/team-scope.js');
+const vertraege=()=>({employees:[
+ {id:'a',target_minutes:2400,max_period_minutes:null,excluded:false},
+ {id:'b',target_minutes:9600,max_period_minutes:null,excluded:false},
+ {id:'c',target_minutes:0,max_period_minutes:null,excluded:false},
+ {id:'d',target_minutes:9600,max_period_minutes:null,excluded:true}]});
+let v=vertraege();
+// Wer kein Soll hat, bekommt keine erfundene Grenze - und wird genannt.
+assert.deepEqual(capFromTarget(v,120),{changed:2,without:1});
+assert.deepEqual(v.employees.map(e=>e.max_period_minutes),[2880,11520,null,null]);
+assert.deepEqual(capFromTarget(v,120),{changed:0,without:1},'idempotent');
+assert.deepEqual(capFromTarget(v,110),{changed:2,without:1});
+assert.deepEqual(v.employees.map(e=>e.max_period_minutes),[2640,10560,null,null]);
+assert.deepEqual(clearCaps(v),{changed:2});
+assert.deepEqual(v.employees.map(e=>e.max_period_minutes),[null,null,null,null]);
+// Unter 100 % wäre keine Obergrenze mehr, sondern eine Kürzung des Vertrags.
+for(const bad of [99,0,-10,NaN,'120'])assert.throws(()=>capFromTarget(v,bad),/mindestens 100/);

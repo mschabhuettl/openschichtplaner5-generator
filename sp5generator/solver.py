@@ -1224,6 +1224,12 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
             deviation,
             sum(paid) + e.balance_minutes + e.credit_minutes - optimization_target,
         )
+        if e.max_period_minutes is not None:
+            # Persönliche Obergrenze: eine harte Regel wie die des Regelprofils,
+            # nur an der Person statt am Profil. Ohne sie kann eine Teilzeitkraft
+            # ein Vielfaches ihres Vertrags zugeteilt bekommen, weil die weiche
+            # Stundenwertung gegen Deckung und Blockziele nicht durchdringt.
+            model.add(sum(paid) <= e.max_period_minutes)
         cost("hours", deviation, snapshot.objectives.hours)
         if (
             fairness_level is not None

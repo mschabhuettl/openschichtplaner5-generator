@@ -71,7 +71,7 @@ module.exports=async function planningControls({page,base}){
  assert.equal(await number('#metricPeople'),3,'Excluded people remain part of the imported count');
  assert.equal(await page.evaluate(()=>dirty),true);
  const stored=await save();
- assert.deepEqual(stored.employees[0],{...fixture.employees[0],excluded:true},'Saving retains targets, contracts, approvals and historical counters');
+ assert.deepEqual(stored.employees[0],{...fixture.employees[0],excluded:true,max_period_minutes:null},'Saving retains targets, contracts, approvals and historical counters');
  assert.deepEqual(stored.metadata.history_matrix,fixture.metadata.history_matrix);
  await page.evaluate(async id=>load(await api('/api/snapshots/'+encodeURIComponent(id)),true),fixture.id);
  assert.equal(await planning('person-0').isChecked(),false,'The excluded flag survives the normal project roundtrip');

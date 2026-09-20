@@ -53,6 +53,26 @@
   }
   return {changed,people,total:rows.length,without};
  }
- const api={apply,overview,members,teaching,learning,groupsOf};
+ function capFromTarget(snapshot,percent){
+  if(!Number.isFinite(percent)||percent<100)throw new Error('Der Anteil muss mindestens 100 % des Solls betragen.');
+  let changed=0,without=0;
+  for(const person of snapshot.employees){
+   if(person.excluded)continue;
+   if(!person.target_minutes){without++;continue;}
+   const cap=Math.round(person.target_minutes*percent/100);
+   if(person.max_period_minutes===cap)continue;
+   person.max_period_minutes=cap;changed++;
+  }
+  return {changed,without};
+ }
+ function clearCaps(snapshot){
+  let changed=0;
+  for(const person of snapshot.employees){
+   if(person.max_period_minutes==null)continue;
+   person.max_period_minutes=null;changed++;
+  }
+  return {changed};
+ }
+ const api={apply,overview,members,teaching,learning,groupsOf,capFromTarget,clearCaps};
  if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TeamScope=api;
 })(globalThis);

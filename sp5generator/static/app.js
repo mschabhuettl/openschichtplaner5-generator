@@ -179,7 +179,7 @@ function render(){
 }
 function setTargetHours(person,value){person.target_minutes=value===null?null:Math.round(value*60);for(const input of document.querySelectorAll('[data-employee-hours]'))if(input.dataset.employeeHours===person.id&&input!==document.activeElement)input.value=value===null?'':String(value);}
 // A redraw after a bulk step must not throw away the group the planner picked.
-const teamScopeChoice={gruppe:'',ausbilder:'',lernende:'',kapazitaet:1};
+const teamScopeChoice={gruppe:'',ausbilder:'',lernende:'',kapazitaet:1,anteil:120};
 function renderTeamScope(){
  const box=$('teamScope');box.replaceChildren();
  const wahl=teamScopeChoice;
@@ -225,6 +225,25 @@ function renderTeamScope(){
  };
  button(lernZeile,'Gruppe unter Begleitung stellen',lernen(true,'gelten nur noch mit Begleitung'));
  button(lernZeile,'Begleitung wieder aufheben',lernen(false,'gelten wieder selbstständig'));
+
+ const grenzen=el('fieldset',undefined,box);grenzen.id='capFields';el('legend','Persönliche Höchstarbeitszeit',grenzen);
+ el('p','Ohne persönliche Grenze kann eine Teilzeitkraft ein Vielfaches ihres Vertrags zugeteilt bekommen: Deckung und Blockziele wiegen schwerer als die weiche Stundenwertung. Diese Grenze ist hart – lieber bleibt eine Stelle offen und wird als Lücke gemeldet.',grenzen);
+ let anteil=wahl.anteil;
+ field(grenzen,'Höchstens Prozent des Solls',anteil,v=>wahl.anteil=anteil=v,'number').min='100';
+ const grenzZeile=el('div',undefined,grenzen);grenzZeile.className='actions';
+ button(grenzZeile,'Grenze aus dem Soll ableiten',()=>{
+  const {changed,without}=TeamScope.capFromTarget(snapshot,Number(anteil));
+  invalidateResult();renderActivePanel(true);
+  notice(changed?`${changed} Personen bekommen höchstens ${Number(anteil)} % ihres Solls.${without?` ${without} Personen ohne hinterlegtes Soll bleiben ohne Grenze.`:''} Projekt speichern.`
+   :`Keine Änderung.${without?` ${without} Personen haben kein Soll hinterlegt.`:''}`);
+ });
+ button(grenzZeile,'Alle Grenzen aufheben',()=>{
+  const {changed}=TeamScope.clearCaps(snapshot);
+  invalidateResult();renderActivePanel(true);
+  notice(changed?`${changed} persönliche Höchstgrenzen aufgehoben. Projekt speichern.`:'Es war keine persönliche Höchstgrenze gesetzt.');
+ });
+ const mitGrenze=snapshot.employees.filter(e=>e.max_period_minutes!=null).length;
+ el('p',mitGrenze?`${mitGrenze} Personen haben eine persönliche Höchstarbeitszeit.`:'Derzeit hat niemand eine persönliche Höchstarbeitszeit.',grenzen).className='helper-text';
 }
 function renderPeople(){
  renderTeamScope();
@@ -268,6 +287,8 @@ function personDetails(e){
  const hoursHelp=el('p','Das Soll gilt für den gesamten Planungszeitraum, nicht pro Woche. Maximale Wochenstunden sind eine separate verbindliche Regel.',hoursGroup);hoursHelp.id='personHoursHelp';hoursHelp.className='helper-text';hours.setAttribute('aria-describedby',hoursHelp.id);
  const weekly=field(hoursGroup,'Vertragliche Wochenstunden',e.contractual_weekly_minutes==null?'':e.contractual_weekly_minutes/60,v=>e.contractual_weekly_minutes=v===null?null:Math.round(v*60),'number');weekly.min='0';weekly.placeholder='Nicht aus der Quelle bekannt';weekly.dataset.employeeWeeklyHours=e.id;
  const weeklyHelp=el('p','Weiches Verteilungsziel je Kalenderwoche: Zusätzliche Stunden über diesem Wert werden möglichst vermieden. Keine harte Höchstgrenze; das Periodensoll bleibt separat. Randdienste zählen mit, Randwochen erhalten den vollen Wochenwert. Leer bedeutet unbekannt.',hoursGroup);weeklyHelp.id='personWeeklyHoursHelp';weeklyHelp.className='helper-text';weekly.setAttribute('aria-describedby',weeklyHelp.id);
+ const deckel=field(hoursGroup,'Höchstens Stunden im Planungszeitraum',e.max_period_minutes==null?'':e.max_period_minutes/60,v=>e.max_period_minutes=v===null?null:Math.round(v*60),'number');deckel.min='0';deckel.dataset.employeeCap=e.id;deckel.placeholder='Keine Grenze';
+ el('p','Harte Grenze für diese Person: mehr wird im Planungszeitraum nicht eingeteilt, auch wenn dadurch Stellen offen bleiben. Leer heißt keine Grenze aus dieser Person; Regelprofile gelten unverändert weiter.',hoursGroup).className='helper-text';
  const origin=snapshot.metadata?.provenance?.[e.id]?.nominal_hours;
  const bases={0:['Tagesbasis','hours_day','Tag'],1:['Wochenbasis','hours_week','Woche'],2:['Monatsbasis','hours_month','Monat'],3:['Gesamtbasis','hours_total','Beschäftigungszeitraum']};
  if(origin&&Number.isInteger(origin.calcbase)&&Object.hasOwn(bases,origin.calcbase)){

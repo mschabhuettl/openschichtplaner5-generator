@@ -86,6 +86,9 @@ class Employee(Model):
     historical_weekends: int = Field(default=0, ge=0)
     historical_holidays: int = Field(default=0, ge=0)
     mentor_capacity: int = Field(default=0, ge=0)
+    # Harte persönliche Obergrenze für bezahlte Minuten im Planungszeitraum.
+    # Leer heißt: keine Grenze aus dieser Person; Regelprofile gelten weiter.
+    max_period_minutes: int | None = Field(default=None, ge=0)
 
 class Position(Model):
     id: str
