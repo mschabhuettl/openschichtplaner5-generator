@@ -79,10 +79,23 @@ das bisherige Ziel „Gleichmäßige Sollerfüllung" hatte keinen Ansatzpunkt. D
 Folge war ein Plan, in dem ein Teil der Mannschaft alles trug und der Rest leer
 ausging.
 
-Neues weiches Ziel **„Gleichmäßige Dienstanzahl"**: die Suche wählt einen
-gemeinsamen Maßstab frei und bewertet den Abstand jeder Person dazu – gezählt
-werden Dienste, nicht Stunden. Wer im Zeitraum nirgends einsetzbar ist, wird
-davon ausgenommen und verzerrt den Maßstab nicht.
+Neues weiches Ziel **„Gleichmäßige Dienstanzahl"**: bewertet wird die
+**quadrierte** Zahl der Dienste je Person. Das ist kein Schönheitsdetail,
+sondern der Punkt: Die Gesamtzahl der Dienste steht mit dem Bedarf fest, deshalb
+kann ein Abstand zu einem gemeinsamen Maßstab nichts lenken – er rastet auf dem
+Median ein und wertet jede Aufteilung gleich teuer. Die quadrierte Anzahl ist
+dagegen streng konvex: Bei gleicher Summe ist die gleichmäßige Aufteilung
+eindeutig die günstigste, und jede Verschiebung von viel zu wenig zahlt sich
+sofort aus. Wer keinen Dienst bekommt, kostet nichts und verzerrt daher auch
+nichts.
+
+**Blockziele und Verteilung ziehen gegeneinander**, und der Hinweis unter den
+Gewichten sagt das jetzt auch: Wo jemand im Monat ein bis zwei Dienste hat, ist
+jeder Dienst zwangsläufig ein einzelner Arbeitstag. „Einzelne Arbeitstage" und
+„Arbeits-/Freizeitwechsel" drängen die Dienste dann auf wenige Personen
+zusammen. Für Bereitschafts- und Rufdienstpläne gehören diese beiden Gewichte
+niedrig und die gleichmäßige Dienstanzahl hoch; für durchgehende Schichtpläne
+umgekehrt.
 
 Das Gewicht steht unter **Regeln → Gewichte**. Neu importierte SP5-Projekte
 bekommen es mit 30 voreingestellt; **bestehende gespeicherte Projekte bleiben bei

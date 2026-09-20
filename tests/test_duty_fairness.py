@@ -77,7 +77,7 @@ def test_the_hours_goal_alone_cannot_do_this():
     assert result.metrics["objective_contributions"].get("hours_fairness", 0) == 0
 
 
-def test_a_person_who_can_never_work_here_is_not_the_yardstick():
+def test_a_person_who_can_never_work_here_costs_nothing():
     snapshot = roster(fairness=300)
     snapshot.employees.append(snapshot.employees[0].model_copy(deep=True, update={
         "id": "e_extern", "name": "Testperson extern", "team_ids": ["anderes"],
@@ -85,5 +85,29 @@ def test_a_person_who_can_never_work_here_is_not_the_yardstick():
 
     result = solve(snapshot, time_limit=10)
 
-    # Ohne Ausnahme stünde der dauerhafte Nullwert im Abstand zum Maßstab.
-    assert result.metrics["objective_contributions"]["duty_fairness"] == 0
+    # Niemand ohne Dienst verzerrt den Maßstab: null Dienste kosten null.
+    assert result.metrics["objective_contributions"]["duty_fairness"] == 2 ** 2 + 2 ** 2
+
+
+def test_a_shared_yardstick_would_not_steer_at_all():
+    """Warum die quadrierte Anzahl und nicht der Abstand zu einem Maßstab.
+
+    Die Summe der Dienste steht mit dem Bedarf fest. Der Abstand zu einem frei
+    gewählten Maßstab rastet auf dem Median ein - bei vielen Personen ohne
+    Dienst also auf null, und dann ist die Wertung genau die Gesamtzahl der
+    Dienste und damit unabhängig von der Aufteilung.
+    """
+    snapshot = roster(fairness=300)
+    # Zwei zusätzliche Personen, die alles könnten: der Median liegt bei null.
+    for i in (3, 4):
+        snapshot.employees.append(snapshot.employees[0].model_copy(deep=True, update={
+            "id": f"e{i}", "name": f"Testperson {i + 1:03}",
+        }))
+
+    result = solve(snapshot, time_limit=10)
+
+    verteilung = counts(snapshot, result)
+    assert sum(verteilung) == 4
+    # Ein Maßstabsziel ließe [4,0,0,0] genauso teuer aussehen wie [1,1,1,1].
+    assert verteilung == [1, 1, 1, 1]
+    assert result.metrics["objective_contributions"]["duty_fairness"] == 4
