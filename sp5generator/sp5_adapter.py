@@ -129,7 +129,12 @@ def _typical_staffing(rows, calc, holidays, window_start, window_end, employees)
             continue
         seen.add(key)
         counted.setdefault((sid, wid, day), set()).add(eid)
-        teams.setdefault((sid, wid), set()).update(employees[eid].team_ids)
+        # The group the duty was booked under, not every group its holder belongs to.
+        stated = row.get("group_id")
+        teams.setdefault((sid, wid), set()).update(
+            {f"sp5:group:{stated}"} if stated not in (None, 0, "", "0")
+            else employees[eid].team_ids
+        )
 
     day_type = {}
     day = window_start

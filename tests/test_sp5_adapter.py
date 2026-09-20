@@ -1933,3 +1933,33 @@ def test_the_demand_window_can_stand_apart_from_the_approval_window(tmp_path):
     assert narrow.metadata["history_demand"]["window"]["start"] == "2026-02-23"
     assert narrow.metadata["history_demand"]["levels"]["201:301:0"]["days_compared"] == 1
     assert wide.metadata["history_demand"]["levels"]["201:301:0"]["days_compared"] == 4
+
+
+def test_history_demand_belongs_to_the_group_the_duty_was_booked_under():
+    """A person in many groups must not widen a requirement to all of them."""
+
+    class Wandering(HistoryPlanDatabase):
+        def get_groups(self):
+            return [{"ID": 1}, {"ID": 2}]
+
+        def get_employee_groups(self, e):
+            return [1, 2]
+
+        def get_schedule(self, year, month, **kw):
+            return [{**row, "group_id": 2} for row in super().get_schedule(year, month, **kw)]
+
+    snapshot = import_snapshot(
+        Wandering(), date(2026, 3, 2), date(2026, 3, 8), timezone="UTC",
+        team_ids=["1", "2"], demand_source="history",
+        history_start=date(2026, 2, 2), history_end=date(2026, 3, 1),
+    )
+    assert snapshot.demands
+    assert all(d.team_ids == ["sp5:group:2"] for d in snapshot.demands)
+
+
+def test_history_demand_falls_back_to_the_person_when_the_duty_states_no_group():
+    class Unstated(HistoryPlanDatabase):
+        def get_schedule(self, year, month, **kw):
+            return [{**row, "group_id": None} for row in super().get_schedule(year, month, **kw)]
+
+    assert all(d.team_ids == ["sp5:group:1"] for d in _history(Unstated()).demands)
