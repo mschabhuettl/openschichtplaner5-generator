@@ -4,6 +4,7 @@ from datetime import date
 import pytest
 
 pytest.importorskip("sp5lib")
+from sp5generator.domain import input_diagnostics
 from sp5generator.sp5_adapter import import_snapshot, _local
 from zoneinfo import ZoneInfo
 
@@ -1754,3 +1755,34 @@ def test_missing_day_window_of_a_timed_service_stays_an_open_note():
     assert untimed.day == date(2026, 1, 6) and untimed.in_period
     assert snapshot.metadata["untimed_period_work"] == 1
     assert snapshot.metadata["untimed_context_work"] == 0
+
+
+@pytest.mark.parametrize(
+    "changes,widersprüchlich",
+    [
+        ({}, False),                                   # 8 h × 5 = 40 = HRSWEEK
+        ({"HRSDAY": 2}, True),                         # 2 h × 5 = 10 gegen 40
+        ({"HRSWEEK": 20}, True),                       # 8 h × 5 = 40 gegen 20
+        ({"HRSDAY": 7.7, "HRSWEEK": 38.5}, False),     # stimmig
+        ({"HRSDAY": 8.4, "HRSWEEK": 40}, False),       # 42 gegen 40: innerhalb der Toleranz
+        ({"HRSDAY": None}, False),                     # ohne Angabe kein Widerspruch
+        ({"HRSWEEK": None}, False),
+    ],
+)
+def test_contradicting_contract_hours_are_reported_without_blocking(changes, widersprüchlich):
+    """Tagesstunden mal Arbeitstage gegen Wochenstunden; gemeldet, nicht entschieden."""
+    class Source(SyntheticDatabase):
+        def get_employees(self, **kw):
+            return [{**super().get_employees(**kw)[0], "ID": 101, **changes}]
+
+        def get_group_members(self, g):
+            return [101]
+
+    snapshot = import_snapshot(Source(), date(2026, 1, 5), date(2026, 1, 6), "1", "UTC")
+
+    treffer = [text for text in snapshot.unresolved if "widersprüchliche Vertragsangaben" in text]
+    assert bool(treffer) is widersprüchlich
+    if widersprüchlich:
+        assert "sp5:employee:101" in treffer[0]
+        # Der Hinweis blockiert die Planung nicht; er ist eine offene Angabe.
+        assert not [d for d in input_diagnostics(snapshot) if d.code == "size_limit"]

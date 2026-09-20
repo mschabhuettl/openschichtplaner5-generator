@@ -356,6 +356,7 @@ def import_snapshot(
     employees = []
     not_employed_in_period = 0
     without_weekly_contract = 0
+    contradicting_contract = []
     parents = {int(g["id"]): int(g["parent_id"]) for g in metadata["group_tree"]}
     metadata["direct_group_memberships"] = {}
     for e in source_employees:
@@ -385,6 +386,16 @@ def import_snapshot(
         employment_start = calc.to_date(e.get("EMPSTART")) or date.min
         employment_end = calc.to_date(e.get("EMPEND")) or date.max
         contractual_weekly_minutes = None
+        # Wochen- und Tagesangabe müssen zusammenpassen. Tun sie es nicht, plant
+        # das Werkzeug gegen ein Soll, das so nicht vereinbart ist; welche Angabe
+        # gilt, entscheidet die Planung. Gemeldet, nicht stillschweigend gewählt.
+        workdays_week = sum(ctx.workdays[:7])
+        if (e.get("HRSWEEK") not in (None, "") and e.get("HRSDAY") not in (None, "")
+                and workdays_week and math.isfinite(ctx.hrs_week)
+                and math.isfinite(ctx.hrs_day) and ctx.hrs_week > 0 and ctx.hrs_day > 0):
+            gerechnet = ctx.hrs_day * workdays_week
+            if abs(gerechnet - ctx.hrs_week) > max(1.0, 0.1 * ctx.hrs_week):
+                contradicting_contract.append(eid)
         # ctx maps unset hours to zero, so check source presence separately.
         if (ctx.calcbase == 1 and e.get("HRSWEEK") not in (None, "")
                 and math.isfinite(ctx.hrs_week) and ctx.hrs_week >= 0):
@@ -462,6 +473,16 @@ def import_snapshot(
             "Das weiche Ziel zur Verteilung über die Kalenderwochen wirkt für sie nicht; eine "
             "Obergrenze entsteht dadurch nicht und wird auch nicht angenommen. Wer eine Grenze "
             "braucht, hinterlegt sie ausdrücklich im Regelprofil."
+        )
+    if contradicting_contract:
+        wen = ("Eine Person" if len(contradicting_contract) == 1
+               else f"{len(contradicting_contract)} Personen")
+        unresolved.append(
+            f"{wen} nennt die Quelle widersprüchliche Vertragsangaben: Tagesstunden mal "
+            "Arbeitstage ergibt etwas anderes als die Wochenstunden. Geplant wird nach der "
+            "in der Quelle für diese Bemessungsgrundlage maßgeblichen Angabe. Betroffen: "
+            + ", ".join(sorted(contradicting_contract)[:40])
+            + (" …" if len(contradicting_contract) > 40 else "")
         )
     unresolved.append(
         ("Sollbuchungen nicht verfügbar; " if nominal_bookings is None else "")
