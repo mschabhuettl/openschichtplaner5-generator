@@ -104,6 +104,53 @@ def _nominal_bookings(db, employees, start, end, *, actual_bookings=None):
     return result
 
 
+def _typical_staffing(rows, calc, holidays, window_start, window_end, employees):
+    """Typical head count per duty, workplace and day type from a past window.
+
+    Days without any duty count as zero, otherwise a service that only runs on
+    weekdays would look like a seven-day service. Holidays are staffed like a
+    Sunday, on the express instruction of the planning office; their duty times
+    still come from the source's own holiday column.
+    """
+    from statistics import median_low
+
+    counted, seen, teams = {}, set(), {}
+    for row in rows:
+        day = calc.to_date(row.get("date"))
+        eid = f"sp5:employee:{row.get('employee_id')}"
+        sid, wid = row.get("shift_id"), row.get("workplace_id")
+        if (day is None or not window_start <= day <= window_end
+                or eid not in employees or sid in (None, 0, "", "0")
+                or row.get("kind") not in ("shift", "special_shift")
+                or (row.get("kind") == "special_shift" and row.get("spshi_type", 0) != 0)):
+            continue
+        key = (eid, day, sid, wid, row.get("kind"), row.get("start_time"), row.get("end_time"))
+        if key in seen:
+            continue
+        seen.add(key)
+        counted.setdefault((sid, wid, day), set()).add(eid)
+        teams.setdefault((sid, wid), set()).update(employees[eid].team_ids)
+
+    day_type = {}
+    day = window_start
+    while day <= window_end:
+        idx = calc.day_index(day, holidays)
+        day_type.setdefault(6 if idx == calc.HOLIDAY_INDEX else idx, []).append(day)
+        day = day + timedelta(days=1)
+
+    levels, spread = {}, {}
+    for post in sorted(teams, key=str):
+        for kind, days in day_type.items():
+            series = sorted(len(counted.get((*post, d), ())) for d in days)
+            if not series or not series[-1]:
+                continue
+            # The lower median keeps a derived requirement from inventing a post
+            # that was staffed on fewer than half of the comparable days.
+            levels[(*post, kind)] = median_low(series)
+            spread[(*post, kind)] = (series[0], series[-1], len(days))
+    return levels, spread, teams
+
+
 def _scope_schedule(db, scope, year, month, **kwargs):
     rows = _unique_rows(
         row
@@ -194,6 +241,8 @@ def import_snapshot(
     existing_plan_mode: str = "reference",
     reference_plan: str = "ist",
     demand_source: str = "requirements",
+    history_start: date | None = None,
+    history_end: date | None = None,
 ) -> Snapshot:
     """Read from an explicitly supplied library database; never writes or opens a default source.
 
@@ -210,8 +259,17 @@ def import_snapshot(
         raise ValueError("Bestehender Plan: Modus muss reference oder fixed sein.")
     if reference_plan not in ("ist", "soll"):
         raise ValueError("Referenzplansicht muss ist oder soll sein.")
-    if demand_source not in ("requirements", "observed"):
-        raise ValueError("Bedarfsquelle muss requirements oder observed sein.")
+    if demand_source not in ("requirements", "observed", "history"):
+        raise ValueError("Bedarfsquelle muss requirements, observed oder history sein.")
+    if demand_source == "history":
+        history_end = history_end or period_start - timedelta(days=1)
+        history_start = history_start or history_end - timedelta(days=89)
+        if history_end >= period_start or history_end < history_start:
+            raise ValueError(
+                "Die historische Bedarfsbasis muss vor dem Planungszeitraum liegen."
+            )
+        if (history_end - history_start).days > 1096:
+            raise ValueError("Die historische Bedarfsbasis darf höchstens 1097 Tage umfassen.")
     zone = ZoneInfo(timezone)
     groups = db.get_groups() if hasattr(db, "get_groups") else [{"ID": int(str(team_id).removeprefix("sp5:group:"))}]
     scope = resolve_group_selection(groups, team_id, team_ids)
@@ -493,6 +551,83 @@ def import_snapshot(
     demand_cells = {}
     boundary_work = {}
     observed_schedule = {}
+    if demand_source == "history":
+        rows, month = [], history_start.replace(day=1)
+        while month <= history_end:
+            rows.extend(_scope_schedule(db, scope, month.year, month.month, plan=reference_plan))
+            month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+        selected_teams = {f"sp5:group:{gid}" for gid in scope}
+        levels, spread, post_teams = _typical_staffing(
+            rows, calc, holidays, history_start, history_end, employee_map
+        )
+        skipped, derived = 0, {}
+        d = period_start
+        while d <= period_end:
+            idx = calc.day_index(d, holidays)
+            kind = 6 if idx == calc.HOLIDAY_INDEX else idx
+            for (sid, wid), teams in sorted(post_teams.items(), key=str):
+                people = levels.get((sid, wid, kind), 0)
+                demand_teams = sorted(
+                    teams & selected_teams, key=lambda team: int(team.rsplit(":", 1)[1])
+                )
+                if not people or sid not in native_shifts or not demand_teams:
+                    continue
+                native = native_shifts[sid]
+                try:
+                    windows = _parse_native_windows(native.get(f"STARTEND{idx}"))
+                    if not windows:
+                        skipped += 1
+                        continue
+                    segments = [
+                        Interval(
+                            start=_local(d, a, zone),
+                            end=_local(d, b + (1440 if b <= a else 0), zone),
+                        )
+                        for a, b in windows
+                    ]
+                except ValueError as exc:
+                    skipped += 1
+                    unresolved.append(f"SHIFT {sid} {d}: {exc}")
+                    continue
+                shift_id = f"sp5:shift:{sid}:{d}"
+                shifts.setdefault(shift_id, Shift(
+                    id=shift_id, name=native.get("NAME", ""), kind="unconfirmed",
+                    team_id=demand_teams[0], segments=segments,
+                    paid_minutes=_minutes(native.get(f"DURATION{idx}")),
+                    holiday=d in holidays, source="sp5:SHIFT",
+                ))
+                position_id = f"sp5:position:{sid}:{wid}"
+                positions[position_id] = Position(
+                    id=position_id, name=native.get("NAME", ""),
+                    function_id=f"sp5:service:{sid}", workplace_id=f"sp5:workplace:{wid}",
+                    qualifications_required=False,
+                )
+                demands.append(Demand(
+                    id=f"sp5:demand:HISTORY:{sid}:{wid}:{d}",
+                    shift_id=shift_id, position_id=position_id,
+                    minimum=people, maximum=people, team_ids=demand_teams,
+                    source="sp5:HISTORY",
+                ))
+                low, high, days = spread[(sid, wid, kind)]
+                derived[f"{sid}:{wid}:{kind}"] = {
+                    "typical": people, "lowest": low, "highest": high, "days_compared": days,
+                }
+            d += timedelta(days=1)
+        metadata["history_demand"] = {
+            "window": {"start": str(history_start), "end": str(history_end)},
+            "plan": reference_plan,
+            "posts": len(derived), "cells": len(demands),
+            "slots": sum(demand.minimum for demand in demands), "skipped": skipped,
+            "levels": derived,
+        }
+        unresolved.append(
+            f"Der Besetzungsbedarf wurde aus dem Zeitraum {history_start} bis {history_end} "
+            "abgeleitet und stammt nicht aus der Bedarfstabelle der Quelle. Je Dienst, "
+            "Arbeitsplatz und Wochentag steht die typische Besetzung (unterer Median) "
+            "vergleichbarer Tage; Feiertage werden wie Sonntage angesetzt. Schwankungen "
+            "zwischen niedrigster und höchster Besetzung stehen unter history_demand. "
+            "Vor der Planung fachlich bestätigen."
+        )
     if demand_source == "observed":
         observed_cells = {}
         selected_teams = {f"sp5:group:{gid}" for gid in scope}
@@ -1408,17 +1543,18 @@ def import_directory(
         raise ValueError(f"Planungszeitraum muss 1 bis {MAX_PLANNING_DAYS} Kalendertage umfassen.")
     db, files = _source_database(directory)
     before = _source_fingerprint(files)
-    snapshot = import_snapshot(
-        db, period_start, period_end, team_id, timezone, team_ids=team_ids,
-        existing_plan_mode=existing_plan_mode, reference_plan=reference_plan,
-        demand_source=demand_source,
-    )
     history_end = history_end or period_start - timedelta(days=1)
     history_start = history_start or history_end - timedelta(days=89)
     if history_end >= period_start:
         raise ValueError(
             "Die historische Basis muss vor dem neuen Planungszeitraum enden."
         )
+    snapshot = import_snapshot(
+        db, period_start, period_end, team_id, timezone, team_ids=team_ids,
+        existing_plan_mode=existing_plan_mode, reference_plan=reference_plan,
+        demand_source=demand_source,
+        history_start=history_start, history_end=history_end,
+    )
     snapshot.metadata["history_matrix"] = historical_matrix(
         db, snapshot, history_start, history_end, history_plan
     )

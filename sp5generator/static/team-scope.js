@@ -22,6 +22,30 @@
   }
   return {changed,total:rows.length,shared};
  }
- const api={apply,overview,members};
+ function teaching(snapshot,teamId,capacity){
+  if(!teamId)throw new Error('Zuerst eine Gruppe wählen.');
+  if(!Number.isInteger(capacity)||capacity<0)throw new Error('Begleitkapazität muss eine ganze Zahl ab 0 sein.');
+  const rows=members(snapshot,teamId);
+  if(!rows.length)throw new Error('Diese Gruppe hat im Projekt keine Mitglieder.');
+  let changed=0;
+  for(const person of rows){if(person.mentor_capacity===capacity)continue;person.mentor_capacity=capacity;changed++;}
+  return {changed,total:rows.length};
+ }
+ function learning(snapshot,teamId,supervised){
+  if(!teamId)throw new Error('Zuerst eine Gruppe wählen.');
+  const rows=members(snapshot,teamId);
+  if(!rows.length)throw new Error('Diese Gruppe hat im Projekt keine Mitglieder.');
+  let changed=0,people=0,without=0;
+  for(const person of rows){
+   const before=changed;
+   for(const approval of person.approvals||[]){
+    if(approval.supervised===supervised)continue;approval.supervised=supervised;changed++;
+   }
+   if(!(person.approvals||[]).length)without++;
+   if(changed>before)people++;
+  }
+  return {changed,people,total:rows.length,without};
+ }
+ const api={apply,overview,members,teaching,learning};
  if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TeamScope=api;
 })(globalThis);

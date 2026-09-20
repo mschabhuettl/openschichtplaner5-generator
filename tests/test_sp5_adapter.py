@@ -1,6 +1,6 @@
 """New synthetic source structures; no external datasets are loaded."""
 
-from datetime import date
+from datetime import date, timedelta
 import pytest
 
 pytest.importorskip("sp5lib")
@@ -1786,3 +1786,135 @@ def test_contradicting_contract_hours_are_reported_without_blocking(changes, wid
         assert "sp5:employee:101" in treffer[0]
         # Der Hinweis blockiert die Planung nicht; er ist eine offene Angabe.
         assert not [d for d in input_diagnostics(snapshot) if d.code == "size_limit"]
+
+
+class HistoryPlanDatabase(SyntheticDatabase):
+    """Four comparable weeks: two people on weekdays, one on Saturdays, none on Sundays."""
+
+    staffing = {0: 2, 1: 2, 2: 2, 3: 2, 4: 2, 5: 1, 6: 0}
+
+    def get_employees(self, **kw):
+        employee = super().get_employees(**kw)[0]
+        return [employee, {**employee, "ID": 102, "NAME": "Testperson 002"}]
+
+    def get_group_members(self, g):
+        return [101, 102]
+
+    def get_schedule(self, year, month, **kw):
+        rows, day = [], date(2026, 2, 2)
+        while day <= date(2026, 3, 1):
+            if (day.year, day.month) == (year, month):
+                for employee in [101, 102][: self.staffing[day.weekday()]]:
+                    rows.append({"employee_id": employee, "date": day.isoformat(),
+                                 "kind": "shift", "shift_id": 201, "workplace_id": 301,
+                                 "group_id": 1})
+            day += timedelta(days=1)
+        return rows
+
+
+def _history(source=None, **kw):
+    return import_snapshot(
+        source or HistoryPlanDatabase(), date(2026, 3, 2), date(2026, 3, 8), "1", "UTC",
+        demand_source="history",
+        history_start=date(2026, 2, 2), history_end=date(2026, 3, 1), **kw,
+    )
+
+
+def test_history_demand_separates_day_types_and_counts_quiet_days_as_zero():
+    snapshot = _history()
+    levels = {
+        demand.shift_id.rsplit(":", 1)[1]: (demand.minimum, demand.maximum)
+        for demand in snapshot.demands
+    }
+    # Sunday had nobody on any comparable day, so it must not appear at all.
+    assert levels == {f"2026-03-0{day}": (2, 2) for day in range(2, 7)} | {"2026-03-07": (1, 1)}
+    assert all(demand.source == "sp5:HISTORY" for demand in snapshot.demands)
+    assert all(demand.team_ids == ["sp5:group:1"] for demand in snapshot.demands)
+    assert {demand.position_id for demand in snapshot.demands} == {"sp5:position:201:301"}
+    assert len({demand.id for demand in snapshot.demands}) == len(snapshot.demands)
+    report = snapshot.metadata["history_demand"]
+    assert report["window"] == {"start": "2026-02-02", "end": "2026-03-01"}
+    assert (report["cells"], report["slots"], report["skipped"]) == (6, 11, 0)
+    assert report["levels"]["201:301:0"] == {
+        "typical": 2, "lowest": 2, "highest": 2, "days_compared": 4,
+    }
+    assert report["levels"]["201:301:5"]["typical"] == 1
+    assert "201:301:6" not in report["levels"]
+    assert any("2026-02-02 bis 2026-03-01" in note for note in snapshot.unresolved)
+
+
+def test_history_demand_uses_the_lower_median_of_comparable_days():
+    class Varying(HistoryPlanDatabase):
+        # Mondays: 2, 2, 1, 1 people -> lower median 1, not the average of 1.5.
+        def get_schedule(self, year, month, **kw):
+            rows = super().get_schedule(year, month, **kw)
+            return [row for row in rows
+                    if not (date.fromisoformat(row["date"]).weekday() == 0
+                            and date.fromisoformat(row["date"]).day > 15
+                            and row["employee_id"] == 102)]
+
+    report = _history(Varying()).metadata["history_demand"]["levels"]["201:301:0"]
+    assert report == {"typical": 1, "lowest": 1, "highest": 2, "days_compared": 4}
+    monday, = [d for d in _history(Varying()).demands if d.shift_id.endswith("2026-03-02")]
+    assert (monday.minimum, monday.maximum) == (1, 1)
+
+
+def test_history_demand_staffs_holidays_like_sundays_but_keeps_holiday_times():
+    class Festive(HistoryPlanDatabase):
+        staffing = {0: 2, 1: 2, 2: 2, 3: 2, 4: 2, 5: 1, 6: 2}
+
+        def get_holidays(self):
+            return [{"DATE": "2026-03-04", "NAME": "Testfeiertag"}]
+
+        def get_shifts(self, **kw):
+            return [{**row, "STARTEND7": "06:00-09:00", "DURATION7": 3.0}
+                    for row in super().get_shifts(**kw)]
+
+    snapshot = _history(Festive())
+    by_day = {d.shift_id.rsplit(":", 1)[1]: d for d in snapshot.demands}
+    # Wednesday is the holiday: staffed like a Sunday (2), timed from the holiday column.
+    assert (by_day["2026-03-04"].minimum, by_day["2026-03-04"].maximum) == (2, 2)
+    shift = {s.id: s for s in snapshot.shifts}[by_day["2026-03-04"].shift_id]
+    assert shift.holiday is True
+    assert [(s.start.hour, s.end.hour) for s in shift.segments] == [(6, 9)]
+    assert shift.paid_minutes == 180
+
+
+@pytest.mark.parametrize("start,end", [
+    (date(2026, 3, 2), date(2026, 3, 3)),
+    (date(2026, 2, 2), date(2026, 3, 2)),
+    (date(2026, 3, 1), date(2026, 2, 2)),
+])
+def test_history_demand_window_must_lie_before_the_planning_period(start, end):
+    with pytest.raises(ValueError, match="historische Bedarfsbasis"):
+        import_snapshot(
+            HistoryPlanDatabase(), date(2026, 3, 2), date(2026, 3, 8), "1", "UTC",
+            demand_source="history", history_start=start, history_end=end,
+        )
+
+
+def test_history_demand_without_any_recorded_duty_derives_nothing():
+    class Empty(HistoryPlanDatabase):
+        def get_schedule(self, year, month, **kw):
+            return []
+
+    snapshot = _history(Empty())
+    assert snapshot.demands == []
+    assert snapshot.metadata["history_demand"]["cells"] == 0
+
+
+@pytest.mark.parametrize("staffed_mondays,expected", [(4, 2), (3, 2), (2, None), (1, None)])
+def test_history_demand_counts_days_without_any_duty(staffed_mondays, expected):
+    """A post that stood empty on half the comparable days is not a requirement."""
+
+    class Sometimes(HistoryPlanDatabase):
+        def get_schedule(self, year, month, **kw):
+            quiet = {"2026-02-02", "2026-02-09", "2026-02-16",
+                     "2026-02-23"} - set(sorted({"2026-02-02", "2026-02-09", "2026-02-16",
+                                                 "2026-02-23"})[:staffed_mondays])
+            return [row for row in super().get_schedule(year, month, **kw)
+                    if row["date"] not in quiet]
+
+    snapshot = _history(Sometimes())
+    monday = [d for d in snapshot.demands if d.shift_id.endswith("2026-03-02")]
+    assert [d.minimum for d in monday] == ([expected] if expected else [])

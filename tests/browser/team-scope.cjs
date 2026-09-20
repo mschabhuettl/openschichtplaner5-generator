@@ -25,3 +25,27 @@ assert.deepEqual(members(s,'ct').map(e=>e.id),['a','c']);
 const counts=overview(make());
 assert.deepEqual([...counts.entries()].sort(),[['1450',{total:3,excluded:1}],['ct',{total:2,excluded:0}]]);
 assert.equal(overview({employees:[]}).size,0,'no groups, no control');
+
+const {teaching,learning}=require('../../sp5generator/static/team-scope.js');
+const school=()=>({employees:[
+ {id:'m1',team_ids:['ausbilder'],mentor_capacity:0,approvals:[{supervised:false}]},
+ {id:'m2',team_ids:['ausbilder'],mentor_capacity:2,approvals:[]},
+ {id:'l1',team_ids:['lehre'],mentor_capacity:0,approvals:[{supervised:false},{supervised:false}]},
+ {id:'l2',team_ids:['lehre'],mentor_capacity:0,approvals:[]}]});
+
+let t=school();
+// A deliberate bulk assignment sets the group, and reports how many it really moved.
+assert.deepEqual(teaching(t,'ausbilder',1),{changed:2,total:2});
+assert.deepEqual(t.employees.map(e=>e.mentor_capacity),[1,1,0,0]);
+assert.deepEqual(teaching(t,'ausbilder',1),{changed:0,total:2},'idempotent');
+assert.deepEqual(teaching(t,'ausbilder',0),{changed:2,total:2},'the mark can be taken back');
+for(const bad of [1.5,-1,'1',null,true])assert.throws(()=>teaching(t,'ausbilder',bad),/ganze Zahl/);
+
+t=school();
+// Someone without a single approval cannot be put under supervision - say so, do not pretend.
+assert.deepEqual(learning(t,'lehre',true),{changed:2,people:1,total:2,without:1});
+assert.deepEqual(t.employees.map(e=>(e.approvals||[]).map(a=>a.supervised)),[[false],[],[true,true],[]]);
+assert.deepEqual(learning(t,'lehre',true),{changed:0,people:0,total:2,without:1},'idempotent');
+assert.deepEqual(learning(t,'lehre',false),{changed:2,people:1,total:2,without:1});
+assert.throws(()=>learning(t,'unbekannt',true),/keine Mitglieder/);
+for(const call of [()=>teaching(t,'',1),()=>learning(t,'',true)])assert.throws(call,/Gruppe wählen/);

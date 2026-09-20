@@ -178,7 +178,56 @@ function render(){
  renderActivePanel(true);publishState();
 }
 function setTargetHours(person,value){person.target_minutes=value===null?null:Math.round(value*60);for(const input of document.querySelectorAll('[data-employee-hours]'))if(input.dataset.employeeHours===person.id&&input!==document.activeElement)input.value=value===null?'':String(value);}
+// A redraw after a bulk step must not throw away the group the planner picked.
+const teamScopeChoice={gruppe:'',ausbilder:'',lernende:'',kapazitaet:1};
+function renderTeamScope(){
+ const box=$('teamScope');box.replaceChildren();
+ const wahl=teamScopeChoice;
+ const counts=TeamScope.overview(snapshot),idx=dataIndex();
+ if(!counts.size)return;
+ const scope=el('fieldset',undefined,box);scope.id='teamScopeFields';el('legend','Gruppen von der Planung ausnehmen',scope);
+ el('p','Fremde Bereiche, Ehrenamt und ausgeschiedene Personen gehören nicht in diesen Plan. Ihre Daten bleiben erhalten; sie werden nur nicht eingeteilt. Wer noch in einer anderen Gruppe steht, wird dabei mit ausgenommen – das meldet der Hinweis.',scope);
+ let team=wahl.gruppe;
+ const options=[...counts.entries()].sort((a,b)=>b[1].total-a[1].total)
+  .map(([id,row])=>[id,`${idx.groups.get(id)?.name??id} · ${row.total} Personen${row.excluded?`, ${row.excluded} ausgenommen`:''}`]);
+ select(scope,'Gruppe',wahl.gruppe,[['','Bitte wählen'],...options],v=>wahl.gruppe=team=v,{updatesProject:false});
+ const run=(excluded,wording)=>()=>{
+  const {changed,total,shared}=TeamScope.apply(snapshot,team,excluded);
+  invalidateResult();renderActivePanel(true);
+  notice(changed
+   ?`${changed} von ${total} Personen ${wording}.${shared?` ${shared} davon stehen auch in anderen Gruppen – dort werden sie jetzt ebenfalls nicht mehr eingeteilt.`:''} Projekt speichern.`
+   :`Keine Änderung: alle ${total} Personen dieser Gruppe sind bereits ${excluded?'ausgenommen':'eingeplant'}.`);
+ };
+ const row=el('div',undefined,scope);row.className='actions';
+ button(row,'Gruppe ausnehmen',run(true,'von der Planung ausgenommen'));
+ button(row,'Gruppe wieder einplanen',run(false,'wieder in die Planung aufgenommen'));
+ const planbar=snapshot.employees.filter(e=>!e.excluded).length;
+ el('p',`Aktuell werden ${planbar} von ${snapshot.employees.length} Personen eingeplant.`,scope).className='helper-text';
+
+ const school=el('fieldset',undefined,box);school.id='teachingFields';el('legend','Ausbildung und Begleitung',school);
+ el('p','Wer in Ausbildung ist, darf nur gemeinsam mit einer begleitenden Person eingeteilt werden. Dazu die Ausbildergruppe kennzeichnen und die Ausbildungsgruppe unter Begleitung stellen. Ohne begleitende Person im selben Dienst bleibt der Posten offen und wird als Lücke gemeldet.',school);
+ let lernGruppe=wahl.lernende,ausGruppe=wahl.ausbilder,kapazitaet=wahl.kapazitaet;
+ select(school,'Ausbildergruppe',wahl.ausbilder,[['','Bitte wählen'],...options],v=>wahl.ausbilder=ausGruppe=v,{updatesProject:false});
+ field(school,'Begleitete Personen je Dienst',kapazitaet,v=>wahl.kapazitaet=kapazitaet=v,'number').min='0';
+ button(school,'Gruppe als Ausbilder kennzeichnen',()=>{
+  const {changed,total}=TeamScope.teaching(snapshot,ausGruppe,Math.trunc(Number(kapazitaet)));
+  invalidateResult();renderActivePanel(true);
+  notice(changed?`${changed} von ${total} Personen begleiten jetzt je Dienst bis zu ${Math.trunc(Number(kapazitaet))} Personen in Ausbildung. Projekt speichern.`
+   :`Keine Änderung: alle ${total} Personen dieser Gruppe haben diese Begleitkapazität bereits.`);
+ });
+ select(school,'Ausbildungsgruppe',wahl.lernende,[['','Bitte wählen'],...options],v=>wahl.lernende=lernGruppe=v,{updatesProject:false});
+ const lernZeile=el('div',undefined,school);lernZeile.className='actions';
+ const lernen=(supervised,wording)=>()=>{
+  const {changed,people,total,without}=TeamScope.learning(snapshot,lernGruppe,supervised);
+  invalidateResult();renderActivePanel(true);
+  notice(changed?`${changed} Freigaben von ${people} Personen ${wording}.${without?` ${without} von ${total} Personen haben noch gar keine Freigabe – für sie ändert sich nichts.`:''} Projekt speichern.`
+   :`Keine Änderung: ${without?`${without} von ${total} Personen haben keine Freigabe. `:''}Die übrigen Freigaben stehen bereits so.`);
+ };
+ button(lernZeile,'Gruppe unter Begleitung stellen',lernen(true,'gelten nur noch mit Begleitung'));
+ button(lernZeile,'Begleitung wieder aufheben',lernen(false,'gelten wieder selbstständig'));
+}
 function renderPeople(){
+ renderTeamScope();
  const view=collection($('people'),'people',snapshot.employees,{label:'Personen',search:e=>e.name+' '+e.id,redraw:renderPeople});
  const body=table(view.content,['Person','Planen','Dienstart','Bevorzugt','Sollstunden','Teams','Profile','Details']),idx=dataIndex();
  view.items.forEach(e=>{
@@ -682,6 +731,17 @@ function renderProfiles(){
    ['max_period_minutes','Arbeitszeit im Planungszeitraum (Minuten)',0],['max_work_days','Arbeitstage im Planungszeitraum',0],
    ['max_nights','Nächte im Planungszeitraum',0],['max_weekends','Wochenenden im Planungszeitraum',0]
   ])edit(g,key,label,'number',true,min);
+  const caps=el('p',undefined,g.parentElement);caps.className='inline-warning';caps.dataset.missingCaps=p.id;
+  caps.textContent='Keine Höchstarbeitszeit hinterlegt. Ohne tägliche oder wöchentliche Grenze plant das Werkzeug bis an die Ruhevorgaben heran – das können weit mehr Stunden sein als vereinbart.';
+  const capFields=['max_daily_minutes','max_weekly_minutes'].map(key=>g.querySelector(`[data-profile-field="${key}"]`));
+  const capsRefresh=()=>caps.hidden=capFields.some(input=>input&&input.value!=='');capsRefresh();
+  for(const input of capFields)for(const event of ['input','change'])input?.addEventListener(event,capsRefresh);
+  button(g.parentElement,'12/48-Höchstgrenzen in dieses Profil übernehmen',()=>{
+   p.max_daily_minutes=720;p.max_weekly_minutes=2880;
+   invalidateResult();renderRules();const reopened=[...$('profiles').querySelectorAll('[data-profile-id]')].find(card=>card.dataset.profileId===p.id);if(reopened){reopened.open=true;reopened.querySelector('[data-profile-field="max_daily_minutes"]')?.focus();}
+   notice('12/48-Höchstgrenzen übernommen: 720 Minuten täglich, 2880 Minuten je Kalenderwoche. Alle anderen Regeln, Bestätigungsstand und Freigaben bleiben unverändert. Projekt speichern.');
+  });
+  el('p','Angebot, keine rechtliche Prüfung: 12 Stunden täglich und 48 Stunden je Kalenderwoche. Wer kürzere Grenzen vereinbart hat, trägt sie hier direkt ein. Leer heißt weiterhin: keine Grenze aus diesem Profil.',g.parentElement).className='helper-text';
   g=group('Fachliche Prüfung');edit(g,'confirmed','Profil fachlich bestätigt','checkbox');
   el('p','Bestätigung ersetzt keine fachliche Prüfung. Änderungen dauerhaft speichern; offene Importangaben separat klären.',content);
   };
@@ -1336,6 +1396,15 @@ function updateHistoryApplyLabel(){const count=pendingHistoryApprovals().length;
 $('matrixFilter').addEventListener('change',()=>renderMatrix());
 action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${periodText(snapshot.period_start,snapshot.period_end)} freigeben – unabhängig von Suche und sichtbaren Zeilen? Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
 $('start').addEventListener('change',historyDefaults);
+// Deriving demand from history makes the history window a required entry, not an option.
+function demandSourceGuidance(){
+ const history=$('demandSource').value==='history',note=$('demandSourceNote');
+ note.hidden=!history;
+ if(!history)return;
+ if(!$('historyStart').value||!$('historyEnd').value)historyDefaults();
+ $('importOptions').open=true;
+}
+$('demandSource').addEventListener('change',demandSourceGuidance);demandSourceGuidance();
 {
  const today=new Date(),year=today.getFullYear(),month=String(today.getMonth()+1).padStart(2,'0');
  $('start').value=`${year}-${month}-01`;$('end').value=`${year}-${month}-${new Date(year,today.getMonth()+1,0).getDate()}`;
