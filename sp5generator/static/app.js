@@ -1103,6 +1103,46 @@ function renderShortageSummary(box,entries){
 }
 // Die Kennzahlen eines fertigen Plans in Worte fassen; eigenständig aufrufbar,
 // damit die Darstellung ohne einen vollständigen Rechenlauf prüfbar bleibt.
+// Was eine noch fehlende Freigabe öffnen würde. Die Vorschau erteilt keine und
+// schlägt keine vor; sie erspart nur, jede Überlegung einzeln durchzurechnen.
+function renderApprovalLeverage(){
+ const box=el('details',undefined,$('result'));box.id='approvalLeverage';
+ el('summary','Was würde eine zusätzliche Freigabe bringen?',box);
+ const inhalt=el('div',undefined,box);
+ el('p','Die Vorschau erteilt keine Freigabe und schlägt keine vor. Sie zeigt nur, wo die Freigabe die einzige Hürde wäre: welche sonst unbesetzbare Stelle dadurch besetzbar würde und wie viel vom Rückstand der Person in Reichweite käme. Ob die Suche die Arbeit dann wirklich verschiebt, entscheiden alle übrigen Regeln mit.',inhalt).className='helper-text';
+ button(inhalt,'Vorschau berechnen',async()=>{
+  const bericht=await api('/api/approval-leverage','POST',{snapshot:currentSnapshot(),assignments});
+  const ziel=$('approvalLeverageResult');ziel.replaceChildren();
+  if(!bericht.rows.length){el('p','Keine Freigabe würde hier etwas öffnen: überall steht noch etwas anderes im Weg.',ziel);return;}
+  const idx=dataIndex(),dienste=new Map((snapshot.metadata.services??[]).map(s=>[s.function_id??'sp5:service:'+s.id,s]));
+  const benennen=row=>[idx.employees.get(row.employee_id)?.name??row.employee_id,dienste.get(row.function_id)?.name??row.function_id];
+  el('p',`${bericht.candidates} Freigaben kämen in Frage. ${bericht.unstaffable_demands} Stellen sind derzeit für niemanden besetzbar; ${bericht.people_below_target} Personen liegen unter ihrem Soll, zusammen ${Math.round(bericht.shortfall_minutes/60).toLocaleString('de-DE')} Stunden.`,ziel);
+  const stunden=minuten=>(minuten/60).toLocaleString('de-DE',{maximumFractionDigits:1});
+  const uebersicht=el('div',undefined,ziel);uebersicht.className='scroll';uebersicht.id='approvalLeverageServices';
+  const kopf=table(uebersicht,['Dienst','Öffnet unbesetzbare Stellen','Wen es betrifft','Bestenfalls Stunden fürs Soll']);
+  for(const dienst of bericht.services){
+   const tr=el('tr',undefined,kopf);tr.dataset.leverageService=dienst.function_id;
+   el('td',dienste.get(dienst.function_id)?.name??dienst.function_id,tr);
+   el('td',dienst.unstaffable_demands||'–',tr);
+   el('td',`${dienst.people} Personen kämen in Frage`,tr);
+   el('td',stunden(dienst.best_usable_minutes),tr);
+  }
+  const einzeln=el('details',undefined,ziel);einzeln.id='approvalLeverageRows';
+  el('summary',`Einzelne Personen (${bericht.rows.length} von ${bericht.candidates})`,einzeln);
+  const sheet=el('div',undefined,einzeln);sheet.className='scroll';
+  const body=table(sheet,['Person','Dienst','Öffnet unbesetzbare Stellen','Erreichbare Stunden','Davon für das eigene Soll']);
+  for(const row of bericht.rows){
+   const tr=el('tr',undefined,body);tr.dataset.leverageRow=row.employee_id+'|'+row.function_id;
+   const [person,dienst]=benennen(row);
+   el('td',person,tr);el('td',dienst,tr);
+   el('td',row.unstaffable_demands||'–',tr);
+   el('td',stunden(row.reachable_minutes),tr);
+   el('td',stunden(row.usable_minutes),tr);
+  }
+  notice(`${bericht.rows.length} Zeilen berechnet. Eine Freigabe bleibt eine fachliche Entscheidung; die Vorschau hat nichts geändert.`);
+ });
+ el('div',undefined,inhalt).id='approvalLeverageResult';
+}
 function renderPlanMetrics(m){
   if(m.split_weekends_in_plan||m.split_weekends_forced_by_demand){
    const n=m.split_weekends_in_plan,forcedSplits=m.split_weekends_forced_by_demand,blocked=m.split_weekends_blocked_by_approval;
@@ -1131,6 +1171,7 @@ function renderPlanMetrics(m){
    }
   }
   if(m.free_time?.blocks)el('p',`Zusammenhängende Freizeit: ${m.free_time.blocks} Blöcke, im Schnitt ${m.free_time.mean_length.toLocaleString('de-DE')} Tage, ${m.free_time.three_or_more} ab drei Tagen, ${m.free_time.single_days} einzelne freie Tage, ${m.free_time.free_weekends} vollständig freie Wochenenden.`,$('result'));
+  renderApprovalLeverage();
   if(m.missing_approvals?.length){
    const gaps=m.missing_approvals,gapIdx=dataIndex();
    const gapServices=new Map((snapshot.metadata.services??[]).map(s=>[s.function_id??'sp5:service:'+s.id,s]));

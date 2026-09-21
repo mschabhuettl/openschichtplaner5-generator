@@ -443,6 +443,14 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
         from .validator import validate
         return validate(data.snapshot, data.assignments)
 
+    @app.post('/api/approval-leverage')
+    def approval_leverage_report(data: PlanRequest):
+        from .approval_preview import approval_leverage
+        try:
+            return approval_leverage(data.snapshot, data.assignments)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
     @app.post('/api/replacement')
     def find_replacement(data: ReplacementRequest):
         from .replacement import replacement_candidates
