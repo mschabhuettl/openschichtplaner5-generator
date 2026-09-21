@@ -150,3 +150,24 @@ def test_the_absent_person_appears_nowhere_not_even_as_a_blocked_count(planned):
     for duty in report["duties"]:
         assert sick not in {c["employee_id"] for c in duty["candidates"]}
         assert sum(duty["blocked"].values()) + len(duty["candidates"]) == others
+
+
+def test_someone_blocked_twice_over_is_counted_once(planned):
+    """Die Gründe sind eine Personenzahl, keine Aufzählung von Hindernissen."""
+    snapshot, assignments = planned
+    day = date(2026, 1, 8)
+    sick = _absent(planned, day)
+    mehrfach = snapshot.model_copy(deep=True)
+    for person in mehrfach.employees:
+        if person.id == sick:
+            continue
+        # Gleich mehrere Hürden auf einmal: ausgenommen und ohne Freigabe.
+        person.excluded = True
+        person.approvals = []
+
+    report = replacement_candidates(mehrfach, assignments, sick, day, day)
+
+    others = len(mehrfach.employees) - 1
+    for duty in report["duties"]:
+        assert duty["candidates"] == []
+        assert sum(duty["blocked"].values()) == others

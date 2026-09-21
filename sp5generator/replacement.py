@@ -81,8 +81,10 @@ def replacement_candidates(snapshot, assignments, employee_id, absent_from, abse
             if conflict:
                 reasons = [conflict]
             if reasons:
-                for reason in reasons:
-                    blocked[reason] = blocked.get(reason, 0) + 1
+                # Je Person zählt der erste Hinderungsgrund. Jeden Grund einzeln
+                # zu zählen ergäbe eine Summe über der Personenzahl, und genau
+                # als Personenzahl liest sie sich: "3 ohne Freigabe, 2 im Dienst".
+                blocked[reasons[0]] = blocked.get(reasons[0], 0) + 1
                 continue
             ranked.append(person.id)
         waiting = {pid: waited(people[pid]) for pid in ranked}
