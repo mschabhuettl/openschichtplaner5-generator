@@ -1400,14 +1400,42 @@ function samePosition(a,b){return a.function_id===b.function_id&&a.workplace_id=
 function approved(e,p){return e.approvals.some(a=>samePosition(a,p)&&a.valid_from<=snapshot.period_start&&a.valid_until>=snapshot.period_end);}
 function suggested(e,p){return (dataIndex().history.get(e.id)?.suggested_approvals??[]).some(a=>samePosition(a,p));}
 function dayOffset(day,delta){const date=new Date(day+'T12:00:00Z');date.setUTCDate(date.getUTCDate()+delta);return date.toISOString().slice(0,10);}
-function setApproval(e,p,enabled){
+function setApproval(e,p,enabled,quiet){
  invalidateResult();
  if(enabled){if(!approved(e,p))e.approvals.push({function_id:p.function_id,workplace_id:p.workplace_id,valid_from:snapshot.period_start,valid_until:snapshot.period_end,supervised:e.approvals.some(a=>relatedApproval(a,p)&&a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start)});}
  else {e.approvals=e.approvals.flatMap(a=>{if(!relatedApproval(a,p)||a.valid_until<snapshot.period_start||a.valid_from>snapshot.period_end)return[a];const remaining=[];if(a.valid_from<snapshot.period_start)remaining.push({...a,valid_until:dayOffset(snapshot.period_start,-1)});if(a.valid_until>snapshot.period_end)remaining.push({...a,valid_from:dayOffset(snapshot.period_end,1)});return remaining;});}
- notice('Freigabe im Planungszeitraum geändert. Qualifikationen und Freigaben außerhalb des Zeitraums bleiben erhalten. Änderungen speichern.');
+ if(!quiet)notice('Freigabe im Planungszeitraum geändert. Qualifikationen und Freigaben außerhalb des Zeitraums bleiben erhalten. Änderungen speichern.');
+}
+// Freigegeben wird eine Tätigkeit, keine Uhrzeit. Die Quelle führt jede Zeitlage
+// als eigenen Dienst; in der Matrix stehen sie als eine Spalte, und ein Klick
+// wirkt auf alle Zeitlagen zugleich. Die Freigaben selbst bleiben je Dienst.
+let familienModus=true;
+let familyCache=null;
+// Nur die Matrix rechnet in Familien. Kalender und Bedarf brauchen die echten
+// Positionen, sonst verlöre eine Planzeile ihre Dienstkennung.
+function matrixColumns(){
+ const positions=matrixPositions();
+ if(familyCache)return familyCache;
+ if(!familienModus){familyCache=positions;return familyCache;}
+ familyCache=ServiceFamilies.group(positions).map(f=>({
+  id:f.id,name:f.name,workplace_id:'*',members:f.members,
+  qualifications_required:f.members.some(p=>p.qualifications_required),
+ }));
+ return familyCache;
+}
+function columnMembers(col){return col.members??[col];}
+function columnApproved(e,col){return columnMembers(col).every(p=>approved(e,p));}
+function columnPartly(e,col){return columnMembers(col).some(p=>approved(e,p));}
+function columnSuggested(e,col){return columnMembers(col).some(p=>suggested(e,p));}
+function setColumnApproval(e,col,enabled){
+ const teile=columnMembers(col);
+ teile.forEach(p=>setApproval(e,p,enabled,true));
+ notice(teile.length>1
+  ?`${col.name}: ${teile.length} Zeitlagen im Planungszeitraum ${enabled?'freigegeben':'gesperrt'}. Freigaben außerhalb des Zeitraums bleiben erhalten. Änderungen speichern.`
+  :'Freigabe im Planungszeitraum geändert. Qualifikationen und Freigaben außerhalb des Zeitraums bleiben erhalten. Änderungen speichern.');
 }
 function matrixPositions(){
- dataIndex();if(matrixCache)return matrixCache;
+ dataIndex();if(matrixCache)return matrixCache;familyCache=null;
  if(serviceMatrix()){const services=new Map(),serviceNames=new Map((snapshot.metadata.services??[]).map(s=>[s.function_id??'sp5:service:'+s.id,s]));const add=p=>{if(!p.function_id)return;const existing=services.get(p.function_id);if(existing){existing.qualifications_required ||= p.qualifications_required;return;}const service=serviceNames.get(p.function_id);services.set(p.function_id,{...p,id:p.function_id,workplace_id:'*',name:service?.name??p.function_name??p.name??p.function_id});};(snapshot.metadata.services??[]).forEach(add);snapshot.positions.forEach(add);snapshot.employees.flatMap(e=>e.approvals).forEach(add);(snapshot.metadata.history_matrix??[]).flatMap(r=>r.suggested_approvals??[]).forEach(add);matrixCache=[...services.values()];return matrixCache;}
  const seen=new Set(),positions=[];const add=p=>{const key=JSON.stringify([p.function_id,p.workplace_id]);if(!seen.has(key)){seen.add(key);positions.push(p);}};
  snapshot.positions.forEach(add);
@@ -1416,14 +1444,14 @@ function matrixPositions(){
 }
 function workplaceName(id){return dataIndex().workplaces.get(id)?.name??id;}
 function approvalPositions(){const positions=[...matrixPositions()];if(serviceMatrix())snapshot.positions.forEach(p=>positions.push({...p,name:`${p.name} · ${workplaceName(p.workplace_id)} (eingeschränkt)`}));return positions;}
-function matrixFiltered(){const q=fold($('matrixSearch').value.trim()),positions=matrixPositions();if(!q)return {employees:snapshot.employees,positions};const matchingPeople=snapshot.employees.filter(e=>fold(e.name).includes(q));const matchingPositions=positions.filter(p=>fold(p.name).includes(q));return {employees:matchingPositions.length?snapshot.employees:matchingPeople,positions:matchingPeople.length?positions:matchingPositions};}
+function matrixFiltered(){const q=fold($('matrixSearch').value.trim()),positions=matrixColumns();if(!q)return {employees:snapshot.employees,positions};const matchingPeople=snapshot.employees.filter(e=>fold(e.name).includes(q));const matchingPositions=positions.filter(p=>fold(p.name).includes(q));return {employees:matchingPositions.length?snapshot.employees:matchingPeople,positions:matchingPeople.length?positions:matchingPositions};}
 function matrixVisible(){
  const {employees,positions}=matrixFiltered();
  const wahl=$('matrixFilter')?.value??'alle';
  if(wahl==='alle')return {employees,positions};
  const passt=e=>wahl==='ausgenommen'?!!e.excluded
-  :wahl==='ohne'?positions.some(p=>!approved(e,p))
-  :wahl==='vorschlag'?positions.some(p=>!approved(e,p)&&suggested(e,p))
+  :wahl==='ohne'?positions.some(p=>!columnApproved(e,p))
+  :wahl==='vorschlag'?positions.some(p=>!columnApproved(e,p)&&columnSuggested(e,p))
   :true;
  return {employees:employees.filter(passt),positions};
 }
@@ -1434,15 +1462,16 @@ function renderMatrix(){
  const box=$('matrix'),previous=box.querySelector('.collection-content'),scroll=[previous?.scrollLeft??0,previous?.scrollTop??0];box.replaceChildren();const filtered=matrixFiltered();collectionCount(box,filtered.employees.length,'Personen');collectionCount(box,filtered.positions.length,'Dienste');const grid=el('div',undefined,box);grid.className='collection-content';grid.tabIndex=0;grid.setAttribute('role','region');grid.setAttribute('aria-label','Freigabematrix – scrollbar');
  const body=table(grid,[transposed?(serviceMatrix()?'Dienst':'Funktion / Arbeitsplatz'):'Person',...cols.map(x=>x.name)]);const t=body.parentElement;t.className='matrix-table';t.setAttribute('aria-label','Freigabematrix für den Planungszeitraum');
  rows.forEach((row,ri)=>{const tr=el('tr',undefined,body);const h=el('th',undefined,tr);h.scope='row';if(!transposed)button(h,row.name||'Neue Person',()=>personDetails(row));else h.textContent=row.name;
-  if(!transposed){const frei=cols.filter(p=>approved(row,p)).length;
+  if(!transposed){const frei=cols.filter(p=>columnApproved(row,p)).length;
    const bilanz=el('small',`${frei}/${cols.length}`,h);
    bilanz.title=`${frei} von ${cols.length} Diensten freigegeben`;}
- cols.forEach((col,ci)=>{const e=transposed?col:row,p=transposed?row:col,allowed=approved(e,p),history=suggested(e,p);
- const supervised=allowed&&e.approvals.some(a=>relatedApproval(a,p)&&a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);const partial=!allowed&&e.approvals.some(a=>relatedApproval(a,p)&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
- const mixedSupervision=supervised&&e.approvals.some(a=>samePosition(a,p)&&!a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
- const workplacePartial=partial&&serviceMatrix()&&e.approvals.some(a=>relatedApproval(a,p)&&a.workplace_id!=='*'&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
- const text=allowed?(mixedSupervision?'✓ Teils betreut':supervised?'✓ Betreut':'✓ Frei'):(workplacePartial?'◐ Einzelne Arbeitsplätze':partial?'◐ Teilzeitraum':history?'◇ Vorschlag':'− Keine Freigabe');const td=el('td',undefined,tr);
- const zeichen=text.split(' ')[0];const b=button(td,zeichen,()=>{setApproval(e,p,!allowed);renderMatrix();renderHistory();$('matrix').querySelector(`[data-row="${ri}"][data-col="${ci}"]`)?.focus();});b.className='matrix-cell '+(allowed?'allowed':partial?'partial':history?'suggested':'prohibited');b.dataset.row=ri;b.dataset.col=ci;b.dataset.employeeId=e.id;b.dataset.functionId=p.function_id;b.dataset.workplaceId=p.workplace_id;b.setAttribute('aria-pressed',String(allowed));b.setAttribute('aria-label',`${e.name} · ${p.name}: ${text}. ${allowed?'Freigabe im Zeitraum entfernen':(serviceMatrix()?'Dienst an allen Arbeitsplätzen für ganzen Planungszeitraum freigeben':'Für ganzen Planungszeitraum freigeben')}`);b.title=`${periodText(snapshot.period_start,snapshot.period_end)}. ${supervised?'Betreuung erforderlich. ':''}${p.qualifications_required?'Zusätzlicher Qualifikationsnachweis bleibt erforderlich.':''}`;
+ cols.forEach((col,ci)=>{const e=transposed?col:row,p=transposed?row:col,allowed=columnApproved(e,p),history=columnSuggested(e,p);
+ const teile=columnMembers(p);const passend=pred=>teile.some(m=>e.approvals.some(a=>pred(a,m)));
+ const supervised=allowed&&passend((a,m)=>relatedApproval(a,m)&&a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);const partial=!allowed&&(columnPartly(e,p)||passend((a,m)=>relatedApproval(a,m)&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start));
+ const mixedSupervision=supervised&&passend((a,m)=>samePosition(a,m)&&!a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
+ const workplacePartial=partial&&serviceMatrix()&&passend((a,m)=>relatedApproval(a,m)&&a.workplace_id!=='*'&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start);
+ const zeitlagen=teile.length>1?` · ${teile.length} Zeitlagen`:'';const text=(allowed?(mixedSupervision?'✓ Teils betreut':supervised?'✓ Betreut':'✓ Frei'):(columnPartly(e,p)&&!allowed?'◐ Einzelne Zeitlagen':workplacePartial?'◐ Einzelne Arbeitsplätze':partial?'◐ Teilzeitraum':history?'◇ Vorschlag':'− Keine Freigabe'))+zeitlagen;const td=el('td',undefined,tr);
+ const zeichen=text.split(' ')[0];const b=button(td,zeichen,()=>{setColumnApproval(e,p,!allowed);renderMatrix();renderHistory();$('matrix').querySelector(`[data-row="${ri}"][data-col="${ci}"]`)?.focus();});b.className='matrix-cell '+(allowed?'allowed':partial?'partial':history?'suggested':'prohibited');b.dataset.row=ri;b.dataset.col=ci;b.dataset.employeeId=e.id;if(teile.length===1){b.dataset.functionId=teile[0].function_id;b.dataset.workplaceId=teile[0].workplace_id;}else b.dataset.family=p.name;b.setAttribute('aria-pressed',String(allowed));b.setAttribute('aria-label',`${e.name} · ${p.name}: ${text}. ${allowed?'Freigabe im Zeitraum entfernen':(serviceMatrix()?'Dienst an allen Arbeitsplätzen für ganzen Planungszeitraum freigeben':'Für ganzen Planungszeitraum freigeben')}`);b.title=`${periodText(snapshot.period_start,snapshot.period_end)}. ${supervised?'Betreuung erforderlich. ':''}${p.qualifications_required?'Zusätzlicher Qualifikationsnachweis bleibt erforderlich.':''}`;
  b.title=text;b.setAttribute('aria-label',`${e.name}, ${p.name}: ${text}`);
  b.onkeydown=event=>{const delta={ArrowRight:[0,1],ArrowLeft:[0,-1],ArrowDown:[1,0],ArrowUp:[-1,0]}[event.key];if(!delta)return;event.preventDefault();$('matrix').querySelector(`[data-row="${ri+delta[0]}"][data-col="${ci+delta[1]}"]`)?.focus();};});});
  grid.scrollTo(...scroll);
@@ -1500,6 +1529,11 @@ function renderCalendar(){
 }
 $('matrixSearch').oninput=debounce(()=>{if(!snapshot)return;pageState('matrixPeople',30).page=0;pageState('matrixPositions',16).page=0;renderMatrix();});
 action('transpose',()=>{transposed=!transposed;$('transpose').setAttribute('aria-pressed',String(transposed));renderMatrix();});
+// Alle Zeitlagen derselben Dienstart, zu der ein Vorschlag gehört.
+function familyTargets(proposal){
+ const spalte=matrixColumns().find(col=>columnMembers(col).some(m=>samePosition(m,proposal)));
+ return spalte?columnMembers(spalte):[proposal];
+}
 function pendingHistoryApprovals(){
  const pairs=[],seen=new Set(),employees=dataIndex().employees;
  for(const row of snapshot?.metadata?.history_matrix??[]){const employee=employees.get(row.employee_id);if(!employee)continue;
@@ -1507,16 +1541,39 @@ function pendingHistoryApprovals(){
   const start=snapshot.period_start>employee.employment_start?snapshot.period_start:employee.employment_start;
   const end=snapshot.period_end<employee.employment_end?snapshot.period_end:employee.employment_end;
   if(start>end)continue;
-  for(const proposal of row.suggested_approvals??[]){const key=JSON.stringify([employee.id,proposal.function_id,proposal.workplace_id]);
-   if(seen.has(key)||approved(employee,proposal))continue;seen.add(key);pairs.push([employee,proposal]);
+  for(const proposal of row.suggested_approvals??[]){
+   // Bei zusammengefassten Zeitlagen zählt der Nachweis für die ganze Familie:
+   // wer den Dienst um 6 gefahren ist, ist für dieselbe Tätigkeit nachgewiesen.
+   for(const ziel of familienModus?familyTargets(proposal):[proposal]){
+   const key=JSON.stringify([employee.id,ziel.function_id,ziel.workplace_id]);
+   if(seen.has(key)||approved(employee,ziel))continue;seen.add(key);pairs.push([employee,ziel]);}
   }
  }
  return pairs;
 }
+// Vorschläge für Personen, deren Beschäftigung nicht in den Zeitraum reicht,
+// kann niemand übernehmen. Sie fielen bisher wortlos weg.
+function historyOutsideEmployment(){
+ const employees=dataIndex().employees;let n=0;
+ for(const row of snapshot?.metadata?.history_matrix??[]){
+  const employee=employees.get(row.employee_id);
+  if(!employee)continue;
+  const start=snapshot.period_start>employee.employment_start?snapshot.period_start:employee.employment_start;
+  const end=snapshot.period_end<employee.employment_end?snapshot.period_end:employee.employment_end;
+  if(start>end)n+=(row.suggested_approvals??[]).length;
+ }
+ return n;
+}
 function updateHistoryApplyLabel(){const count=pendingHistoryApprovals().length;$('confirmHistory').textContent=`Alle ${count} historischen Vorschläge übernehmen`;$('historyBulk').dataset.pending=String(count);$('historyBulkTitle').textContent=count?`${count} historische Vorschläge offen`:'Keine offenen historischen Vorschläge';// Ohne offene Vorschläge gibt es nichts zu übernehmen; der Streifen entfällt.
- $('historyBulk').hidden=!count;}
+ $('historyBulk').hidden=!count;
+ const draussen=historyOutsideEmployment(),hinweis=$('historyOutside');
+ hinweis.hidden=!draussen;
+ if(draussen)hinweis.textContent=`${draussen} weitere Vorschläge betreffen Personen, deren Beschäftigung nicht in den Planungszeitraum reicht. Sie lassen sich nicht übernehmen.`;}
 $('matrixFilter').addEventListener('change',()=>renderMatrix());
-action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${periodText(snapshot.period_start,snapshot.period_end)} freigeben – unabhängig von Suche und sichtbaren Zeilen? Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
+$('groupFamilies').addEventListener('change',event=>{
+ familienModus=event.target.checked;familyCache=null;renderMatrix();renderHistory();updateHistoryApplyLabel();
+});
+action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${periodText(snapshot.period_start,snapshot.period_end)} freigeben – unabhängig von Suche und sichtbaren Zeilen? ${familienModus?' Bei zusammengefassten Zeitlagen gilt ein Nachweis für alle Zeitlagen derselben Dienstart.':''} Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
 $('start').addEventListener('change',historyDefaults);
 // Deriving demand from history makes the history window a required entry, not an option.
 function demandSourceGuidance(){

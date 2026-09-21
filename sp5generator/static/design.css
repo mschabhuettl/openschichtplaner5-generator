@@ -157,7 +157,10 @@ a  { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-of
 .save-indicator.dirty .status-dot { background: var(--warn); }
 
 #mainContent { padding: 26px 28px 56px; min-width: 0; }
-.panel { display: flex; flex-direction: column; gap: 22px; max-width: 1180px; }
+.panel { display: flex; flex-direction: column; gap: 22px; max-width: none; }
+/* Die Fläche gehört den Daten: Matrix und Kalender wachsen mit dem Bildschirm.
+   Fließtext behält seine Zeilenlänge, sonst wird er auf breiten Schirmen unlesbar. */
+.panel > p, .helper-text, .inline-warning, .empty-state p { max-width: 86ch; }
 
 /* -------------------------------------------------------- Bedienelemente */
 
@@ -449,7 +452,7 @@ th.weekend, td.weekend { background: var(--surface-2); }
 .result-summary > p.bad { font-weight: 600; }
 .result-summary pre, #validation { font-family: var(--mono); font-size: 11.5px; line-height: 1.5; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 13px; overflow: auto; max-height: 460px; margin: 0; }
 
-.calculation-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; max-width: 880px; }
+.calculation-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
 .calculation-card { border-top: 3px solid var(--accent); padding: var(--pad); display: flex; flex-direction: column; gap: 14px; }
 .calculation-symbol { display: none; }
 .calculation-options { display: flex; flex-direction: column; gap: 13px; max-width: 420px; }
