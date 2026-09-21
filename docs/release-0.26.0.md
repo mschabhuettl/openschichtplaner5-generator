@@ -163,6 +163,28 @@ einspringen könnten.
 - Die Suche **ändert den Plan nicht**. Sie beantwortet eine Frage; eingeteilt wird
   weiterhin von Hand oder durch eine neue Berechnung.
 
+## Gemessen an echten Daten
+
+Alle Zahlen in dieser Freigabe stammen aus einem echten Haus (nur Aggregate, keine
+Personendaten). Der Weg von der ersten zur jetzigen Fassung, jeweils derselbe
+Planungsmonat:
+
+| | Dienststellen | Sollerfüllung Median | höchste Quote | ohne Dienst |
+|---|---|---|---|---|
+| Bedarf je Arbeitsplatz, Median, Jahresfenster | 191 | 6 % | – | 40 von 75 |
+| Menge erhalten, Arbeitsplätze zusammengefasst | 896 | 52 % | – | 5 |
+| dazu jahreszeitlich passendes Fenster | 1069 | 75 % | 355 % | 8 |
+| dazu persönliche Grenze bei 150 % des Solls | 1069 | 77 % | 150 % | 8 |
+
+Zum Vergleich derselbe Monat im Vorjahr, von Hand geplant, dieselben Personen und
+dieselben Sollwerte: 68 % gesamt, Median 81 %, aber **16 Personen ganz ohne
+Dienst**. Der erzeugte Plan verteilt also breiter und lässt weniger Leute außen
+vor; der Median liegt deshalb etwas darunter.
+
+**100 % ist in diesen Daten keine erreichbare Messlatte.** Der hinterlegte
+Einsatzplan enthält rund 70 % der vertraglichen Arbeitszeit; der Rest steht nicht
+in der Quelle. Genau dafür ist die neue Freigabedecken-Meldung da.
+
 ## Ohne Auswirkung auf Bestehendes
 
 Gespeicherte Projekte, laufende Aufträge und Exporte verhalten sich unverändert.
