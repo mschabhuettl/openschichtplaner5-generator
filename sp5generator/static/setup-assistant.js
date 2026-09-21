@@ -1,5 +1,26 @@
 /* Explicit reuse from a user-confirmed identical source; never extend validity. */
 (function(root){
+ // Ein Weg statt zehn Schalter: aus dem Planungsmonat ergibt sich alles, was
+ // sich daraus ergeben kann. Fachliche Bestätigungen gehören ausdrücklich nicht
+ // dazu - die bleiben eine Entscheidung und werden danach sichtbar aufgelistet.
+ function quickStart(month){
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month??''))throw Error('Bitte einen Planungsmonat im Format JJJJ-MM wählen.');
+  const [year,mon]=month.split('-').map(Number);
+  const pad=n=>String(n).padStart(2,'0');
+  const lastDay=(y,m)=>new Date(Date.UTC(y,m,0)).getUTCDate();
+  const day=(y,m,d)=>`${y}-${pad(m)}-${pad(d)}`;
+  return {
+   start:day(year,mon,1),
+   end:day(year,mon,lastDay(year,mon)),
+   // Bedarf aus demselben Monat des Vorjahres: jahreszeitlich vergleichbar.
+   demandStart:day(year-1,mon,1),
+   demandEnd:day(year-1,mon,lastDay(year-1,mon)),
+   // Vorschläge dürfen weiter zurückblicken als der Bedarf; sie enden am Tag
+   // vor der Planung, denn danach gibt es keine Historie mehr.
+   historyStart:day(year-3,mon,1),
+   historyEnd:day(mon===1?year-1:year,mon===1?12:mon-1,lastDay(mon===1?year-1:year,mon===1?12:mon-1)),
+  };
+ }
  function followingPeriod(previous,mode='same'){
   const parse=value=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value??''))throw Error('Gültigen bisherigen Planungszeitraum öffnen.');const date=new Date(value+'T12:00:00Z');if(Number.isNaN(+date)||date.toISOString().slice(0,10)!==value)throw Error('Gültigen bisherigen Planungszeitraum öffnen.');return date;};
   const start=parse(previous?.period_start),end=parse(previous?.period_end),days=Math.round((end-start)/86400000)+1;
@@ -63,5 +84,5 @@
   if(previous)next.metadata.history_notice='Einstellungen vorhandener Personen aus dem bisherigen Projekt übernommen. Historienautomatik gilt nur für neue Personen; Gültigkeiten wurden nicht verlängert.';
   return next;
  }
- const api={prepare,followingPeriod};if(typeof module!=='undefined'&&module.exports){root.ServiceGroups=require('./service-groups.js');module.exports=api;}else root.SetupAssistant=api;
+ const api={quickStart,prepare,followingPeriod};if(typeof module!=='undefined'&&module.exports){root.ServiceGroups=require('./service-groups.js');module.exports=api;}else root.SetupAssistant=api;
 })(globalThis);

@@ -60,3 +60,25 @@ assert.deepEqual(followingPeriod({period_start:'2026-02-02',period_end:'2026-02-
 const beforeNext=structuredClone(monthly);followingPeriod(monthly,'same');assert.deepEqual(monthly,beforeNext);
 for(const previous of [null,{period_start:'2026-02-30',period_end:'2026-03-03'},{period_start:'2026-03-02',period_end:'2026-03-01'},{period_start:'2025-01-01',period_end:'2026-12-31'},{period_start:'9999-12-01',period_end:'9999-12-31'}])assert.throws(()=>followingPeriod(previous,'month'));
 assert.throws(()=>followingPeriod(monthly,'unknown'));
+
+// Aus dem Planungsmonat ergibt sich alles, was sich daraus ergeben kann.
+const {quickStart}=require('../../sp5generator/static/setup-assistant.js');
+assert.deepEqual(quickStart('2027-01'),{
+ start:'2027-01-01',end:'2027-01-31',
+ demandStart:'2026-01-01',demandEnd:'2026-01-31',
+ historyStart:'2024-01-01',historyEnd:'2026-12-31'});
+// Ein Schaltjahr-Februar behält seinen 29.
+assert.deepEqual(quickStart('2028-02'),{
+ start:'2028-02-01',end:'2028-02-29',
+ demandStart:'2027-02-01',demandEnd:'2027-02-28',
+ historyStart:'2025-02-01',historyEnd:'2028-01-31'});
+// Der Bedarf kommt aus demselben Monat des Vorjahres, nicht aus dem Jahresschnitt.
+for(const monat of ['2027-03','2027-07','2027-12']){
+ const f=quickStart(monat);
+ assert.equal(f.demandStart.slice(5,7),monat.slice(5,7));
+ assert.equal(Number(f.demandStart.slice(0,4)),Number(monat.slice(0,4))-1);
+ assert.ok(f.historyEnd<f.start,'die Historie endet vor der Planung');
+ assert.ok(f.historyStart<f.demandStart,'Vorschläge blicken weiter zurück als der Bedarf');
+}
+for(const schlecht of ['','2027','2027-13','2027-00','Januar',null,undefined,'2027-1'])
+ assert.throws(()=>quickStart(schlecht),/Planungsmonat/);

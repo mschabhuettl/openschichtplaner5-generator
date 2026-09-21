@@ -71,6 +71,7 @@ function renderActivePanel(force=false){
  if(activePanel==='rules')renderRules();
  if(activePanel==='demand')renderDemandBoard();
  if(activePanel==='plan')renderPlan();
+ if(activePanel==='calculate')renderOpenDecisions();
  renderedPanels.set(activePanel,changeVersion);syncJson();updateJobButtons();
 }
 
@@ -1143,6 +1144,38 @@ function renderApprovalLeverage(){
  });
  el('div',undefined,inhalt).id='approvalLeverageResult';
 }
+// Der gerade Weg endet nicht beim Import: was noch offen ist, steht hier als
+// kurze Liste - jede Zeile mit dem einen Schritt, der sie schließt. Fachliche
+// Bestätigungen führen zur Entscheidung, sie nehmen sie niemandem ab.
+function renderOpenDecisions(){
+ const box=$('openDecisions');if(!box)return;box.replaceChildren();
+ if(!snapshot)return;
+ const planbar=snapshot.employees.filter(e=>!e.excluded);
+ const offen=[];
+ const unbestaetigt=snapshot.profiles.filter(p=>!p.confirmed).length;
+ if(unbestaetigt)offen.push({text:`${unbestaetigt} Regelprofile sind noch nicht fachlich bestätigt. Ohne Bestätigung wird nicht geplant.`,
+  label:'Zu den Regeln',run:()=>{navigate('rules');selectConfig('profile');}});
+ const ohneGrenze=snapshot.profiles.filter(p=>p.confirmed&&p.max_daily_minutes==null&&p.max_weekly_minutes==null).length;
+ if(ohneGrenze)offen.push({text:`${ohneGrenze} bestätigte Regelprofile haben keine Höchstarbeitszeit. Ohne Grenze wird bis an die Ruhevorgaben geplant.`,
+  label:'Zu den Regeln',run:()=>{navigate('rules');selectConfig('profile');}});
+ if(planbar.length&&planbar.every(e=>e.max_period_minutes==null))offen.push({
+  text:'Niemand hat eine persönliche Höchstarbeitszeit. Ohne sie kann eine Teilzeitkraft ein Vielfaches ihres Vertrags zugeteilt bekommen.',
+  label:'Grenze bei 150 % des Solls setzen',run:()=>{
+   const {changed,without}=TeamScope.capFromTarget(snapshot,150);
+   invalidateResult();renderActivePanel(true);
+   notice(`${changed} Personen bekommen höchstens 150 % ihres Solls.${without?` ${without} ohne hinterlegtes Soll bleiben ohne Grenze.`:''} Projekt speichern.`);
+  }});
+ const vorschlaege=pendingHistoryApprovals().length;
+ if(vorschlaege)offen.push({text:`${vorschlaege} historische Vorschläge sind noch nicht übernommen. Ohne Freigabe bleiben Stellen unbesetzbar.`,
+  label:'Zu Team & Freigaben',run:()=>navigate('team')});
+ if(!offen.length){el('p','Keine offenen Entscheidungen. Der Plan kann berechnet werden.',box).className='helper-text';return;}
+ el('h4',`Noch zu entscheiden (${offen.length})`,box);
+ for(const schritt of offen){
+  const zeile=el('div',undefined,box);zeile.className='actions';zeile.dataset.openDecision='';
+  el('span',schritt.text,zeile);
+  button(zeile,schritt.label,schritt.run);
+ }
+}
 function renderPlanMetrics(m){
   if(m.split_weekends_in_plan||m.split_weekends_forced_by_demand){
    const n=m.split_weekends_in_plan,forcedSplits=m.split_weekends_forced_by_demand,blocked=m.split_weekends_blocked_by_approval;
@@ -1268,7 +1301,7 @@ async function poll(){
 }
 action('demo',async()=>{if(canReplace())load(await api('/api/demo'));});
 action('inspect',async()=>{const key=JSON.stringify([$('sourceType').value,$('directory').value]);const source=await api($('sourceType').value==='api'?'/api/remote-source':'/api/source?directory='+encodeURIComponent($('directory').value));if(key!==JSON.stringify([$('sourceType').value,$('directory').value])){notice('Datenquelle geändert. Teams erneut laden.');return;}groups=source.groups;checkedTeams.clear();renderTeams();notice(`${groups.length} Teams gefunden. Gewünschte Teams auswählen.`);});
-action('import',async()=>{if(!checkedTeams.size)throw Error('Mindestens ein Team auswählen.');if($('reuseSetup').checked&&!snapshot)throw Error('Zuerst das bisherige Projekt öffnen.');if(!canReplace())return;const setupPrevious=$('reuseSetup').checked?currentSnapshot():null;const setupOptions={sameSource:$('reuseSetup').checked,classify:$('autoKind').checked,rule:{start:$('setupNightStart').value,end:$('setupNightEnd').value,minimum:Number($('setupNightMin').value)}};notice('Import einschließlich historischer Basis läuft …');const r=await api($('sourceType').value==='api'?'/api/remote-import':'/api/import','POST',{...($('sourceType').value==='directory'?{directory:$('directory').value}:{}),period_start:$('start').value,period_end:$('end').value,team_ids:[...checkedTeams],timezone:$('timezone').value,history_plan:$('historyPlan').value,reference_plan:$('referencePlan').value,auto_history:$('autoHistory').checked,history_min_days:Number($('historyMinDays').value),existing_plan_mode:$('existingPlanMode').value,demand_source:$('demandSource').value,history_start:$('historyStart').value||null,history_end:$('historyEnd').value||null});const prepared=SetupAssistant.prepare(r.snapshot,setupPrevious,setupOptions);const checked=await api('/api/snapshots/check','POST',prepared);load(checked);navigate('rules');});
+action('import',async()=>{if(!checkedTeams.size)throw Error('Mindestens ein Team auswählen.');if($('reuseSetup').checked&&!snapshot)throw Error('Zuerst das bisherige Projekt öffnen.');if(!canReplace())return;const setupPrevious=$('reuseSetup').checked?currentSnapshot():null;const setupOptions={sameSource:$('reuseSetup').checked,classify:$('autoKind').checked,rule:{start:$('setupNightStart').value,end:$('setupNightEnd').value,minimum:Number($('setupNightMin').value)}};notice('Import einschließlich historischer Basis läuft …');const r=await api($('sourceType').value==='api'?'/api/remote-import':'/api/import','POST',{...($('sourceType').value==='directory'?{directory:$('directory').value}:{}),period_start:$('start').value,period_end:$('end').value,team_ids:[...checkedTeams],timezone:$('timezone').value,history_plan:$('historyPlan').value,reference_plan:$('referencePlan').value,auto_history:$('autoHistory').checked,history_min_days:Number($('historyMinDays').value),existing_plan_mode:$('existingPlanMode').value,demand_source:$('demandSource').value,demand_history_start:$('demandHistoryStart').value||null,demand_history_end:$('demandHistoryEnd').value||null,history_start:$('historyStart').value||null,history_end:$('historyEnd').value||null});const prepared=SetupAssistant.prepare(r.snapshot,setupPrevious,setupOptions);const checked=await api('/api/snapshots/check','POST',prepared);load(checked);navigate('rules');});
 action('save',save);action('saveDraft',save);
 function projectSwitchBusy(){return projectBusy||solving||!!jobId||['save','saveDraft','demo','import','applyJson','file'].some(id=>$(id).dataset.busy==='true');}
 async function openSavedProject(id){
@@ -1575,6 +1608,19 @@ $('groupFamilies').addEventListener('change',event=>{
 });
 action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${periodText(snapshot.period_start,snapshot.period_end)} freigeben – unabhängig von Suche und sichtbaren Zeilen? ${familienModus?' Bei zusammengefassten Zeitlagen gilt ein Nachweis für alle Zeitlagen derselben Dienstart.':''} Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
 $('start').addEventListener('change',historyDefaults);
+// Ein Weg statt zehn Schalter: der Monat setzt alles, was sich aus ihm ergibt.
+// Fachliche Bestätigungen setzt er ausdrücklich nicht - die bleiben sichtbar offen.
+action('quickPrepare',async()=>{
+ const f=SetupAssistant.quickStart($('quickMonth').value);
+ if(!checkedTeams.size)throw Error('Zuerst unten die Teams laden und auswählen.');
+ $('start').value=f.start;$('end').value=f.end;
+ $('historyStart').value=f.historyStart;$('historyEnd').value=f.historyEnd;
+ $('demandSource').value='history';demandSourceGuidance();
+ $('demandHistoryStart').value=f.demandStart;$('demandHistoryEnd').value=f.demandEnd;
+ $('autoKind').checked=true;
+ $('quickHint').textContent=`Zeitraum ${f.start} bis ${f.end}; Bedarf aus ${f.demandStart} bis ${f.demandEnd}; Vorschläge ab ${f.historyStart}. Import läuft …`;
+ $('import').click();
+});
 // Deriving demand from history makes the history window a required entry, not an option.
 function demandSourceGuidance(){
  const history=$('demandSource').value==='history',note=$('demandSourceNote');

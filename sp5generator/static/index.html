@@ -120,6 +120,22 @@
           <div class="details-content">
             <p class="helper-text">Ein SP5-Import liest Ihre Quelle. Die Dienstplanung wird anschließend als eigenes Projekt bearbeitet.
             </p>
+            <section class="import-stage" id="quickStart">
+              <h3>Schnellstart
+              </h3>
+              <p>Einen Monat wählen – alles Übrige wird gesetzt: Zeitraum, Bedarf aus dem gleichen Monat des Vorjahres, historische Basis der letzten drei Jahre, Tag- und Nachtzuordnung. Was fachlich zu bestätigen ist, bleibt Ihre Entscheidung und wird danach aufgelistet.
+              </p>
+              <div class="grid import-grid">
+                <label>Planungsmonat<input id="quickMonth" type="month">
+                </label>
+                <div class="actions">
+                  <button id="quickPrepare" type="button" class="primary">Monat vorbereiten
+                  </button>
+                </div>
+              </div>
+              <p id="quickHint" class="helper-text">Zuerst unten die Teams laden und auswählen.
+              </p>
+            </section>
             <section class="import-stage">
               <h3><span>1</span>Quelle &amp; Teams
               </h3>
@@ -201,6 +217,11 @@
                     <label>Historie ab<input id="historyStart" type="date">
                     </label>
                     <label>Historie bis<input id="historyEnd" type="date">
+                    </label>
+                    <label>Bedarfsfenster ab<input id="demandHistoryStart" type="date">
+                    </label>
+                    <label>Bedarfsfenster bis<input id="demandHistoryEnd" type="date">
+                      <small class="helper-text">Nur für „Aus der Historie ableiten“. Leer heißt: dasselbe Fenster wie für die Vorschläge.</small>
                     </label>
                   </div>
                 </section>
@@ -445,6 +466,7 @@
               <p id="automaticReadinessStatus" class="sr-only" role="status"></p>
               <div id="calculationReadiness" class="readiness-note" aria-live="polite"></div>
               <div id="automaticReadinessDetails"></div>
+              <div id="openDecisions" aria-label="Offene Entscheidungen"></div>
               <div id="readinessActions" class="readiness-actions" aria-label="Nächste Prüfschritte">
                 <button type="button" data-navigate="team">Zu Team &amp; Freigaben</button>
                 <button type="button" data-navigate="rules">Zu den Regeln</button>
