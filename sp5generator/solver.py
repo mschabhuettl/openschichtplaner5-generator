@@ -395,10 +395,15 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
         for a in assignments:
             counts[a.demand_id] += 1
         if approval_gaps is not None:
+            gap_counts, gap_minutes = approval_gaps
+            # Nach freigeschalteter Arbeitszeit sortiert: erst so wird aus der
+            # Liste eine Arbeitsliste. Bei gleichem Ertrag zählt die Stellenzahl.
             kwargs.setdefault("metrics", {})["missing_approvals"] = [
-                {"employee_id": eid, "function_id": fid, "blocked_demands": n}
+                {"employee_id": eid, "function_id": fid, "blocked_demands": n,
+                 "blocked_minutes": gap_minutes[(eid, fid)]}
                 for (eid, fid), n in sorted(
-                    approval_gaps.items(), key=lambda item: (-item[1], item[0])
+                    gap_counts.items(),
+                    key=lambda item: (-gap_minutes[item[0]], -item[1], item[0]),
                 )
             ]
         if employee_candidates is not None:
@@ -651,6 +656,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
     exclusions = defaultdict(Counter)
     approval_only = defaultdict(list)
     approval_gap_counts = Counter()
+    approval_gap_minutes = Counter()
     candidate_stats = {
         e.id: {"positive_capacity_demands": 0, "eligible_demands": 0,
                "eligible_required_demands": 0, "exclusions": Counter()}
@@ -811,7 +817,10 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
         if len(choices) < d.minimum:
             # Eine Freigabe hilft nur dort, wo der Bedarf sonst unbesetzbar bleibt.
             for eid in approval_only.get(d.id, ()):
-                approval_gap_counts[(eid, positions[d.position_id].function_id)] += 1
+                key = (eid, positions[d.position_id].function_id)
+                approval_gap_counts[key] += 1
+                # Wie viel Arbeitszeit diese eine Freigabe zugänglich machen würde.
+                approval_gap_minutes[key] += shifts[d.shift_id].paid_minutes
             explanation = "; ".join(
                 f"{exclusion_labels[reason]}: {count}"
                 for reason, count in sorted(exclusions[d.id].items())
@@ -837,7 +846,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
             model.add(sum(choices) >= d.minimum)
     # Wie bei den Kandidatenzahlen: erst nach dem vollständigen Durchlauf
     # veröffentlichen, nie einen abgebrochenen Anfang.
-    approval_gaps = approval_gap_counts
+    approval_gaps = (approval_gap_counts, approval_gap_minutes)
     for sid in shifts:
         if monotonic() >= deadline:
             return timed_out()

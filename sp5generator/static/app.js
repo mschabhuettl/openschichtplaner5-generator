@@ -1136,11 +1136,14 @@ function renderPlanMetrics(m){
    const gapServices=new Map((snapshot.metadata.services??[]).map(s=>[s.function_id??'sp5:service:'+s.id,s]));
    const gapName=row=>[gapIdx.employees.get(row.employee_id)?.name??row.employee_id,gapServices.get(row.function_id)?.name??row.function_id];
    const gapBox=el('details',undefined,$('result'));
-   el('summary',`Fehlende Dienstfreigaben: ${gaps.length} · ${new Set(gaps.map(row=>row.employee_id)).size} Personen`,gapBox);
+   const gapHours=gaps.reduce((sum,row)=>sum+(row.blocked_minutes??0),0)/60;
+   el('summary',`Fehlende Dienstfreigaben: ${gaps.length} · ${new Set(gaps.map(row=>row.employee_id)).size} Personen`+(gapHours?` · ${Math.round(gapHours).toLocaleString('de-DE')} Stunden`:''),gapBox);
    el('p','Bei diesen Stellen ist die persönliche Dienstfreigabe die einzige Hürde; ohne sie bleibt die Stelle unbesetzbar. Die Liste nennt nur, wo eine Freigabe fehlt. Sie erteilt keine und schlägt auch keine vor.',gapBox);
+   if(gapHours)el('p','Sortiert nach der Arbeitszeit, die eine einzelne Freigabe zugänglich machen würde – oben steht, was am meisten bringt.',gapBox).className='helper-text';
    button(gapBox,'Fehlende Freigaben als CSV',()=>{
     const quote=value=>{const text=String(value??'');return /[";\r\n]/.test(text)?'"'+text.replace(/"/g,'""')+'"':text;};
-    const lines=[['Person','Dienst','Blockierte Stellen'],...gaps.map(row=>[...gapName(row),row.blocked_demands])];
+    const lines=[['Person','Dienst','Blockierte Stellen','Blockierte Stunden'],
+     ...gaps.map(row=>[...gapName(row),row.blocked_demands,((row.blocked_minutes??0)/60).toLocaleString('de-DE',{maximumFractionDigits:1})])];
     download(new Blob(['\ufeff'+lines.map(line=>line.map(quote).join(';')).join('\r\n')+'\r\n'],{type:'text/csv;charset=utf-8'}),
      `fehlende-freigaben-${snapshot.period_start}-${snapshot.period_end}.csv`);
     notice(`${gaps.length} fehlende Dienstfreigaben als CSV heruntergeladen.`);

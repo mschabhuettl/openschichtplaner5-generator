@@ -46,7 +46,7 @@ module.exports=async function missingApprovals({page,base}){
  await page.waitForFunction(()=>document.querySelector('#result').textContent.includes('Fehlende Dienstfreigaben'),null,{timeout:30000});
 
  const box=page.locator('#result details',{hasText:'Fehlende Dienstfreigaben'}).first();
- assert.match(await box.locator('summary').innerText(),/Fehlende Dienstfreigaben: 2 · 2 Personen/,'Both people are named once for the blocked service');
+ assert.match(await box.locator('summary').innerText(),/Fehlende Dienstfreigaben: 2 · 2 Personen · \d+ Stunden/,'Both people are named once, with the working time a grant would unlock');
  await box.locator('summary').click();
  const entries=box.locator('article.diagnostic-item');
  await entries.first().waitFor();
@@ -59,9 +59,11 @@ module.exports=async function missingApprovals({page,base}){
  const csvDownload=page.waitForEvent('download');
  await box.getByRole('button',{name:'Fehlende Freigaben als CSV',exact:true}).click();
  const csv=fs.readFileSync(await(await csvDownload).path(),'utf8');
- assert.equal(csv.split('\r\n')[0],'﻿Person;Dienst;Blockierte Stellen');
- assert.match(csv,/Testperson 1;Nachtdienst B;1/);
- assert.match(csv,/Testperson 2;Nachtdienst B;1/);
+ assert.equal(csv.split('\r\n')[0],'﻿Person;Dienst;Blockierte Stellen;Blockierte Stunden');
+ // Die Stundenzahl macht aus der Liste eine Reihenfolge: was am meisten bringt, zuerst.
+ assert.match(csv,/Testperson 1;Nachtdienst B;1;\d/);
+ assert.match(csv,/Testperson 2;Nachtdienst B;1;\d/);
+ assert.match(await box.innerText(),/oben steht, was am meisten bringt/);
 
  // Granting the approval removes the entry again.
  await page.evaluate(()=>{for(const person of snapshot.employees)person.approvals.push({function_id:'service-b',workplace_id:'*',valid_from:'2025-01-01',valid_until:'2027-12-31',supervised:false});invalidateResult();});
