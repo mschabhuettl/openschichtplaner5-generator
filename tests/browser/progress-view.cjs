@@ -6,6 +6,9 @@ const {execFileSync}=require('node:child_process');
 const root=path.resolve(__dirname,'../..');
 module.exports=async function progressView({page,base}){
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ const muster=/\/api\/jobs\/[^/]+\/status$/;
+ const inFlight=new Set();
+ try{
  await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  await page.goto(base);
  const demo=JSON.parse(execFileSync(process.env.WEB_TEST_PYTHON||'python3',
@@ -22,13 +25,19 @@ module.exports=async function progressView({page,base}){
   {phase:'vacancies',search_seconds:0.4,native_status:'OPTIMAL',accepted:true},
   {phase:'quality',kind:'incumbent',solutions:9,search_seconds:2.5,elapsed_seconds:2.9,objective:28500,bound:2700,grid:stand},
  ];
- const muster=/\/api\/jobs\/[^/]+\/status$/;
  await page.route(muster,async route=>{
-  const response=await route.fetch(),data=await response.json();
-  if(data.state==='running'||data.state==='queued'){
-   data.state='running';data.progress=eingespielt();data.elapsed_seconds=10;data.started_at=data.started_at??data.created_at;
+  let complete;
+  const finished=new Promise(resolve=>{complete=resolve;});
+  inFlight.add(finished);
+  try{
+   const response=await route.fetch(),data=await response.json();
+   if(data.state==='running'||data.state==='queued'){
+    data.state='running';data.progress=eingespielt();data.elapsed_seconds=10;data.started_at=data.started_at??data.created_at;
+   }
+   await route.fulfill({response,json:data});
+  }finally{
+   inFlight.delete(finished);complete();
   }
-  await route.fulfill({response,json:data});
  });
  await page.locator('.main-nav [data-navigate="calculate"]').click();
  await page.locator('[data-panel="calculate"]').waitFor({state:'visible'});
@@ -66,7 +75,13 @@ module.exports=async function progressView({page,base}){
  assert.equal(await page.locator('#flowGrid .flow-cell.night').count(),1,'Der Nachtdienst wechselt die Person');
 
  await page.click('#cancel');
- await page.unroute(muster);
  assert.deepEqual(errors,[]);
  console.log('Progress view: finished stage, running search with incumbents, bounds and time budget passed.');
+ }finally{
+  // Keep the page's loopback guard installed while draining status callbacks.
+  // Removing every route can auto-continue a pending fetch when another
+  // callback finishes. Stop new status matches, then await existing callbacks.
+  await page.unroute(muster);
+  await Promise.all(inFlight);
+ }
 };
