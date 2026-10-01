@@ -65,7 +65,7 @@
       <div class="topbar-facts" aria-label="Planungsübersicht">
         <span class="fact"><strong id="metricPeople">0</strong><span class="fact-label">Personen<span id="metricTeams"></span></span></span>
         <span class="fact"><strong id="metricCoverage">0 %</strong><span class="fact-label">belegt<span id="metricAssignments"></span></span></span>
-        <span class="fact"><strong id="metricBlockers">0</strong><span class="fact-label" id="metricBlockersLabel">offene Angaben</span></span>
+        <span class="fact"><strong id="metricBlockers">0</strong><span class="input-check-label">Eingabeprüfung<span class="fact-label" id="metricBlockersLabel">noch nicht geprüft</span></span></span>
       </div>
       <div class="topbar-actions">
         <span id="topSaveIndicator" class="save-indicator" hidden><span class="status-dot"></span><span id="saveStatus" role="status" aria-live="polite">Kein Projekt geöffnet</span></span>
@@ -527,7 +527,7 @@
             <div>
               <h2 id="planTitle">Ihr Dienstplan
               </h2>
-              <p>Besetzung prüfen, Einteilungen anpassen und den fertigen Plan exportieren.
+              <p>Einteilungen prüfen und bearbeiten.
               </p>
             </div>
             <div class="actions export-actions">
@@ -568,6 +568,7 @@
               </div><span class="helper-text">Einteilung anklicken, um sie zu bearbeiten.</span>
             </div>
           </div>
+          <details id="planAnalysis" class="surface" hidden><summary>Berechnung &amp; Kennzahlen</summary><div id="planAnalysisContent" class="details-content result-summary"></div></details>
           <details id="replacementPanel" class="surface"><summary>Krankmeldung &amp; Ersatzsuche <span class="summary-description">Wer kann kurzfristig einspringen?</span></summary>
             <div class="details-content">
               <p class="helper-text">Die Suche ändert den Plan nicht. Sie nennt je freigewordenem Dienst die Personen, die frei und freigegeben sind – zuerst die, deren letzter Dienst am längsten zurückliegt.

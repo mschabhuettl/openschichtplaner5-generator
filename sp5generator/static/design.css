@@ -149,6 +149,7 @@ a  { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-of
 .fact strong { font-family: var(--display); font-size: 19px; font-weight: 600; }
 .fact strong.bad { color: var(--danger); }
 .fact-label { font-size: 11.5px; color: var(--muted); display: flex; gap: 5px; }
+.input-check-label { display: flex; flex-direction: column; font-size: 11.5px; color: var(--muted); }
 .fact-label span:not(:empty)::before { content: "·"; margin-right: 5px; color: var(--line-2); }
 
 .topbar-actions { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
@@ -469,6 +470,8 @@ th.weekend, td.weekend { background: var(--surface-2); }
 .foundation-details .planning-facts { margin-top: 13px; }
 
 .calendar-surface { overflow: hidden; }
+.coverage-summary { display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 8px 12px; font-size: 13px; }
+.coverage-summary small { flex-basis: 100%; color: var(--muted); }
 .calendar-toolbar { justify-content: space-between; }
 .month-navigation { display: flex; align-items: center; gap: 10px; }
 .month-navigation strong { font-family: var(--display); font-size: 16px; min-width: 132px; text-align: center; }

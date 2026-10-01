@@ -30,8 +30,8 @@ function publishState(){
  if(stateFrame!==null)return;
  stateFrame=requestAnimationFrame(()=>{stateFrame=null;window.dispatchEvent(new CustomEvent('planner:state',{detail:plannerState()}));refreshAutomaticReadiness();refreshFollowingPeriod($('import').disabled);});
 }
-function navigate(panel){
- if(window.PlannerUI?.navigate){window.PlannerUI.refresh?.(plannerState());window.PlannerUI.navigate(panel);}
+function navigate(panel,options={}){
+ if(window.PlannerUI?.navigate){window.PlannerUI.refresh?.(plannerState());window.PlannerUI.navigate(panel,options);}
  else{activePanel=panel;renderActivePanel();}
 }
 function syncJson(force=false){
@@ -173,13 +173,15 @@ async function readProject(text){
  if(candidate?.snapshot_id&&!candidate?.employees)throw Error('Diese Datei ist ein Prüfergebnis. Zum Weiterarbeiten die vollständige Datei aus „Projekt als JSON sichern“ laden oder eine gespeicherte Berechnung öffnen.');
  return api('/api/snapshots/check','POST',candidate);
 }
-function load(s,persisted=false){
+function load(s,persisted=false,{panel='team',focus=false}={}){
  // Complete numeric admission and clones before touching the incumbent draft.
  s=ProjectJSON.clone(s);const stagedAssignments=ProjectJSON.clone(s.assignments);
  new Intl.DateTimeFormat('de-DE',{timeZone:s.timezone}).format();if(s.period_start>s.period_end)throw Error('Planungsbeginn muss vor dem Planungsende liegen.');
  clearTimeout(timer);timer=null;jobId=null;jobInput=null;previous=[];$('cancel').disabled=true;$('job').textContent='';$('result').replaceChildren();$('validation').textContent='';$('validationSummary')?.remove();
+ $('planAnalysis').hidden=true;$('planAnalysis').open=false;$('planAnalysisContent').replaceChildren();
  clearReplacement();Object.assign(replacementChoice,{person:'',from:'',bis:''});
  snapshot=s;personDraft=false;assignments=stagedAssignments;changeVersion++;dirty=!persisted;jsonDirty=false;jsonVersion=-1;indexes=null;matrixCache=null;renderedPanels.clear();collections.clear();
+ $('result').textContent=`${persisted&&assignments.length?'Gespeicherter Entwurf · ':''}Planvalidierung: noch nicht geprüft.`;
  // Reset is local to the opened project; no extra fields enter the snapshot.
  originalDemands=new Map(s.demands.map(d=>[d.id,{minimum:d.minimum,maximum:d.maximum,source:d.source}]));createdDemands=new Set();demandView='dates';
  for(const id of ['details','people','history','shifts','positions','demands','demandBoard','demandSummary','profiles','plan','calendar','matrix'])$(id).replaceChildren();
@@ -187,7 +189,7 @@ function load(s,persisted=false){
  $('start').value=s.period_start;$('end').value=s.period_end;$('timezone').value=s.timezone;$('matrixSearch').value='';
  if(s.metadata.history_period){$('historyStart').value=s.metadata.history_period.start;$('historyEnd').value=s.metadata.history_period.end;}else historyDefaults();
  if(s.metadata.night_classification){$('setupNightStart').value=s.metadata.night_classification.start;$('setupNightEnd').value=s.metadata.night_classification.end;$('setupNightMin').value=s.metadata.night_classification.minimum;}
- planMonth=s.period_start.slice(0,7);$('workspace').hidden=false;activePanel='team';render();navigate('team');updateJobButtons();
+ planMonth=s.period_start.slice(0,7);$('workspace').hidden=false;activePanel=panel;render();navigate(panel,{focus});updateJobButtons();
  notice(`Daten geladen: ${s.employees.length} Personen${s.metadata.selected_group_ids?' aus '+s.metadata.selected_group_ids.length+' ausgewählten Teams':''}. Regeln und offene Angaben prüfen.`);
 }
 function render(){
@@ -739,7 +741,8 @@ function renderContext(){
 function invalidateResult(){
  if(!snapshot)return;
  markChanged();
- $('result').textContent='Daten oder Entwurf geändert. Erneut prüfen oder berechnen.';
+ $('result').textContent='Planvalidierung: nicht aktuell. Daten oder Entwurf geändert. Erneut prüfen oder berechnen.';
+ $('planAnalysis').hidden=true;$('planAnalysisContent').replaceChildren();
  $('validation').textContent='Prüfbericht nicht aktuell. Entwurf erneut prüfen.';$('validationSummary')?.remove();
 }
 function renderProfiles(){
@@ -1164,8 +1167,8 @@ function renderShortageSummary(box,entries){
 // damit die Darstellung ohne einen vollständigen Rechenlauf prüfbar bleibt.
 // Was eine noch fehlende Freigabe öffnen würde. Die Vorschau erteilt keine und
 // schlägt keine vor; sie erspart nur, jede Überlegung einzeln durchzurechnen.
-function renderApprovalLeverage(){
- const box=el('details',undefined,$('result'));box.id='approvalLeverage';
+function renderApprovalLeverage(parent=$('result')){
+ const box=el('details',undefined,parent);box.id='approvalLeverage';
  el('summary','Was würde eine zusätzliche Freigabe bringen?',box);
  const inhalt=el('div',undefined,box);
  el('p','Die Vorschau erteilt keine Freigabe und schlägt keine vor. Sie zeigt nur, wo die Freigabe die einzige Hürde wäre: welche sonst unbesetzbare Stelle dadurch besetzbar würde und wie viel vom Rückstand der Person in Reichweite käme. Ob die Suche die Arbeit dann wirklich verschiebt, entscheiden alle übrigen Regeln mit.',inhalt).className='helper-text';
@@ -1236,7 +1239,7 @@ function renderOpenDecisions(){
   button(zeile,schritt.label,schritt.run);
  }
 }
-function renderPlanMetrics(m){
+function renderPlanMetrics(m,parent=$('result')){
   // Presentation-only views: float zero must not turn into a truthy counter.
   const numbers=record=>Object.fromEntries(Object.entries(record??{}).map(([key,value])=>{const n=ProjectJSON.number(value);return [key,Number.isFinite(n)?n:value];}));
   m={...numbers(m),hours_attainment:numbers(m.hours_attainment),approval_reach:numbers(m.approval_reach),free_time:numbers(m.free_time)};
@@ -1245,16 +1248,16 @@ function renderPlanMetrics(m){
    const parts=[(n===1?'1 geteiltes Wochenende':`${n} geteilte Wochenenden`)+' im Plan.'];
    if(forcedSplits)parts.push(`${forcedSplits} davon erzwingt der Bedarf selbst; so viele bleiben, gleich wie die Freigaben liegen.`);
    if(blocked)parts.push(`Bei ${blocked} könnte die eingeteilte Person mit einer Dienstfreigabe beide Tage übernehmen.`);
-   el('p',parts.join(' '),$('result'));
+   el('p',parts.join(' '),parent);
   }
   if(m.hours_attainment?.people){
    const h=m.hours_attainment,teile=[`${h.on_target} von ${h.people} Personen im Zielband 90–110 %`];
    if(h.none||h.under_50)teile.push(`${h.none+h.under_50} unter 50 %${h.none?` (davon ${h.none} ohne Dienst)`:''}`);
    if(h.over_110)teile.push(`${h.over_110} über 110 %`);
-   el('p',`Sollerfüllung: Median ${h.median.toLocaleString('de-DE')} % · `+teile.join(' · ')+'.',$('result'));
+   el('p',`Sollerfüllung: Median ${h.median.toLocaleString('de-DE')} % · `+teile.join(' · ')+'.',parent);
   }
   if(m.approval_reach?.services){
-   const r=m.approval_reach,zeile=el('p',undefined,$('result'));zeile.id='approvalReach';
+   const r=m.approval_reach,zeile=el('p',undefined,parent);zeile.id='approvalReach';
    zeile.textContent=`Freigabedecke: ${r.approvals} von ${r.services * r.people} möglichen Freigaben (${r.approval_share_percent.toLocaleString('de-DE')} %), `
     +`im Median ${r.median_per_service} freigegebene Personen je Dienstart`
     +(r.lowest_per_service===0?', mindestens keine':`, mindestens ${r.lowest_per_service}`)+'.';
@@ -1262,17 +1265,17 @@ function renderPlanMetrics(m){
     const folgen=[];
     if(r.without_any_approval)folgen.push(`${r.without_any_approval} Personen haben für keinen verlangten Dienst eine Freigabe`);
     if(r.target_out_of_reach)folgen.push(`${r.target_out_of_reach} von ${r.people_with_target} Personen können ihr Soll damit rechnerisch nicht erreichen – zusammen ${Math.round(r.target_out_of_reach_minutes/60).toLocaleString('de-DE')} Stunden`);
-    const hinweis=el('p',folgen.join('; ')+'. Dieser Rückstand steckt im Zuschnitt, nicht in der Planung: er verschwindet erst, wenn mehr Personen für mehr Dienstarten freigegeben sind.',$('result'));
+    const hinweis=el('p',folgen.join('; ')+'. Dieser Rückstand steckt im Zuschnitt, nicht in der Planung: er verschwindet erst, wenn mehr Personen für mehr Dienstarten freigegeben sind.',parent);
     hinweis.id='approvalReachWarning';hinweis.className='inline-warning';
    }
   }
-  if(m.free_time?.blocks)el('p',`Zusammenhängende Freizeit: ${m.free_time.blocks} Blöcke, im Schnitt ${m.free_time.mean_length.toLocaleString('de-DE')} Tage, ${m.free_time.three_or_more} ab drei Tagen, ${m.free_time.single_days} einzelne freie Tage, ${m.free_time.free_weekends} vollständig freie Wochenenden.`,$('result'));
-  renderApprovalLeverage();
+  if(m.free_time?.blocks)el('p',`Zusammenhängende Freizeit: ${m.free_time.blocks} Blöcke, im Schnitt ${m.free_time.mean_length.toLocaleString('de-DE')} Tage, ${m.free_time.three_or_more} ab drei Tagen, ${m.free_time.single_days} einzelne freie Tage, ${m.free_time.free_weekends} vollständig freie Wochenenden.`,parent);
+  renderApprovalLeverage(parent);
   if(m.missing_approvals?.length){
    const gaps=m.missing_approvals,gapIdx=dataIndex();
    const gapServices=new Map((snapshot.metadata.services??[]).map(s=>[s.function_id??'sp5:service:'+s.id,s]));
    const gapName=row=>[gapIdx.employees.get(row.employee_id)?.name??row.employee_id,gapServices.get(row.function_id)?.name??row.function_id];
-   const gapBox=el('details',undefined,$('result'));
+   const gapBox=el('details',undefined,parent);
    const gapHours=gaps.reduce((sum,row)=>sum+(row.blocked_minutes??0),0)/60;
    el('summary',`Fehlende Dienstfreigaben: ${gaps.length} · ${new Set(gaps.map(row=>row.employee_id)).size} Personen`+(gapHours?` · ${Math.round(gapHours).toLocaleString('de-DE')} Stunden`:''),gapBox);
    el('p','Bei diesen Stellen ist die persönliche Dienstfreigabe die einzige Hürde; ohne sie bleibt die Stelle unbesetzbar. Die Liste nennt nur, wo eine Freigabe fehlt. Sie erteilt keine und schlägt auch keine vor.',gapBox);
@@ -1355,16 +1358,18 @@ async function poll(){
    const accepted=valid&&['OPTIMAL','FEASIBLE'].includes(j.result.solver_status);
    if(accepted){assignments=structuredClone(j.result.assignments);markChanged();}$('result').replaceChildren();
    const outcome={MODEL_INVALID:'Keine Planung: Eingaben oder Modell ungültig (MODEL_INVALID)',UNKNOWN:'Keine Lösung gefunden (UNKNOWN)',INFEASIBLE:'Unter den verbindlichen Vorgaben nicht lösbar (INFEASIBLE)'}[j.result.solver_status];
-   const summary=el('p',`${outcome??(accepted?(complete?'Vollständig und geprüft':'Geprüfter Teilplan'):'Prüfung fehlgeschlagen')} · Berechnet in ${j.result.runtime_seconds.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})} s`,$('result'));summary.className=accepted&&complete?'good':'bad';
+   const summary=el('p',`${accepted?'Planvalidierung: ':'Berechnung: '}${outcome??(accepted?(complete?'Vollständig und geprüft':'Geprüfter Teilplan'):'Prüfung fehlgeschlagen')} · Berechnet in ${j.result.runtime_seconds.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})} s`,$('result'));summary.className=accepted&&complete?'good':'bad';
    if(!accepted)el('p','Bisherige Einteilungen bleiben unverändert. Kein neuer Plan wurde übernommen.',$('result'));
    if(j.result.solver_status==='UNKNOWN')el('p','Eine Suche ohne Lösung beweist keine Unlösbarkeit. Prüfhinweise beachten; bei einem Zeitlimit mit mehr Suchzeit erneut berechnen.',$('result'));
-   renderPlanMetrics(j.result.metrics??{});
-   renderSearchTrace($('result'),j.result.parameters);
-   const evaluation=el('details',undefined,$('result'));el('summary','Technische Auswertung',evaluation);evaluation.ontoggle=()=>{if(evaluation.open&&!evaluation.querySelector('pre'))el('pre',ProjectJSON.stringify({solver_status:j.result.solver_status,offene_Stellen:j.result.vacancies,auswertung:j.result.metrics},null,2),evaluation);};
+   const analysis=$('planAnalysisContent');analysis.replaceChildren();$('planAnalysis').hidden=false;$('planAnalysis').open=false;
+   renderPlanMetrics(j.result.metrics??{},analysis);
+   renderSearchTrace(analysis,j.result.parameters);
+   const evaluation=el('details',undefined,analysis);el('summary','Technische Auswertung',evaluation);evaluation.ontoggle=()=>{if(evaluation.open&&!evaluation.querySelector('pre'))el('pre',ProjectJSON.stringify({solver_status:j.result.solver_status,offene_Stellen:j.result.vacancies,auswertung:j.result.metrics},null,2),evaluation);};
    renderValidation(j.result.validation);$('validationDetails').open=!valid||!complete;
    if(accepted&&previous.length){const old=new Set(previous.map(a=>a.employee_id+'|'+a.demand_id)),next=new Set(assignments.map(a=>a.employee_id+'|'+a.demand_id));el('p',`Vergleich: ${[...next].filter(x=>!old.has(x)).length} hinzugefügt, ${[...old].filter(x=>!next.has(x)).length} entfernt.`,$('result'));}
    navigate('plan');renderPlan();syncJson();publishState();notice(!accepted?'Kein neuer Plan übernommen. Bisherige Einteilungen und Prüfbericht beachten.':complete?'Berechnung abgeschlossen. Entwurf prüfen und dauerhaft speichern.':'Berechnung abgeschlossen. Prüfbericht und offene Stellen beachten.',!accepted);
   }else if(j.state==='succeeded'){
+   $('planAnalysis').hidden=true;$('planAnalysisContent').replaceChildren();
    $('result').replaceChildren();el('p','Kein Planergebnis vorhanden. Bisherige Einteilungen bleiben unverändert.',$('result')).className='bad';$('validationSummary')?.remove();$('validation').textContent='Kein neues Ergebnis für eine Planprüfung vorhanden.';navigate('plan');notice('Berechnung technisch beendet, aber ohne Planergebnis. Kein neuer Plan übernommen.',true);
   }
   await savedJobs();
@@ -1381,7 +1386,7 @@ action('save',save);action('saveDraft',save);
 function projectSwitchBusy(){return projectBusy||solving||!!jobId||['save','saveDraft','demo','import','applyJson','file'].some(id=>$(id).dataset.busy==='true');}
 async function openSavedProject(id){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');if(!id||!canReplace())return false;
- const binding=replacementBinding();projectBusy=true;updateJobButtons();try{const original=await api('/api/snapshots/'+encodeURIComponent(id));const checked=await api('/api/snapshots/check','POST',original);requireReplacement(binding);load(checked,true);return true;}finally{projectBusy=false;updateJobButtons();}
+ const binding=replacementBinding();projectBusy=true;updateJobButtons();try{const original=await api('/api/snapshots/'+encodeURIComponent(id));const checked=await api('/api/snapshots/check','POST',original);requireReplacement(binding);load(checked,true,{panel:checked.assignments.length?'plan':'team',focus:true});return true;}finally{projectBusy=false;updateJobButtons();}
 }
 async function openJob(id){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');if(!id||!canReplace())return false;
@@ -1395,6 +1400,7 @@ action('validate',async()=>{
  const binding=inputBinding();$('validationDetails').open=true;const report=await api('/api/validate','POST',{snapshot,assignments});
  if(!inputUnchanged(binding)){notice('Daten während der Prüfung geändert. Aktuellen Entwurf erneut prüfen.');return;}
  renderValidation(report);
+ $('result').replaceChildren();el('p','Planvalidierung: '+(report.valid?(report.complete?'Vollständig und geprüft':'Gültiger Teilplan mit offenen Stellen'):'Regelverletzungen müssen korrigiert werden'),$('result')).className=report.valid&&report.complete?'good':'bad';
  notice(report.valid?(report.complete?'Entwurf ist vollständig und geprüft.':'Teilplan geprüft. Offene Stellen im Prüfbericht beachten.'):'Entwurf enthält Regelverletzungen. Prüfbericht beachten.',!report.valid);
 });
 action('recompute',async()=>{previous=structuredClone(assignments);await solve();});

@@ -43,9 +43,10 @@ module.exports=async function missingApprovals({page,base}){
  await page.locator('[data-panel="calculate"]').waitFor({state:'visible'});
  await page.check('#partial');
  await page.click('#solve');
- await page.waitForFunction(()=>document.querySelector('#result').textContent.includes('Fehlende Dienstfreigaben'),null,{timeout:30000});
+ await page.waitForFunction(()=>document.querySelector('#planAnalysisContent').textContent.includes('Fehlende Dienstfreigaben'),null,{timeout:30000});
+ await page.locator('#planAnalysis > summary').click();
 
- const box=page.locator('#result details',{hasText:'Fehlende Dienstfreigaben'}).first();
+ const box=page.locator('#planAnalysisContent details',{hasText:'Fehlende Dienstfreigaben'}).first();
  assert.match(await box.locator('summary').innerText(),/Fehlende Dienstfreigaben: 2 · 2 Personen · \d+ Stunden/,'Both people are named once, with the working time a grant would unlock');
  await box.locator('summary').click();
  const entries=box.locator('article.diagnostic-item');
@@ -71,7 +72,7 @@ module.exports=async function missingApprovals({page,base}){
  await page.locator('[data-panel="calculate"]').waitFor({state:'visible'});
  await page.click('#solve');
  await page.waitForFunction(()=>document.querySelector('#result').textContent.includes('Vollständig und geprüft'),null,{timeout:30000});
- assert.equal(await page.locator('#result details',{hasText:'Fehlende Dienstfreigaben'}).count(),0,'A complete plan reports no missing approvals');
+ assert.equal(await page.locator('#planAnalysisContent details',{hasText:'Fehlende Dienstfreigaben'}).count(),0,'A complete plan reports no missing approvals');
 
  assert.deepEqual(errors,[]);
  console.log('Missing approvals: blocked positions per person and service, catalogue names, CSV export and clearing passed.');

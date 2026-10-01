@@ -101,7 +101,7 @@ test('T09 assignment clone failure stays a bounded JSON error before transmissio
 
 test('T08 float-zero metric predicates retain primitive presentation without mutation',async()=>{
  const h=await harness();const metrics={split_weekends_in_plan:0,split_weekends_forced_by_demand:0,split_weekends_blocked_by_approval:0,hours_attainment:{people:1,on_target:1,none:0,under_50:0,over_110:0,median:100},approval_reach:{services:1,people:1,approvals:1,approval_share_percent:100,median_per_service:1,lowest_per_service:0,without_any_approval:0,target_out_of_reach:0},free_time:{blocks:0}};
- h.c.metrics=metrics;h.run('renderPlanMetrics(metrics)');const before=h.get('result').textContent;
+ h.get('result').replaceChildren();h.c.metrics=metrics;h.run('renderPlanMetrics(metrics)');const before=h.get('result').textContent;
  h.get('result').replaceChildren();h.c.raw=JSON.stringify(metrics).replace(/(:)(-?\d+)([,}])/g,'$1$2.0$3');h.run('metrics=ProjectJSON.parse(raw)');const stored=h.run('ProjectJSON.stringify(metrics)');h.run('renderPlanMetrics(metrics)');
  assert.equal(h.get('result').textContent,before);assert.equal(h.run('ProjectJSON.stringify(metrics)'),stored);
 });

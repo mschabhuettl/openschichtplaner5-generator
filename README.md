@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.29.1** bündelt Korrekturen an Planung und unabhängiger Prüfung, Arbeitsminuten und Exporten, SP5-Historie, Ersatzsuche und Oberfläche. Eingabe- und Diagnosebudgets begrenzen aufwendige Webanfragen; persönliche Grenzen und Begleitpflichten bleiben bei der Bearbeitung erhalten. Dies ist ein Patch des bestehenden Bedienablaufs, kein UX-Neuentwurf. Die [Releasehinweise](docs/release-0.29.1.md) beschreiben Änderungen, Kompatibilitätsgrenzen und den Veröffentlichungsstand.
+**Version 0.30.0** verkürzt den Weg zum gespeicherten Dienstplan: Projekte mit Einteilungen öffnen direkt im Plan. Der Kalender steht vor den aufklappbaren Kennzahlen und Suchdetails. Eingabeprüfung, Planvalidierung und Speicherstand sind ausdrücklich getrennt. Dies ist der erste begrenzte UX-Schritt, noch nicht der vollständige Navigationsumbau. Die [Releasehinweise](docs/release-0.30.0.md) erläutern Änderungen und Messgrenzen.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -63,7 +63,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.29.1-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.30.0-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
@@ -112,8 +112,9 @@ npm test --prefix tests/browser
 
 Der Container-Workflow prüft Python, Browser, saubere Paketinstallationen, den echten Hintergrundworker und Berechnung ohne Netzwerk, bevor er Images auf `main` veröffentlicht. Für reproduzierbare Installationen den Commit-Tag `sha-…` oder den Image-Digest festhalten.
 
+- [UX-Ausgangsmessung](docs/ux/BASELINE.md) und [Zielablauf](docs/ux/TARGET-WORKFLOW.md)
 - [Prüfungen und gemessene Laufzeiten](docs/verification.md)
-- [Release 0.29.1 und Aktualisierung](docs/release-0.29.1.md)
+- [Release 0.30.0 und Aktualisierung](docs/release-0.30.0.md)
 - [Regeln, Zeitberechnung und Zielfunktion](docs/rules.md)
 - [Architektur und Integration](docs/architecture.md)
 - [SP5-Zuordnung und offene Semantik](docs/sp5-mapping.md)

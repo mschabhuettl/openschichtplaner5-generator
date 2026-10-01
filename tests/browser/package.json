@@ -4,7 +4,7 @@
   "scripts": {
     "test": "npm run test:unit && node check.cjs && npm run test:regressions",
     "test:unit": "node --test ../review_json_numeric_codec.test.cjs ../review_ui_app.test.cjs ../review_ui_modules.test.cjs",
-    "test:regressions": "node --test --test-concurrency=1 review-state.cjs review-accessibility.cjs review-numeric-fidelity.cjs"
+    "test:regressions": "node --test --test-concurrency=1 review-state.cjs review-accessibility.cjs review-numeric-fidelity.cjs review-plan-workspace.cjs"
   },
   "devDependencies": {"playwright": "1.58.2"}
 }

@@ -43,7 +43,8 @@ module.exports=async function weekendSummary({page,base}){
   await page.locator('[data-panel="calculate"]').waitFor({state:'visible'});
   await page.click('#solve');
   await page.waitForFunction(()=>document.querySelector('#result').textContent.includes('geprüft'),null,{timeout:30000});
-  return page.locator('#result').innerText();
+  await page.locator('#planAnalysis > summary').click();
+  return page.locator('#planAnalysisContent').innerText();
  }
 
  // Saturday needs two people, Sunday one: one person can only work a single day.
@@ -55,7 +56,7 @@ module.exports=async function weekendSummary({page,base}){
   'The report says how evenly the contracts are met');
 
  // Der Suchverlauf erklärt in Klartext, wie der Plan zustande kam.
- const trace=page.locator('#result details.trace-box');
+ const trace=page.locator('#planAnalysisContent details.trace-box');
  assert.match(await trace.locator('summary').innerText(),/Wie der Plan entstanden ist/);
  const steps=trace.locator('.trace-step');
  assert((await steps.count())>=1,'At least one search stage is shown');
