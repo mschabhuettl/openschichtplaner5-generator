@@ -6,11 +6,11 @@ const {spawn,spawnSync}=require('node:child_process'),{chromium}=require('playwr
 const fixture=path.join(__dirname,'numeric_fixture.py');
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function bounded(p,ms,label){let timer;try{return await Promise.race([p,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error(label+' timed out')),ms))]);}finally{clearTimeout(timer);}}
-function python(mode,input,...args){const p=spawnSync(process.env.WEB_TEST_PYTHON||'python',[fixture,mode,...args],{input,encoding:'utf8',timeout:20000,maxBuffer:80*1024*1024});assert.equal(p.status,0,p.stderr);return p.stdout;}
+function python(mode,input,...args){const p=spawnSync(process.env.WEB_TEST_PYTHON||'python',[fixture,mode,...args],{env:{...process.env,TMPDIR:os.tmpdir()},input,encoding:'utf8',timeout:20000,maxBuffer:80*1024*1024});assert.equal(p.status,0,p.stderr);return p.stdout;}
 function compare(source,output,keys=['metadata','opaque']){python('compare',JSON.stringify([{source,output,path:keys}]));}
 async function withPage(run){
- const state=fs.mkdtempSync(path.join(os.tmpdir(),'numeric-fidelity-'));
- const server=spawn(process.env.WEB_TEST_PYTHON||'python',[fixture,'serve',state],{cwd:path.resolve(__dirname,'../..'),stdio:['ignore','pipe','pipe']});
+ const tmpdir=os.tmpdir(),state=fs.mkdtempSync(path.join(tmpdir,'numeric-fidelity-'));
+ const server=spawn(process.env.WEB_TEST_PYTHON||'python',[fixture,'serve',state],{cwd:path.resolve(__dirname,'../..'),env:{...process.env,TMPDIR:tmpdir},stdio:['ignore','pipe','pipe']});
  let output='',browser,spawnError,stopped=false;
  const exited=new Promise(resolve=>{server.once('exit',resolve);server.once('error',e=>{spawnError=e;resolve();});});
  for(const stream of [server.stdout,server.stderr])stream.on('data',d=>output=(output+d).slice(-16000));
@@ -170,3 +170,47 @@ test('T06 T11 real wizard direct response and demo retain canonical numeric sema
  // IDs/timestamps are produced on each request; compare the stable numeric metadata.
  compare(demoWire,await page.locator('#json').inputValue(),['metadata']);
 }));
+
+test('T12 numeric fixture propagates Node temp root without parent TMPDIR',{timeout:90000},async()=>{
+ const keys=['TMPDIR','TMP','TEMP'],values=()=>keys.map(key=>process.env[key]),original=values();
+ // Allocate under the original configured root before changing any temp hint.
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'numeric-temp-contract-'));
+ const tmp=path.join(root,'tmp-choice'),temp=path.join(root,'temp-choice'),outside=path.join(root,'tmp-choice-sibling');
+ let fixtureState;
+ try{
+  for(const dir of [tmp,temp,outside])fs.mkdirSync(dir);
+  const sentinel=path.join(outside,'planning.sqlite3'),bytes=Buffer.from('synthetic sentinel: never open as SQLite\n');
+  fs.writeFileSync(sentinel,bytes,{flag:'wx'});
+  const stamp=()=>{const s=fs.statSync(sentinel);return [s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs];},before=stamp();
+  const escape=path.join(tmp,'escape');fs.symlinkSync(outside,escape,'dir');
+  delete process.env.TMPDIR;process.env.TMP=tmp;process.env.TEMP=temp;
+  const missing=[undefined,tmp,temp];assert.deepEqual(values(),missing);
+  assert.equal(os.tmpdir(),tmp,'Node selects TMP before the conflicting TEMP on this POSIX fixture');
+  await withPage(async({page,base,state,db})=>{
+   fixtureState=state;assert.equal(fs.realpathSync(path.dirname(state)),fs.realpathSync(tmp));
+   assert.deepEqual(values(),missing,'serve must not mutate the parent environment');
+   const raw=await source(page,base);assert.match(raw,/"integer":9007199254740993/);
+   assert(fs.statSync(path.join(state,'planning.sqlite3')).isFile());
+   const stored=db(),rows=JSON.parse(stored).snapshots;assert.equal(rows.length,1);assert.equal(rows[0].id,'numeric-source');assert.equal(rows[0].revision,1);
+   compare(raw,rows[0].payload);
+   compare(raw,await page.evaluate(raw=>ProjectJSON.stringify(ProjectJSON.parse(raw)),raw));
+   assert.equal(db(),stored);assert.deepEqual(values(),missing,'inspect/oracle must not mutate the parent environment');
+   // Both entry points must reject a real sibling and a symlink escape at the
+   // unchanged confinement assertion, before opening any synthetic DB sentinel.
+   for(const candidate of [outside,escape])for(const mode of ['serve','inspect']){
+    const rejected=spawnSync(process.env.WEB_TEST_PYTHON||'python',[fixture,mode,candidate],{env:{...process.env,TMPDIR:os.tmpdir()},encoding:'utf8',timeout:10000});
+    assert.equal(rejected.error,undefined);assert.equal(rejected.signal,null);assert.equal(rejected.status,1,rejected.stderr);
+    assert.match(rejected.stderr,/assert state\.is_relative_to\(Path\(os\.environ\['TMPDIR'\]\)\.resolve\(\)\)/);
+    assert.match(rejected.stderr,/AssertionError/);assert.equal(rejected.stdout,'');
+    assert.deepEqual(fs.readFileSync(sentinel),bytes);assert.deepEqual(stamp(),before);
+    assert.deepEqual(fs.readdirSync(outside),['planning.sqlite3']);
+   }
+   assert.equal(db(),stored);assert.deepEqual(values(),missing);
+  });
+  assert.equal(fs.existsSync(fixtureState),false);assert.deepEqual(fs.readdirSync(temp),[]);
+  assert.deepEqual(values(),missing);
+ }finally{
+  for(let i=0;i<keys.length;i++){if(original[i]===undefined)delete process.env[keys[i]];else process.env[keys[i]]=original[i];}
+  fs.rmSync(root,{recursive:true,force:true});assert.equal(fs.existsSync(root),false);assert.deepEqual(values(),original);
+ }
+});
