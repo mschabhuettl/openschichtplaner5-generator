@@ -8,12 +8,12 @@ who remain by how long they have been without a duty.
 from datetime import date
 
 from .domain import eligibility, pair_conflict
-from .models import Shift
-from .timeutils import bounds, local_day
+from .timeutils import day_of
+from .validator import PreparedValidator
 
 
 def _day(shift, zone):
-    return local_day(bounds(shift)[0], zone)
+    return day_of(shift, zone)
 
 
 def _duty_shifts(snapshot, assignments):
@@ -27,10 +27,7 @@ def _duty_shifts(snapshot, assignments):
         if shift is not None:
             held.setdefault(assignment.employee_id, []).append(shift)
     for work in snapshot.boundary_work:
-        held.setdefault(work.employee_id, []).append(Shift(
-            id=work.id, name="Randdienst", kind=work.kind if work.kind != "unknown" else "day",
-            team_id="", segments=work.segments, paid_minutes=0, source="boundary",
-        ))
+        held.setdefault(work.employee_id, []).append(work)
     return held
 
 
@@ -54,6 +51,20 @@ def replacement_candidates(snapshot, assignments, employee_id, absent_from, abse
         and absent_from <= _day(shifts[demands[a.demand_id].shift_id], zone) <= absent_until
     ]
     freed.sort(key=lambda a: (_day(shifts[demands[a.demand_id].shift_id], zone), a.demand_id))
+    validator = PreparedValidator(snapshot)
+
+    def replacement_errors(person_id, demand_ids):
+        proposed = [
+            a.model_copy(update={"employee_id": person_id})
+            if a.employee_id == employee_id and a.demand_id in demand_ids else a
+            for a in assignments
+        ]
+        checked = validator.validate(proposed)
+        if checked.valid:
+            return []  # Vacancies and non-blocking context notes are allowed.
+        # Input errors may also use "context"; never turn invalid into valid
+        # merely by dropping a diagnostic label shared with source warnings.
+        return [d.code for d in checked.diagnostics if d.code != "vacancy"]
 
     def waited(person):
         """Days since the person's last duty before the absence; None if never."""
@@ -61,7 +72,7 @@ def replacement_candidates(snapshot, assignments, employee_id, absent_from, abse
                 if _day(s, zone) < absent_from]
         return (absent_from - max(days)).days if days else None
 
-    duties, everywhere = [], None
+    duties = []
     for assignment in freed:
         demand = demands[assignment.demand_id]
         shift = shifts[demand.shift_id]
@@ -80,6 +91,8 @@ def replacement_candidates(snapshot, assignments, employee_id, absent_from, abse
             ) if not reasons else None
             if conflict:
                 reasons = [conflict]
+            if not reasons:
+                reasons = replacement_errors(person.id, {demand.id})
             if reasons:
                 # Je Person zählt der erste Hinderungsgrund. Jeden Grund einzeln
                 # zu zählen ergäbe eine Summe über der Personenzahl, und genau
@@ -97,11 +110,18 @@ def replacement_candidates(snapshot, assignments, employee_id, absent_from, abse
                            for pid in ranked],
             "blocked": dict(sorted(blocked.items())),
         })
-        everywhere = set(ranked) if everywhere is None else everywhere & set(ranked)
 
+    freed_ids = {a.demand_id for a in freed}
+    # A joint transfer can repair a rule violated by an individual transfer
+    # (e.g. the added middle night joins two night blocks). Validate the whole
+    # proposal for every other employee, independently of the single-duty lists.
+    covers_all = [
+        pid for pid in sorted(people)
+        if freed_ids and pid != employee_id and not replacement_errors(pid, freed_ids)
+    ]
     return {
         "employee_id": employee_id,
         "absent_from": str(absent_from), "absent_until": str(absent_until),
         "duties": duties,
-        "covers_whole_absence": sorted(everywhere or ()),
+        "covers_whole_absence": covers_all,
     }

@@ -11,7 +11,8 @@ import signal
 import sqlite3
 import time
 import uuid
-from .models import Snapshot, Result
+from .models import Snapshot, Result, prepare_snapshot_json
+from .security_limits import bounded_normalized_planning
 
 
 class Conflict(ValueError):
@@ -136,6 +137,7 @@ class Store:
                 raise
 
     def save_snapshot(self, snapshot, owner):
+        bounded_normalized_planning(snapshot)
         with self.transaction() as conn:
             current = conn.execute(
                 "SELECT owner,revision FROM snapshots WHERE id=?", (snapshot.id,)
@@ -148,23 +150,25 @@ class Store:
                 revision = current["revision"] + 1
             else:
                 revision = 1
-            snapshot = snapshot.model_copy(
-                update={"revision": str(revision)}, deep=True
-            )
-            self._write_snapshot(conn, snapshot, owner)
+            # Only revision changes here. The JSON preparation below creates
+            # detached validated fields; do not deep-copy exempt metadata first.
+            snapshot = snapshot.model_copy(update={"revision": str(revision)})
+            snapshot = self._write_snapshot(conn, snapshot, owner)
         return snapshot
 
     @staticmethod
     def _write_snapshot(conn, snapshot, owner):
-        summary = _project_summary(snapshot.model_dump(mode="json"))
+        snapshot, payload = prepare_snapshot_json(snapshot)
+        summary = _project_summary(json.loads(payload))
         columns = ["id", "owner", "revision", "payload", *summary, "updated_at", "summary_version"]
         update = ",".join(f"{key}=excluded.{key}" for key in columns if key not in {"id", "owner"})
         conn.execute(
             f"INSERT INTO snapshots({','.join(columns)}) VALUES({','.join('?' for _ in columns)}) "
             f"ON CONFLICT(id) DO UPDATE SET {update}",
-            (snapshot.id, owner, int(snapshot.revision), snapshot.model_dump_json(),
+            (snapshot.id, owner, int(snapshot.revision), payload,
              *summary.values(), time.time(), 1),
         )
+        return snapshot
 
     def get_snapshot(self, id, owner):
         with self.connect() as conn:
@@ -173,7 +177,7 @@ class Store:
             ).fetchone()
         if not row:
             raise KeyError(id)
-        return Snapshot.model_validate_json(row["payload"])
+        return prepare_snapshot_json(Snapshot.model_validate_json(row["payload"]))[0]
 
     def list_snapshots(self, owner, archived=False, limit=200, offset=0):
         """Summaries for reopening saved work, without personnel or source data."""
@@ -194,7 +198,9 @@ class Store:
     def copy_snapshot(self, id, owner, revision, project_name=None):
         with self.transaction() as conn:
             row = self._project_for_update(conn, id, owner, revision)
-            snapshot = Snapshot.model_validate_json(row["payload"])
+            # Admit the selected retained source before copy changes can shrink
+            # or remove invalid data; the final write still checks the output.
+            snapshot, _ = prepare_snapshot_json(Snapshot.model_validate_json(row["payload"]))
             snapshot.id = str(uuid.uuid4())
             snapshot.revision = "1"
             snapshot.created_at = datetime.now(timezone.utc)
@@ -203,7 +209,7 @@ class Store:
             snapshot.metadata["project_name"] = project_name if project_name is not None else f"{fallback[:112]} – Kopie"
             # A copy does not share the original project's synthetic acceptance.
             snapshot.metadata.pop("accepted_revision", None)
-            self._write_snapshot(conn, snapshot, owner)
+            snapshot = self._write_snapshot(conn, snapshot, owner)
         return snapshot
 
     def set_archived(self, id, owner, revision, archived):
@@ -217,8 +223,10 @@ class Store:
                 ).fetchone():
                     raise Conflict("Laufende Berechnung zuerst beenden oder abbrechen")
                 snapshot.revision = str(row["revision"] + 1)
-                self._write_snapshot(conn, snapshot, owner)
+                snapshot = self._write_snapshot(conn, snapshot, owner)
                 conn.execute("UPDATE snapshots SET archived=? WHERE id=?", (bool(archived), id))
+            else:
+                snapshot, _ = prepare_snapshot_json(snapshot)
         return snapshot
 
     @staticmethod
@@ -247,6 +255,10 @@ class Store:
                 raise Conflict("Archiviertes Projekt vor einer Berechnung wiederherstellen")
             if revision is not None and str(revision) != str(snapshot["revision"]):
                 raise Conflict("Snapshot revision changed; reload before calculation")
+            # Historical rows are not certified by the current writer. Validate
+            # this exact retained payload while holding the enqueue transaction;
+            # preserve its bytes/revision rather than reread or repair the row.
+            prepare_snapshot_json(Snapshot.model_validate_json(snapshot["payload"]))
             active = conn.execute(
                 "SELECT count(*) FROM jobs WHERE state IN ('queued','running')"
             ).fetchone()[0]
@@ -293,7 +305,7 @@ class Store:
             ).fetchone()
         if not row:
             raise KeyError(id)
-        return Snapshot.model_validate_json(row["payload"])
+        return prepare_snapshot_json(Snapshot.model_validate_json(row["payload"]))[0]
 
     def get_job(self, id, owner):
         with self.connect() as conn:
@@ -510,7 +522,29 @@ def _terminate_child(child):
             raise RuntimeError("Calculation process could not be stopped")
 
 
-def run_worker(path, once=False, ready=None):
+def run_worker(path, once=False, ready=None, *, parent_pid=None):
+    """Run independently by default; web-managed workers belong to their parent.
+
+    Bind before opening the store or its lock, and check the original PID after
+    prctl to close the spawn/setup race. SIGKILL deliberately bypasses Python
+    handlers and blocked database calls; the next worker recovers running jobs.
+    Calculation children already have their own parent-death protection.
+    """
+    if parent_pid is not None:
+        import sys
+
+        if sys.platform == "linux":
+            import ctypes
+
+            if ctypes.CDLL(None).prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
+                raise RuntimeError("Cannot configure managed worker lifecycle")
+        if os.getppid() != parent_pid:
+            return
+
+    def parent_gone():
+        # Also bound to the parent on other POSIX platforms, at poll boundaries.
+        return parent_pid is not None and os.getppid() != parent_pid
+
     store = Store(path)
     lock = open(store.path + ".worker.lock", "a")
     try:
@@ -539,9 +573,11 @@ def run_worker(path, once=False, ready=None):
                 "UPDATE jobs SET state='failed',error='Worker interrupted; explicit resubmission required',finished_at=? WHERE state='running'",
                 (time.time(),),
             )
+        if parent_gone():
+            return
         if ready is not None:
             ready.set()
-        while not stopping:
+        while not stopping and not parent_gone():
             with store.transaction() as conn:
                 row = conn.execute(
                     "SELECT * FROM jobs WHERE state='queued' ORDER BY created_at LIMIT 1"
@@ -577,6 +613,8 @@ def run_worker(path, once=False, ready=None):
                             "SELECT state FROM jobs WHERE id=?", (job["id"],)
                         ).fetchone()[0]
                     abgelaufen = time.monotonic() > deadline
+                    if parent_gone():
+                        stopping = True
                     if stopping or state == "cancelled" or abgelaufen:
                         _terminate_child(child)
                         break

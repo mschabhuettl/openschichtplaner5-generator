@@ -16,10 +16,15 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
 
 from .jobs import Store, Conflict, run_worker
-from .models import Snapshot, Assignment, Result
+from .models import Snapshot, Assignment, Result, prepare_snapshot_json
+from .security_limits import (
+    DiagnosticBudgetExceeded, diagnostic_budget, diagnostic_report,
+    validation_error_report, bounded_planning_records, bounded_normalized_planning,
+    MAX_SNAPSHOT_BYTES, SnapshotWireSizeExceeded,
+)
 
 
 class ApiImportRequest(BaseModel):
@@ -52,6 +57,17 @@ class JobRequest(BaseModel):
 
 
 class PlanRequest(BaseModel):
+    @model_validator(mode='before')
+    @classmethod
+    def planning_record_budget(cls, value):
+        # Check the whole request, including inherited/unknown fields, before
+        # any branch expands per-item errors; only snapshot.metadata is exempt.
+        return bounded_planning_records(value, request=True)
+
+    @model_validator(mode='after')
+    def normalized_planning_budget(self):
+        return bounded_normalized_planning(self, request=True)
+
     snapshot: Snapshot
     assignments: list[Assignment] = Field(max_length=5000)
 
@@ -136,8 +152,10 @@ DISPLAY_METADATA = {
 }
 
 
+@diagnostic_budget()
 def check_project_structure(snapshot: Snapshot):
     """Reject unsafe display/input boundaries while allowing unfinished rules."""
+    bounded_normalized_planning(snapshot)
     for key, (label, adapter) in DISPLAY_METADATA.items():
         if snapshot.metadata.get(key) is None:
             continue
@@ -150,12 +168,14 @@ def check_project_structure(snapshot: Snapshot):
                                 'Projektsicherung verwenden oder diese Übersicht korrigieren.') from exc
     from .domain import input_diagnostics
     blocking_codes = {'input', 'date_range', 'period', 'interval', 'size_limit', 'numeric_range'}
-    messages = sorted({f'{item.message} [{item.code}]'
-                       for item in input_diagnostics(snapshot)
-                       if item.code in blocking_codes})
-    if messages:
-        raise HTTPException(422, 'Projektstruktur ungültig: ' + ' '.join(messages))
-    return snapshot
+    blocking = [item for item in input_diagnostics(snapshot) if item.code in blocking_codes]
+    if blocking:
+        report = diagnostic_report(blocking)
+        messages = [f"{item['message']} [{item['code']}]" for item in report['diagnostics']]
+        suffix = (f" Weitere {report['diagnostics_omitted']} Diagnosen nicht angezeigt; "
+                  f"insgesamt {report['diagnostics_total']}." if report['diagnostics_omitted'] else '')
+        raise HTTPException(422, 'Projektstruktur ungültig: ' + ' '.join(messages) + suffix)
+    return prepare_snapshot_json(snapshot)[0]
 
 
 def create_app(state_dir: str = './generator-state', start_worker: bool = True):
@@ -169,7 +189,8 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
             if start_worker:
                 context = multiprocessing.get_context('spawn')
                 ready = context.Event()
-                worker = context.Process(target=run_worker, args=(store.path,), kwargs={'ready': ready})
+                worker = context.Process(target=run_worker, args=(store.path,),
+                                         kwargs={'ready': ready, 'parent_pid': os.getpid()})
                 worker.start()
                 # Importing the solver in a spawned process and acquiring its
                 # exclusive store lock must finish before the web service is ready.
@@ -218,7 +239,7 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
                 content_length = int(request.headers.get('content-length', '0'))
             except ValueError:
                 return JSONResponse({'detail': 'Invalid Content-Length'}, status_code=400)
-            if content_length > 16 * 1024 * 1024:
+            if content_length > MAX_SNAPSHOT_BYTES:
                 return JSONResponse({'detail': 'Request exceeds 16 MiB limit'}, status_code=413)
         response = await call_next(request)
         response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -237,11 +258,27 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, exc):
-        return JSONResponse({'detail': 'Ungültige Eingabe. Feldtypen und Pflichtangaben anhand des Eingabeschemas prüfen.', 'fields': [{'location': list(e['loc']), 'type': e['type']} for e in exc.errors()]}, status_code=422)
+        return JSONResponse(validation_error_report(exc.errors()), status_code=422)
+
+    @app.exception_handler(ValidationError)
+    async def invalid_import_model(request, exc):
+        # Importers also validate models, outside FastAPI's request parser.
+        # str(exc) renders the input repeatedly for every missing/invalid field.
+        return JSONResponse(validation_error_report(exc.errors(
+            include_input=False, include_context=False, include_url=False,
+        )), status_code=422)
 
     @app.exception_handler(Conflict)
     async def conflict(request, exc):
         return JSONResponse({'detail': str(exc)}, status_code=409)
+
+    @app.exception_handler(DiagnosticBudgetExceeded)
+    async def diagnostic_overflow(request, exc):
+        return JSONResponse({
+            'code': 'diagnostic_limit',
+            'detail': 'Zu viele oder zu große Diagnosen. Prüfung abgebrochen; '
+                      'Eingaben korrigieren oder Projekt verkleinern. Kein gültiges Prüfergebnis.',
+        }, status_code=422)
 
     @app.exception_handler(KeyError)
     async def missing(request, exc):
@@ -250,6 +287,10 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
     @app.exception_handler(ValueError)
     async def invalid(request, exc):
         return JSONResponse({'detail': str(exc)}, status_code=422)
+
+    @app.exception_handler(SnapshotWireSizeExceeded)
+    async def oversized_snapshot(request, exc):
+        return JSONResponse({'detail': str(exc)}, status_code=413)
 
     @app.get('/healthz')
     def health():
@@ -296,7 +337,7 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
         from uuid import uuid4
         snapshot = make_demo()
         snapshot.id = str(uuid4())
-        return snapshot
+        return prepare_snapshot_json(snapshot)[0]
 
     @app.get('/api/source')
     def source(directory: str):
@@ -333,6 +374,7 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
         return {'snapshot': check_project_structure(snapshot), 'matrix_suggestions': snapshot.metadata.get('history_matrix', [])}
 
     @app.post('/api/readiness')
+    @diagnostic_budget()
     def readiness(snapshot: Snapshot):
         from .domain import input_diagnostics
         issues = input_diagnostics(snapshot)
@@ -348,7 +390,7 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
                     'Qualifikation eintragen oder die zusätzliche Nachweispflicht deaktivieren. '
                     'Persönliche Dienstfreigaben bleiben erforderlich.',
                 ))
-        return {'ready': not issues, 'diagnostics': issues}
+        return {'ready': not issues, **diagnostic_report(issues)}
 
     @app.post('/api/snapshots/check')
     def check_snapshot(snapshot: Snapshot):
@@ -439,11 +481,15 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
         return store.cancel(id, owner)
 
     @app.post('/api/validate')
+    @diagnostic_budget()
     def validate_plan(data: PlanRequest):
         from .validator import validate
-        return validate(data.snapshot, data.assignments)
+        result = validate(data.snapshot, data.assignments)
+        return {'valid': result.valid, 'complete': result.complete,
+                **diagnostic_report(result.diagnostics)}
 
     @app.post('/api/approval-leverage')
+    @diagnostic_budget()
     def approval_leverage_report(data: PlanRequest):
         from .approval_preview import approval_leverage
         try:
@@ -452,6 +498,7 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
             raise HTTPException(422, str(exc)) from None
 
     @app.post('/api/replacement')
+    @diagnostic_budget()
     def find_replacement(data: ReplacementRequest):
         from .replacement import replacement_candidates
         try:
@@ -463,6 +510,7 @@ def create_app(state_dir: str = './generator-state', start_worker: bool = True):
             raise HTTPException(422, str(exc)) from None
 
     @app.post('/api/export/{format}')
+    @diagnostic_budget()
     def export_plan(format: str, data: PlanRequest):
         from .domain import snapshot_hash
         from .validator import validate

@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.25.0** lässt mehrere Schichtvarianten denselben Posten decken: Ein Nachtdienst als 18–06 und als 20–06 geführt, besetzt werden muss nur einer — bisher stellte der Plan dafür zwei Personen ab. Dazu rechnen größere Häuser durch (gemessen: 275 Personen, 1112 Positionen, unabhängig als gültig bestätigt), Importfehler nennen ihren Grund statt eines Sammeltexts, und die Bedarfsseite ist von 1163 auf 580 Pixel geschrumpft. Die [Releasehinweise](docs/release-0.25.0.md) nennen die Messungen und die offene Hälfte des Schichtvarianten-Falls.
+**Version 0.29.1** bündelt Korrekturen an Planung und unabhängiger Prüfung, Arbeitsminuten und Exporten, SP5-Historie, Ersatzsuche und Oberfläche. Eingabe- und Diagnosebudgets begrenzen aufwendige Webanfragen; persönliche Grenzen und Begleitpflichten bleiben bei der Bearbeitung erhalten. Dies ist ein Patch des bestehenden Bedienablaufs, kein UX-Neuentwurf. Die [Releasehinweise](docs/release-0.29.1.md) beschreiben Änderungen, Kompatibilitätsgrenzen und den Veröffentlichungsstand.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -63,7 +63,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.25.0-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.29.1-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
@@ -113,7 +113,7 @@ npm test --prefix tests/browser
 Der Container-Workflow prüft Python, Browser, saubere Paketinstallationen, den echten Hintergrundworker und Berechnung ohne Netzwerk, bevor er Images auf `main` veröffentlicht. Für reproduzierbare Installationen den Commit-Tag `sha-…` oder den Image-Digest festhalten.
 
 - [Prüfungen und gemessene Laufzeiten](docs/verification.md)
-- [Release 0.8.0 und Aktualisierung](docs/release-0.8.0.md)
+- [Release 0.29.1 und Aktualisierung](docs/release-0.29.1.md)
 - [Regeln, Zeitberechnung und Zielfunktion](docs/rules.md)
 - [Architektur und Integration](docs/architecture.md)
 - [SP5-Zuordnung und offene Semantik](docs/sp5-mapping.md)

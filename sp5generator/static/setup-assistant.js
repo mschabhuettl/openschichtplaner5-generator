@@ -58,7 +58,11 @@
     if(p.valid_from>next.context_start||p.valid_until<next.context_end)report.review.push('Ein übernommenes Profil deckt den neuen Randzeitraum nicht vollständig ab. Gültigkeit prüfen.');
    }
    for(const person of next.employees){const old=oldPeople.get(person.id);if(!old){report.newPeople.push(person.id);continue;}
-    for(const key of ['allowed_kinds','preferred_kind','preferred_functions','allow_weekends','allow_holidays','approvals','qualifications','availability','mentor_capacity'])if(old[key]!==undefined)person[key]=structuredClone(old[key]);
+    for(const key of ['allowed_kinds','preferred_kind','preferred_functions','allow_weekends','allow_holidays','approvals','qualifications','availability','mentor_capacity','excluded'])if(old[key]!==undefined)person[key]=structuredClone(old[key]);
+    // A personal hard limit is not a percentage of the new source target.
+    // Keep it conservatively, including zero; another period requires review.
+    if(old.max_period_minutes!==undefined)person.max_period_minutes=old.max_period_minutes;
+    if(old.max_period_minutes!=null&&(previous.period_start!==next.period_start||previous.period_end!==next.period_end))report.review.push(`Persönliche Höchstarbeitszeit für ${person.name??person.id} (${person.id}): ${old.max_period_minutes} Minuten aus ${previous.period_start} bis ${previous.period_end} unverändert übernommen. Für den neuen Planungszeitraum ${next.period_start} bis ${next.period_end} unter Team & Freigaben prüfen und gegebenenfalls anpassen; keine automatische Neuberechnung.`);
     person.approvals=person.approvals.filter(a=>{if(functions.has(a.function_id))return true;report.review.push('Eine frühere Dienstfreigabe gehört zu einem nicht mehr importierten Dienst.');return false;});
     if(person.approvals.some(a=>a.valid_from>next.period_start||a.valid_until<next.period_end))report.review.push('Frühere Dienstfreigaben gelten nicht für den gesamten neuen Planungszeitraum.');
     const mapped=old.profile_ids.map(id=>profileMap.get(id));

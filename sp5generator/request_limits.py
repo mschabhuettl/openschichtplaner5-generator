@@ -1,9 +1,10 @@
 """Bound HTTP input before JSON parsing, including chunked request bodies."""
 from starlette.responses import JSONResponse
+from .security_limits import MAX_SNAPSHOT_BYTES
 
 
 class RequestSizeLimit:
-    def __init__(self, app, limit=16 * 1024 * 1024):
+    def __init__(self, app, limit=MAX_SNAPSHOT_BYTES):
         self.app, self.limit = app, limit
 
     async def __call__(self, scope, receive, send):

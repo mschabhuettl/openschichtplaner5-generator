@@ -1,24 +1,43 @@
 """Versioned, standalone planning contract. All durations are integer minutes."""
 from datetime import date, datetime
-from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated, Literal
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from .security_limits import (
+    charge_diagnostic, bounded_planning_records, bounded_normalized_planning,
+    bounded_canonical_json, SnapshotWireError,
+)
+
+# IDs are opaque: reject overlong values, never strip, normalize or truncate.
+MAX_IDENTIFIER_LENGTH = 200
+Identifier = Annotated[str, Field(max_length=MAX_IDENTIFIER_LENGTH)]
 
 class Model(BaseModel):
     model_config = ConfigDict(extra='forbid')
+
+    @field_validator('*', mode='before')
+    @classmethod
+    def bounded_collections(cls, value, info):
+        # Reject a long collection before Pydantic expands per-item errors.
+        if isinstance(value, (list, tuple)):
+            for constraint in cls.model_fields[info.field_name].metadata:
+                limit = getattr(constraint, 'max_length', None)
+                if limit is not None and len(value) > limit:
+                    raise ValueError(f'Collection supports at most {limit} items')
+        return value
 
 class Interval(Model):
     start: datetime
     end: datetime
 
 class Qualification(Model):
-    id: str
+    id: Identifier
     valid_from: date
     valid_until: date
     level: int = Field(default=1, ge=0)
 
 class Approval(Model):
-    function_id: str
-    workplace_id: str = Field(description="Exact workplace ID, or * for an explicitly confirmed service-wide approval")
+    function_id: Identifier
+    workplace_id: Identifier = Field(description="Exact workplace ID, or * for an explicitly confirmed service-wide approval")
     valid_from: date
     valid_until: date
     supervised: bool = False
@@ -35,7 +54,7 @@ class Availability(Model):
     source: str = 'additional'
 
 class RuleProfile(Model):
-    id: str
+    id: Identifier
     version: str = '1'
     valid_from: date
     valid_until: date
@@ -59,23 +78,23 @@ class RuleProfile(Model):
     source: str = 'additional'
 
 class Employee(Model):
-    id: str
+    id: Identifier
     name: str
     # Von der Planung ausgenommen; Daten und Verträge bleiben unverändert.
     excluded: bool = False
-    team_ids: list[str]
+    team_ids: list[Identifier] = Field(max_length=1000)
     employment_start: date
     employment_end: date
-    approvals: list[Approval] = Field(default_factory=list)
-    qualifications: list[Qualification] = Field(default_factory=list)
-    availability: list[Availability] = Field(default_factory=list)
-    unavailable: list[Interval] = Field(default_factory=list)
-    allowed_kinds: list[str] = Field(default_factory=lambda: ['day','night'])
+    approvals: list[Approval] = Field(default_factory=list, max_length=1000)
+    qualifications: list[Qualification] = Field(default_factory=list, max_length=1000)
+    availability: list[Availability] = Field(default_factory=list, max_length=1000)
+    unavailable: list[Interval] = Field(default_factory=list, max_length=1000)
+    allowed_kinds: list[str] = Field(default_factory=lambda: ['day','night'], max_length=1000)
     preferred_kind: str | None = None
-    preferred_functions: list[str] = Field(default_factory=list)
+    preferred_functions: list[Identifier] = Field(default_factory=list, max_length=1000)
     allow_weekends: bool = True
     allow_holidays: bool = True
-    profile_ids: list[str]
+    profile_ids: list[Identifier] = Field(max_length=1000)
     target_minutes: int = Field(default=0, ge=0)
     # Contractual weekly workload: soft distribution goal, never a hard limit.
     contractual_weekly_minutes: int | None = Field(default=None, ge=0, strict=True)
@@ -91,19 +110,19 @@ class Employee(Model):
     max_period_minutes: int | None = Field(default=None, ge=0)
 
 class Position(Model):
-    id: str
+    id: Identifier
     name: str
-    function_id: str
-    workplace_id: str
-    qualification_ids: list[str] = Field(default_factory=list)
+    function_id: Identifier
+    workplace_id: Identifier
+    qualification_ids: list[Identifier] = Field(default_factory=list)
     qualification_level: int = Field(default=1, ge=0)
     qualifications_required: bool
 
 class Shift(Model):
-    id: str
+    id: Identifier
     name: str
     kind: str
-    team_id: str
+    team_id: Identifier
     segments: list[Interval]
     paid_minutes: int = Field(ge=0)
     holiday: bool = False
@@ -111,8 +130,8 @@ class Shift(Model):
 
 class BoundaryWork(Model):
     """Immutable personal work context, not a staffing demand or an approval."""
-    id: str
-    employee_id: str
+    id: Identifier
+    employee_id: Identifier
     segments: list[Interval]
     kind: Literal['day', 'night', 'unknown'] = 'unknown'
     # Explicit personal work inside the planning period that no staffing demand
@@ -128,35 +147,35 @@ class BoundaryWork(Model):
     source: str = 'additional'
 
 class Demand(Model):
-    id: str
-    shift_id: str
-    position_id: str
+    id: Identifier
+    shift_id: Identifier
+    position_id: Identifier
     minimum: int = Field(ge=0)
     maximum: int | None = Field(ge=0, description="Null means no upper staffing limit; zero prohibits staffing")
     # Groups whose source requirements this demand merges; they decide who may
     # staff it. Empty keeps the shift's own team as the only eligible group.
-    team_ids: list[str] = Field(default_factory=list)
+    team_ids: list[Identifier] = Field(default_factory=list)
     # Bedarfe mit derselben Kennung decken denselben Posten ab: erfüllt ist er,
     # sobald sie zusammen die höchste geforderte Mindestbesetzung erreichen.
     # Die Höchstbesetzung bleibt je Bedarf einzeln gültig.
-    alternative_group: str | None = None
+    alternative_group: Identifier | None = None
     source: str = 'additional'
 
 class Assignment(Model):
-    employee_id: str
-    demand_id: str
+    employee_id: Identifier
+    demand_id: Identifier
     fixed: bool = False
     segments: list[Interval] = Field(default_factory=list)
 
 class Restriction(Model):
-    employee_id: str
-    shift_id: str
+    employee_id: Identifier
+    shift_id: Identifier
     level: Literal[0,1,2]
     approved: bool = False
 
 class Wish(Model):
-    employee_id: str
-    shift_id: str
+    employee_id: Identifier
+    shift_id: Identifier
     want: bool
     priority: int = Field(default=1, ge=1, le=1000)
 
@@ -181,8 +200,17 @@ class Objectives(Model):
     changes: int = Field(default=100, ge=0)
 
 class Snapshot(Model):
+    @model_validator(mode='before')
+    @classmethod
+    def planning_record_budget(cls, value):
+        return bounded_planning_records(value)
+
+    @model_validator(mode='after')
+    def normalized_planning_budget(self):
+        return bounded_normalized_planning(self)
+
     schema_version: Literal['1.0'] = '1.0'
-    id: str
+    id: Identifier
     revision: str
     created_at: datetime
     timezone: str
@@ -194,24 +222,60 @@ class Snapshot(Model):
     rule_version: str
     software_versions: dict[str,str] = Field(default_factory=dict)
     source: Literal['synthetic','sp5','json']
-    employees: list[Employee]
-    positions: list[Position]
-    shifts: list[Shift]
-    demands: list[Demand]
-    profiles: list[RuleProfile]
-    assignments: list[Assignment] = Field(default_factory=list)
-    boundary_work: list[BoundaryWork] = Field(default_factory=list)
-    restrictions: list[Restriction] = Field(default_factory=list)
-    wishes: list[Wish] = Field(default_factory=list)
+    employees: list[Employee] = Field(max_length=1000)
+    positions: list[Position] = Field(max_length=2000)
+    shifts: list[Shift] = Field(max_length=10000)
+    demands: list[Demand] = Field(max_length=20000)
+    profiles: list[RuleProfile] = Field(max_length=1000)
+    assignments: list[Assignment] = Field(default_factory=list, max_length=5000)
+    boundary_work: list[BoundaryWork] = Field(default_factory=list, max_length=5000)
+    restrictions: list[Restriction] = Field(default_factory=list, max_length=20000)
+    wishes: list[Wish] = Field(default_factory=list, max_length=20000)
     objectives: Objectives = Field(default_factory=Objectives)
-    unresolved: list[str] = Field(default_factory=list)
+    unresolved: list[str] = Field(default_factory=list, max_length=1000)
     metadata: dict = Field(default_factory=dict)
 
+def prepare_snapshot_json(snapshot):
+    """Prepare one replayable full value and its exact durable/wire payload.
+
+    Only call at JSON boundaries, never in the native Snapshot constructor:
+    optional CSV/XLSX provenance may intentionally contain nonportable labels.
+    Reparse fresh fields (not a trusted model identity), then the actual final
+    serialized bytes before summaries/SQL or acknowledgement. No sparse dumps.
+    """
+    bounded_normalized_planning(snapshot)
+
+    def fields(value, mode):
+        # Do not let Pydantic turn arbitrary metadata into strings/lists/nulls.
+        data = value.model_dump(mode=mode, exclude={'metadata'}, warnings=False)
+        data['metadata'] = value.metadata
+        return data
+
+    try:
+        normalized = Snapshot.model_validate(fields(snapshot, 'python'))
+        payload = bounded_canonical_json(fields(normalized, 'json'))
+        validated = Snapshot.model_validate_json(payload)
+        # A serializer must not silently produce a sparse/coercion-dependent
+        # representation different from the validated value returned to callers.
+        if bounded_canonical_json(fields(validated, 'json')) != payload:
+            raise SnapshotWireError()
+        return validated, payload
+    except (ValidationError, SnapshotWireError):
+        raise
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        raise SnapshotWireError() from None
+
+
 class Diagnostic(Model):
+    @model_validator(mode='before')
+    @classmethod
+    def bounded_construction(cls, value):
+        return charge_diagnostic(value)
+
     code: str
     message: str
-    employee_id: str | None = None
-    demand_id: str | None = None
+    employee_id: Identifier | None = None
+    demand_id: Identifier | None = None
     date: str | None = None
 
 class Validation(Model):
@@ -221,10 +285,10 @@ class Validation(Model):
 
 class Result(Model):
     schema_version: Literal['1.0'] = '1.0'
-    snapshot_id: str
+    snapshot_id: Identifier
     snapshot_hash: str
     solver_status: Literal['OPTIMAL','FEASIBLE','INFEASIBLE','UNKNOWN','MODEL_INVALID']
-    assignments: list[Assignment] = Field(default_factory=list)
+    assignments: list[Assignment] = Field(default_factory=list, max_length=5000)
     vacancies: dict[str,int] = Field(default_factory=dict)
     validation: Validation
     runtime_seconds: float

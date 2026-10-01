@@ -182,6 +182,31 @@ def _scope_schedule(db, scope, year, month, **kwargs):
     return result
 
 
+def _effective_history_schedule(db, scope, year, month, plan):
+    """Keep effective Ist work without suppressing separate Soll targets.
+
+    A nonempty SPSHI service replaces the person's entire Ist day, regardless
+    of workplace or special-entry type. The facade still returns materialized
+    MASHI rows, so both history consumers must normalize before aggregation.
+    """
+    from sp5lib.calculations import to_date
+
+    rows = _scope_schedule(db, scope, year, month, plan=plan)
+    if plan == "soll":
+        return rows
+    replaced = {
+        (row.get("employee_id"), to_date(row.get("date")))
+        for row in rows
+        if row.get("kind") == "special_shift"
+        and row.get("shift_id") not in (None, 0, "", "0")
+    }
+    return [
+        row for row in rows
+        if not (row.get("kind") == "shift" and row.get("schedule_type", 0) != 1
+                and (row.get("employee_id"), to_date(row.get("date"))) in replaced)
+    ]
+
+
 def _reference_schedule(db, scope, year, month, period_start, period_end, plan):
     """Select regular baseline duties only; preserve Ist context and availability."""
     from sp5lib.calculations import to_date
@@ -557,7 +582,7 @@ def import_snapshot(
     if demand_source == "history":
         rows, month = [], history_start.replace(day=1)
         while month <= history_end:
-            rows.extend(_scope_schedule(db, scope, month.year, month.month, plan=reference_plan))
+            rows.extend(_effective_history_schedule(db, scope, month.year, month.month, reference_plan))
             month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
         selected_teams = {f"sp5:group:{gid}" for gid in scope}
         volume, post_teams = _typical_staffing(
@@ -1474,7 +1499,7 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
     month = history_start.replace(day=1)
     seen = set()
     while month <= history_end:
-        for row in _scope_schedule(
+        for row in _effective_history_schedule(
             db,
             snapshot.metadata.get("selected_group_ids", [team]),
             month.year,
@@ -1496,12 +1521,15 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
             wid = row.get("workplace_id")
             if sid not in shifts:
                 continue
+            origin = ("special_shift" if row.get("kind") == "special_shift" else
+                      "soll" if row.get("schedule_type", 0) == 1 or history_plan == "soll" else "ist")
             key = (
                 eid,
                 str(day),
                 sid,
                 wid,
                 row.get("kind"),
+                origin,
                 row.get("start_time"),
                 row.get("end_time"),
             )
@@ -1517,11 +1545,13 @@ def historical_matrix(db, snapshot, history_start, history_end, history_plan="is
                     "shift_id": sid,
                     "name": shifts[sid].get("NAME", ""),
                     "count": 0,
+                    "source_counts": {},
                     "first_date": str(day),
                     "last_date": str(day),
                 },
             )
             observation["count"] += 1
+            observation["source_counts"][origin] = observation["source_counts"].get(origin, 0) + 1
             observation["first_date"] = min(observation["first_date"], str(day))
             observation["last_date"] = max(observation["last_date"], str(day))
             item["approvals"][sid] += 1
@@ -1646,4 +1676,5 @@ def import_directory(
     snapshot.metadata["source_import_id"] = snapshot.id
     snapshot.id = "sp5:import:" + str(uuid4())
     snapshot.revision = "1"
-    return snapshot
+    from .security_limits import bounded_normalized_planning
+    return bounded_normalized_planning(snapshot)

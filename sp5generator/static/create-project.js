@@ -290,14 +290,15 @@
     get('wizardCreate').textContent = 'Projekt wird erstellt …';
     form.setAttribute('aria-busy', 'true'); showError('');
     try {
-      const response = await fetch('/api/projects/new', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
-      const data = await response.json().catch(() => ({}));
+      const binding = window.PlannerApp?.captureInput();
+      const response = await fetch('/api/projects/new', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: ProjectJSON.stringify(payload)});
+      const data = response.ok ? ProjectJSON.parse(await response.text()) : await response.json().catch(() => ({}));
       if (!response.ok) {
         const detail = typeof data.detail === 'string' ? data.detail : Array.isArray(data.detail) ? data.detail.map(item => item.msg).join(' · ') : 'Das Projekt konnte nicht erstellt werden. Bitte Angaben prüfen und erneut versuchen.';
         throw Error(detail);
       }
       if (!window.PlannerApp?.openProject) throw Error('Die Projektansicht ist noch nicht bereit. Bitte erneut versuchen.');
-      const opened = await window.PlannerApp.openProject(data.snapshot);
+      const opened = await window.PlannerApp.openProject(data.snapshot,binding);
       if (opened) { fresh = true; dialog.close(); }
       else showError('Das Projekt wurde noch nicht geöffnet. Die eingegebenen Angaben bleiben erhalten.');
     } catch (error) {

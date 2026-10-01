@@ -1,5 +1,5 @@
 'use strict';
-let snapshot=null, assignments=[], jobId=null, timer=null, previous=[];
+let snapshot=null, assignments=[], jobId=null, jobInput=null, timer=null, previous=[];
 let groups=[], checkedTeams=new Set(), transposed=false, planMonth="", solving=false;
 let dirty=false, jsonDirty=false, changeVersion=0, activePanel='projects', projectBusy=false, personDraft=false;
 let indexVersion=-1, indexes=null, matrixCache=null, stateFrame=null, jsonVersion=-1;
@@ -36,7 +36,7 @@ function navigate(panel){
 }
 function syncJson(force=false){
  if(!snapshot||jsonDirty||(!force&&!$('json').closest('details')?.open)||jsonVersion===changeVersion)return;
- $('json').value=JSON.stringify(currentSnapshot(),null,2);jsonVersion=changeVersion;
+ $('json').value=ProjectJSON.stringify(currentSnapshot(),null,2);jsonVersion=changeVersion;
 }
 function pageState(key,size=30){if(!collections.has(key))collections.set(key,{page:0,size,query:''});return collections.get(key);}
 function debounce(fn,delay=180){let pending;return (...args)=>{clearTimeout(pending);pending=setTimeout(()=>fn(...args),delay);};}
@@ -86,14 +86,16 @@ async function responseError(response){
  const error=Error(message+(fields?.length?' Betroffene Felder: '+fields.join(', '):''));error.status=response.status;return error;
 }
 async function api(path,method='GET',data){
+ ProjectJSON.assertSupported();
+ const body=data===undefined?undefined:ProjectJSON.stringify(data);
  let r;
- try{r=await fetch(path,{method,headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});}
+ try{r=await fetch(path,{method,headers:data===undefined?{}:{'Content-Type':'application/json'},body});}
  catch{throw Error('Server nicht erreichbar. Verbindung prüfen und erneut versuchen. Änderungen bleiben in dieser Ansicht erhalten.');}
  if(!r.ok)throw await responseError(r);
  if(!r.headers.get('content-type')?.includes('application/json'))throw Error('Keine gültige Serverantwort. Bei abgelaufener Anmeldung die Seite neu laden. Ungespeicherte Änderungen vorher als Projekt sichern.');
- return r.json();
+ return ProjectJSON.parse(await r.text());
 }
-async function runAction(b,fn){if(b.disabled||b.dataset.busy==='true')return;b.dataset.busy='true';const disabled=b.disabled;b.disabled=true;b.setAttribute('aria-busy','true');updateJobButtons();try{await fn();}catch(e){notice(e.message,true);}finally{delete b.dataset.busy;b.removeAttribute('aria-busy');b.disabled=disabled;updateJobButtons();}}
+async function runAction(b,fn){if(b.disabled||b.dataset.busy==='true'||(projectSwitchBusy()&&b.id!=='cancel'&&b.id!=='refreshJobs'))return;b.dataset.busy='true';const disabled=b.disabled;b.disabled=true;b.setAttribute('aria-busy','true');updateJobButtons();try{await fn();}catch(e){notice(e.message,true);}finally{delete b.dataset.busy;b.removeAttribute('aria-busy');b.disabled=disabled;updateJobButtons();}}
 const lockedControls=new Map();
 function updateJobButtons(){
  $('cancel').disabled=!jobId||$('cancel').dataset.busy==='true';
@@ -103,12 +105,14 @@ function updateJobButtons(){
  for(const id of switchIds)$(id).disabled=busy||(id==='restore'&&!$('saved').value)||(id==='restoreJob'&&!$('savedJobs').value);
  $('save').disabled=busy;$('saveDraft').disabled=busy;if($('addPerson'))$('addPerson').disabled=busy;
  for(const id of ['solve','recompute'])$(id).disabled=busy||$(id).dataset.busy==='true';
- const editing='#setupReview, #serviceGroups, #matrix, #people, #details, #history, #shifts, #positions, #demands, #demandBoard, #profiles, #unresolved, #weights, #contextConfirmation, #plan';
+ const editing='#openDecisions, #teamScope, #teamTransfer, #unresolvedBulk, #setupReview, #serviceGroups, #matrix, #people, #details, #history, #shifts, #positions, #demands, #demandBoard, #profiles, #unresolved, #weights, #contextConfirmation, #plan';
  const regions=[...document.querySelectorAll(editing)];for(const region of regions)region.inert=busy;
  $('json').readOnly=busy;
- const controls=[$('confirmHistory'),$('refreshJson')];
- if(busy){for(const input of controls){if(!lockedControls.has(input))lockedControls.set(input,input.disabled);input.disabled=true;}}
- else{for(const [input,disabled] of lockedControls)input.disabled=disabled;lockedControls.clear();}
+ const controls=[$('confirmHistory'),$('refreshJson'),$('teamImport')];
+ // runAction only starts enabled controls. Its temporary disable is not the
+ // underlying state to restore, and may outlive (or finish before) this lock.
+ if(busy){for(const input of controls){if(!lockedControls.has(input))lockedControls.set(input,input.dataset.busy==='true'?false:input.disabled);input.disabled=true;}}
+ else{for(const [input,disabled] of lockedControls)input.disabled=disabled||input.dataset.busy==='true';lockedControls.clear();}
  publishState();
 }
 function projectId(){
@@ -116,16 +120,25 @@ function projectId(){
  const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
  const hex=[...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 }
-function currentSnapshot(){return {...snapshot,assignments:structuredClone(assignments)};}
+function currentSnapshot(){return {...snapshot,assignments:ProjectJSON.clone(assignments)};}
+// Async results belong to one exact input, not merely to a project ID.
+function inputBinding(){return {owner:snapshot,version:changeVersion,data:ProjectJSON.clone(currentSnapshot())};}
+function inputUnchanged(binding){return !!binding&&snapshot===binding.owner&&changeVersion===binding.version&&!jsonDirty&&!personDraft&&ProjectJSON.stringify(currentSnapshot())===ProjectJSON.stringify(binding.data);}
+// Replacement includes uncommitted text/person drafts; busy controls alone do
+// not protect against a late event or a newer programmatic edit.
+function replacementBinding(){return {owner:snapshot,version:changeVersion,dirty,jsonDirty,personDraft,text:$('json').value,data:snapshot?ProjectJSON.stringify(currentSnapshot()):null};}
+function requireReplacement(binding){
+ if(snapshot!==binding.owner||changeVersion!==binding.version||dirty!==binding.dirty||jsonDirty!==binding.jsonDirty||personDraft!==binding.personDraft||$('json').value!==binding.text||(snapshot?ProjectJSON.stringify(currentSnapshot()):null)!==binding.data)throw Error('Projekt während des Ladens geändert. Eingaben bleiben erhalten; erneut öffnen.');
+}
 function updateSaveStatus(){
  $('saveStatus').textContent=jsonDirty?'JSON-Änderungen noch nicht übernommen.':dirty?'Ungespeicherte Änderungen':`Gespeicherter Stand ${snapshot?.revision??''}`;
  $('saveStatus').classList.toggle('bad',dirty||jsonDirty);publishState();
 }
-function markChanged(){changeVersion++;dirty=true;updateSaveStatus();}
+function markChanged(){changeVersion++;dirty=true;clearReplacement();updateSaveStatus();}
 function canReplace(){return !(dirty||jsonDirty)||window.confirm('Ungespeicherte Änderungen verwerfen und einen anderen Stand öffnen? Mit Abbrechen können Sie den aktuellen Stand zuerst speichern oder als Projekt sichern.');}
 window.addEventListener('beforeunload',event=>{if(dirty||jsonDirty){event.preventDefault();event.returnValue='';}});
 function action(id,fn){$(id).onclick=()=>runAction($(id),fn);}
-function field(parent,label,value,change,type='text'){const l=el('label',label,parent),i=el('input',undefined,l);i.type=type;if(type==='number')i.step='any';if(type==='checkbox')i.checked=!!value;else i.value=value??'';i.onchange=()=>{change(type==='checkbox'?i.checked:type==='number'?(i.value===''?null:Number(i.value)):i.value);invalidateResult();};return i;}
+function field(parent,label,value,change,type='text',{updatesProject=true}={}){const l=el('label',label,parent),i=el('input',undefined,l);i.type=type;if(type==='number')i.step='any';if(type==='checkbox')i.checked=!!value;else i.value=value??'';i.onchange=()=>{if(updatesProject&&projectSwitchBusy())return;change(type==='checkbox'?i.checked:type==='number'?(i.value===''?null:Number(i.value)):i.value);if(updatesProject)invalidateResult();};return i;}
 function tableInputNavigation(input,column){
  input.dataset.tableColumn=column;
  input.addEventListener('keydown',event=>{
@@ -139,7 +152,7 @@ function tableInputNavigation(input,column){
   input.blur();next.focus();if(next.type==='number')next.select();
  });
 }
-function select(parent,label,value,options,change,{updatesProject=true}={}){const l=el('label',label,parent),s=el('select',undefined,l);for(const [v,t] of options){const o=el('option',t,s);o.value=v;}s.value=value;s.onchange=()=>{change(s.value);if(updatesProject)invalidateResult();};return s;}
+function select(parent,label,value,options,change,{updatesProject=true}={}){const l=el('label',label,parent),s=el('select',undefined,l);for(const [v,t] of options){const o=el('option',t,s);o.value=v;}s.value=value;s.onchange=()=>{if(updatesProject&&projectSwitchBusy())return;change(s.value);if(updatesProject)invalidateResult();};return s;}
 function button(parent,text,fn){const b=el('button',text,parent);b.type='button';b.onclick=()=>runAction(b,fn);return b;}
 function table(parent,head){parent.replaceChildren();const t=el('table',undefined,parent),tr=el('tr',undefined,el('thead',undefined,t));head.forEach(x=>{const th=el('th',x,tr);th.scope='col';});return el('tbody',undefined,t);}
 async function saved(){
@@ -156,14 +169,17 @@ async function savedJobs(){
  if(list.some(j=>j.id===selected))$('savedJobs').value=selected;window.PlannerUI?.setJobs?.(list);updateJobButtons();
 }
 async function readProject(text){
- let candidate;try{candidate=JSON.parse(text);}catch{throw Error('Ungültige JSON-Datei. Syntax prüfen; der aktuelle Stand wurde beibehalten.');}
+ let candidate;try{candidate=ProjectJSON.parse(text);}catch(error){if(error.code==='PROJECT_JSON')throw error;throw Error('Ungültige JSON-Datei. Syntax prüfen; der aktuelle Stand wurde beibehalten.');}
  if(candidate?.snapshot_id&&!candidate?.employees)throw Error('Diese Datei ist ein Prüfergebnis. Zum Weiterarbeiten die vollständige Datei aus „Projekt als JSON sichern“ laden oder eine gespeicherte Berechnung öffnen.');
  return api('/api/snapshots/check','POST',candidate);
 }
 function load(s,persisted=false){
+ // Complete numeric admission and clones before touching the incumbent draft.
+ s=ProjectJSON.clone(s);const stagedAssignments=ProjectJSON.clone(s.assignments);
  new Intl.DateTimeFormat('de-DE',{timeZone:s.timezone}).format();if(s.period_start>s.period_end)throw Error('Planungsbeginn muss vor dem Planungsende liegen.');
- clearTimeout(timer);timer=null;jobId=null;previous=[];$('cancel').disabled=true;$('job').textContent='';$('result').replaceChildren();$('validation').textContent='';$('validationSummary')?.remove();
- snapshot=s;personDraft=false;assignments=structuredClone(s.assignments);changeVersion++;dirty=!persisted;jsonDirty=false;jsonVersion=-1;indexes=null;matrixCache=null;renderedPanels.clear();collections.clear();
+ clearTimeout(timer);timer=null;jobId=null;jobInput=null;previous=[];$('cancel').disabled=true;$('job').textContent='';$('result').replaceChildren();$('validation').textContent='';$('validationSummary')?.remove();
+ clearReplacement();Object.assign(replacementChoice,{person:'',from:'',bis:''});
+ snapshot=s;personDraft=false;assignments=stagedAssignments;changeVersion++;dirty=!persisted;jsonDirty=false;jsonVersion=-1;indexes=null;matrixCache=null;renderedPanels.clear();collections.clear();
  // Reset is local to the opened project; no extra fields enter the snapshot.
  originalDemands=new Map(s.demands.map(d=>[d.id,{minimum:d.minimum,maximum:d.maximum,source:d.source}]));createdDemands=new Set();demandView='dates';
  for(const id of ['details','people','history','shifts','positions','demands','demandBoard','demandSummary','profiles','plan','calendar','matrix'])$(id).replaceChildren();
@@ -264,9 +280,12 @@ function addPerson(){
 }
 function removePerson(person){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');
+ const personal=(snapshot.boundary_work??[]).filter(work=>work.employee_id===person.id);
  const current=assignments.filter(a=>a.employee_id===person.id),fixed=snapshot.assignments.filter(a=>a.employee_id===person.id&&a.fixed),references=snapshot.restrictions.filter(r=>r.employee_id===person.id).length+snapshot.wishes.filter(w=>w.employee_id===person.id).length;
- if(!window.confirm(`${person.name||'Diese Person'} aus dem Projekt entfernen? Dabei werden ${current.length} aktuelle Einteilungen, ${fixed.length} gespeicherte Fixierungen sowie ${references} Wünsche und Dienstsperren dieser Person entfernt. Auch persönliche Freigaben, Abwesenheiten und die historische Personenbasis werden entfernt. Die Änderung wird mit dem nächsten Speichern dauerhaft.`))return;
+ if(!window.confirm(`${person.name||'Diese Person'} aus dem Projekt entfernen? Dabei werden ${current.length} aktuelle Einteilungen, ${fixed.length} gespeicherte Fixierungen sowie ${references} Wünsche und Dienstsperren dieser Person entfernt. Auch ${personal.length} persönliche Arbeiten und Randdienste samt Herkunftsnachweisen werden gelöscht. Auch persönliche Freigaben, Abwesenheiten und die historische Personenbasis werden entfernt. Die Änderung wird mit dem nächsten Speichern dauerhaft.`))return;
  personDraft=false;snapshot.employees=snapshot.employees.filter(e=>e.id!==person.id);assignments=assignments.filter(a=>a.employee_id!==person.id);snapshot.assignments=snapshot.assignments.filter(a=>a.employee_id!==person.id);snapshot.restrictions=snapshot.restrictions.filter(r=>r.employee_id!==person.id);snapshot.wishes=snapshot.wishes.filter(w=>w.employee_id!==person.id);previous=previous.filter(a=>a.employee_id!==person.id);
+ snapshot.boundary_work=(snapshot.boundary_work??[]).filter(work=>work.employee_id!==person.id);
+ for(const work of personal)if(snapshot.metadata.provenance)delete snapshot.metadata.provenance[work.id];
  const isPerson=row=>String(row.employee_id)===person.id||'sp5:employee:'+row.employee_id===person.id;
  for(const key of ['history_matrix','context_schedule','reference_schedule'])if(Array.isArray(snapshot.metadata[key]))snapshot.metadata[key]=snapshot.metadata[key].filter(row=>!isPerson(row));
  for(const key of ['direct_group_memberships','provenance'])if(snapshot.metadata[key])delete snapshot.metadata[key][person.id];
@@ -292,9 +311,9 @@ function personDetails(e){
  el('p','Harte Grenze für diese Person: mehr wird im Planungszeitraum nicht eingeteilt, auch wenn dadurch Stellen offen bleiben. Leer heißt keine Grenze aus dieser Person; Regelprofile gelten unverändert weiter.',hoursGroup).className='helper-text';
  const origin=snapshot.metadata?.provenance?.[e.id]?.nominal_hours;
  const bases={0:['Tagesbasis','hours_day','Tag'],1:['Wochenbasis','hours_week','Woche'],2:['Monatsbasis','hours_month','Monat'],3:['Gesamtbasis','hours_total','Beschäftigungszeitraum']};
- if(origin&&Number.isInteger(origin.calcbase)&&Object.hasOwn(bases,origin.calcbase)){
+ if(origin&&Number.isInteger(ProjectJSON.number(origin.calcbase))&&Object.hasOwn(bases,origin.calcbase)){
   const [basis,key,unit]=bases[origin.calcbase];
-  if(Number.isFinite(origin[key])&&Number.isFinite(origin.target_minutes)&&/^\d{4}-\d{2}-\d{2}$/.test(origin.period_start)&&/^\d{4}-\d{2}-\d{2}$/.test(origin.period_end)){
+  if(Number.isFinite(ProjectJSON.number(origin[key]))&&Number.isFinite(ProjectJSON.number(origin.target_minutes))&&/^\d{4}-\d{2}-\d{2}$/.test(origin.period_start)&&/^\d{4}-\d{2}-\d{2}$/.test(origin.period_end)){
    const imported=el('p',`SP5-Importstand: ${basis} mit ${origin[key].toLocaleString('de-DE')} Stunden je ${unit}. Berechnetes Soll für ${periodText(origin.period_start,origin.period_end)}: ${(origin.target_minutes/60).toLocaleString('de-DE')} Stunden. Teilzeiträume werden nach der SP5-Quellenformel berechnet, nicht pauschal umgerechnet. Das oben bearbeitbare Soll kann inzwischen abweichen.`,hoursGroup);imported.className='helper-text';imported.id='personHoursOrigin';hours.setAttribute('aria-describedby',`${hoursHelp.id} ${imported.id}`);
    if(origin.bookings_included===false)imported.append(document.createTextNode(' Sollbuchungen sind im Importwert nicht enthalten; separat prüfen.'));
   }
@@ -315,7 +334,7 @@ function personDetails(e){
  const editAbsence=(interval=null,index=null)=>{
   if(personDraft&&!window.confirm('Nicht übernommene Abwesenheit verwerfen?'))return;personDraft=false;absenceForm.replaceChildren();
   const group=el('fieldset',undefined,absenceForm);el('legend',interval?'Abwesenheit bearbeiten':'Neue Abwesenheit',group);const row=el('div',undefined,group);row.className='grid';
-  const input=(label,value)=>{const wrap=el('label',label,row),control=el('input',undefined,wrap);control.type='datetime-local';control.required=true;control.value=value;control.oninput=()=>{personDraft=true;invalidateResult();};return control;};
+  const input=(label,value)=>{const wrap=el('label',label,row),control=el('input',undefined,wrap);control.type='datetime-local';control.required=true;control.value=value;control.oninput=()=>{if(projectSwitchBusy())return;personDraft=true;invalidateResult();};return control;};
   const from=input('Abwesend ab',interval?localDateTime(interval.start):snapshot.period_start+'T00:00'),until=input('Abwesend bis',interval?localDateTime(interval.end):dayOffset(snapshot.period_start,1)+'T00:00');
   button(group,'Abwesenheit übernehmen',async()=>{
    if(!from.reportValidity()||!until.reportValidity())return;if(until.value<=from.value)throw Error('Das Ende der Abwesenheit muss nach dem Beginn liegen.');
@@ -406,6 +425,13 @@ function demandCreation(row,cell){
  }
  return null;
 }
+// Same grouping as domain.staffing_gaps: empty IDs are independent;
+// exact nonempty IDs share the largest minimum and sum their staffing.
+function staffingGroups(demands,counts=new Map()){
+ const groups=new Map();
+ for(const demand of demands){const key=JSON.stringify(demand.alternative_group?['alternative',demand.alternative_group]:['demand',demand.id]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(demand);}
+ return [...groups.values()].map(demands=>{const minimum=Math.max(...demands.map(d=>Math.max(0,Number(d.minimum)||0))),staffed=demands.reduce((n,d)=>n+(counts.get(d.id)?.size??0),0);return {demands,minimum,filled:Math.min(minimum,staffed),gap:Math.max(0,minimum-staffed)};});
+}
 function demandTotal(cell){return cell.demands.reduce((sum,d)=>sum+d.minimum,0);}
 function setDemandMinimum(row,cell,value){
  if(!cell.demands.length){
@@ -426,7 +452,14 @@ function setDemandMinimum(row,cell,value){
 }
 function renderDemandSummary(){
  const box=$('demandSummary');box.replaceChildren();
- const minimum=snapshot.demands.reduce((sum,d)=>{const shift=dataIndex().shifts.get(d.shift_id),day=shift?.segments[0]&&localDay(shift.segments[0].start);return sum+(day>=snapshot.period_start&&day<=snapshot.period_end?d.minimum*shift.paid_minutes:0);},0);
+ const groups=staffingGroups(snapshot.demands).filter(group=>{const first=dataIndex().shifts.get(group.demands[0].shift_id)?.segments[0]?.start,day=first&&localDay(first);return day>=snapshot.period_start&&day<=snapshot.period_end;});
+ const minimum=groups.reduce((sum,group)=>{
+  let remaining=group.minimum;
+  const variants=group.demands.map(d=>({minutes:dataIndex().shifts.get(d.shift_id)?.paid_minutes??0,maximum:d.maximum})).sort((a,b)=>a.minutes-b.minutes);
+  for(const variant of variants){const count=Math.min(remaining,variant.maximum??remaining);sum+=count*variant.minutes;remaining-=count;}
+  return sum;
+ },0);
+ if(groups.some(g=>g.demands.length>1))el('p','Alternativen zählen als gemeinsamer Posten. Die Stunden sind eine Untergrenze aus den kürzesten Varianten bis zu deren Höchstbesetzung; längere Varianten und die tatsächliche Besetzbarkeit können mehr Stunden erfordern.',box);
  const target=snapshot.employees.reduce((sum,e)=>sum+(e.excluded?0:e.target_minutes??0),0);
  const ratio=target>0?minimum/target*100:null,balance=ratio===null?'no-target':ratio<80?'low':ratio>120?'high':'balanced';
  box.dataset.balance=balance;box.classList.toggle('warning',balance==='low'||balance==='high');
@@ -489,6 +522,7 @@ function renderDemandBoard(){
    const refresh=()=>{const overridden=cell.demands.some(d=>d.source==='override');input.value=cell.demands.length?demandTotal(cell):'';input.required=!!cell.demands.length;input.setCustomValidity('');td.classList.toggle('overridden',overridden);td.dataset.source=overridden?'override':cell.demands[0]?.source??'';status.textContent=overridden?'Überschrieben':cell.demands.length>1?`${cell.demands.length} Bedarfe`:'';input.title=cell.demands.length>1?'Summe mehrerer Bedarfe; Änderungen werden im Verhältnis der ursprünglichen Mindestbesetzung verteilt.':'Mindestbesetzung direkt eingeben; 0 bedeutet kein Mindestbedarf.';};
    controls.set(day,refresh);refresh();
    input.oninput=()=>{
+    if(projectSwitchBusy())return;
     input.setCustomValidity('');if(input.value===''&&!cell.demands.length)return;
     if(input.value===''||!input.checkValidity()||!Number.isSafeInteger(Number(input.value))){input.setCustomValidity('Eine ganze Zahl ab 0 eingeben; zum Aufheben des Mindestbedarfs 0 verwenden.');return;}
     const value=Number(input.value);if(cell.demands.length&&value===demandTotal(cell))return;
@@ -538,6 +572,7 @@ function renderFunctionDemandBoard(box){
    };
    refresh();
    input.oninput=()=>{
+    if(projectSwitchBusy())return;
     input.setCustomValidity('');if(input.value===''||!input.checkValidity()||!Number.isSafeInteger(Number(input.value))){input.setCustomValidity('Eine ganze Zahl ab 0 eingeben; zum Aufheben des Mindestbedarfs 0 verwenden.');return;}
     const minimum=Number(input.value);let changed=false;
     for(const demand of demands)if(demand.minimum!==minimum){demand.minimum=minimum;if(demand.maximum!==null&&demand.maximum<minimum)demand.maximum=minimum;demand.source='override';changed=true;}
@@ -599,7 +634,14 @@ function renderSetupReview(){
  }
  el('p','Die Eingabeprüfung zeigt offene Regeln. Sie garantiert noch keine vollständige Besetzung oder lösbare Planung.',box);
  const output=el('div',undefined,box);
- button(box,'Planungsbereitschaft prüfen',async()=>{const version=changeVersion,result=await api('/api/readiness','POST',currentSnapshot());if(version!==changeVersion){notice('Projekt geändert. Prüfung erneut starten.');return;}if(!jsonDirty&&!personDraft)setReadinessSummary(result.ready?'ready':'issues',result.diagnostics.length);output.replaceChildren();el('strong',result.ready?'Eingaben geprüft – Berechnung kann gestartet werden.':'Vor der Berechnung noch bearbeiten:',output);const counts=new Map();for(const d of result.diagnostics)counts.set(d.code,(counts.get(d.code)??0)+1);for(const [code,n] of counts)el('p',`${diagnosticTitles[code]??code}: ${n}`,output);const details=el('details',undefined,output);el('summary','Konkrete Hinweise',details);const list=el('div',undefined,details);const draw=()=>{const view=collection(list,'setupReadiness',result.diagnostics,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items)el('p',diagnosticMessage(d),view.content);};draw();});
+ button(box,'Planungsbereitschaft prüfen',async()=>{
+  const binding=inputBinding(),result=await api('/api/readiness','POST',binding.data);if(!inputUnchanged(binding)){notice('Projekt geändert. Prüfung erneut starten.');return;}
+  const summary=diagnosticCounts(result);if(typeof result.ready!=='boolean'||result.ready!==(summary.total===0))throw Error('Unvollständige Antwort der Vorprüfung.');
+  if(!jsonDirty&&!personDraft)setReadinessSummary(result.ready?'ready':'issues',summary.total);
+  output.replaceChildren();el('strong',result.ready?'Eingaben geprüft – Berechnung kann gestartet werden.':'Vor der Berechnung noch bearbeiten:',output);renderDiagnosticOmissions(output,summary);
+  const counts=new Map();for(const d of result.diagnostics)counts.set(d.code,(counts.get(d.code)??0)+1);for(const [code,n] of counts)el('p',`${diagnosticTitles[code]??code}: ${n}${summary.omitted?' angezeigt':''}`,output);
+  const details=el('details',undefined,output);el('summary','Konkrete Hinweise',details);const list=el('div',undefined,details);const draw=()=>{const view=collection(list,'setupReadiness',result.diagnostics,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items)el('p',diagnosticMessage(d),view.content);};draw();
+ });
 }
 function renderReferenceImport(){
  const box=$('referenceImport'),rows=snapshot.metadata.reference_schedule;
@@ -630,7 +672,7 @@ function renderReferenceImport(){
  const services=new Map((snapshot.metadata.services??[]).map(service=>[service.function_id,service]));
  const identity=row=>({person:dataIndex().employees.get(`sp5:employee:${row?.employee_id}`),service:services.get(`sp5:service:${row?.shift_id}`)});
  const render=()=>{const filtered=rows.filter(row=>!state.filter||state.filter==='all'||status(row)===state.filter);
-  const view=collection(content,'referenceImport',filtered,{size:10,label:'Vergleichsdienste',search:row=>{const {person,service}=identity(row);return `${person?.name??''} ${service?.name??''} sp5:employee:${row?.employee_id} sp5:service:${row?.shift_id} ${JSON.stringify(row)}`;},redraw:render});
+  const view=collection(content,'referenceImport',filtered,{size:10,label:'Vergleichsdienste',search:row=>{const {person,service}=identity(row);return `${person?.name??''} ${service?.name??''} sp5:employee:${row?.employee_id} sp5:service:${row?.shift_id} ${ProjectJSON.stringify(row)}`;},redraw:render});
   if(!view.total)el('p','Keine passenden Vergleichsdienste. Suchbegriff oder Zuordnungsfilter ändern; der Importstand bleibt unverändert.',view.content);
   for(const row of view.items){const item=el('div',undefined,view.content);item.className='card';
    const {person,service}=identity(row);
@@ -806,6 +848,8 @@ function renderRestDefaults(box){
 function renderPlan(){renderCalendar();if($('assignmentDetails').open)renderAssignments();renderReplacementForm();}
 // A sick call is answered by phone, not by replanning: the search proposes people.
 const replacementChoice={person:'',from:'',bis:''};
+let replacementRequest=0;
+function clearReplacement(){replacementRequest++;$('replacementResult')?.replaceChildren();}
 function renderReplacementForm(){
  const box=$('replacementForm');if(!box)return;box.replaceChildren();
  const idx=dataIndex(),name=id=>idx.employees.get(id)?.name??id;
@@ -814,12 +858,14 @@ function renderReplacementForm(){
  if(!betroffen.includes(replacementChoice.person))replacementChoice.person=betroffen[0];
  replacementChoice.from=replacementChoice.from||snapshot.period_start;
  replacementChoice.bis=replacementChoice.bis||replacementChoice.from;
- select(box,'Abwesende Person',replacementChoice.person,betroffen.map(id=>[id,name(id)]),v=>replacementChoice.person=v,{updatesProject:false});
- field(box,'Abwesend ab',replacementChoice.from,v=>replacementChoice.from=v,'date');
- field(box,'Abwesend bis',replacementChoice.bis,v=>replacementChoice.bis=v,'date');
+ select(box,'Abwesende Person',replacementChoice.person,betroffen.map(id=>[id,name(id)]),v=>{replacementChoice.person=v;clearReplacement();},{updatesProject:false});
+ field(box,'Abwesend ab',replacementChoice.from,v=>{replacementChoice.from=v;clearReplacement();},'date',{updatesProject:false});
+ field(box,'Abwesend bis',replacementChoice.bis,v=>{replacementChoice.bis=v;clearReplacement();},'date',{updatesProject:false});
  button(box,'Ersatz suchen',async()=>{
-  const report=await api('/api/replacement','POST',{snapshot:currentSnapshot(),assignments,employee_id:replacementChoice.person,
-   absent_from:replacementChoice.from,absent_until:replacementChoice.bis});
+  const binding=inputBinding(),choice={...replacementChoice},request=++replacementRequest;
+  const report=await api('/api/replacement','POST',{snapshot:binding.data,assignments:binding.data.assignments,employee_id:choice.person,
+   absent_from:choice.from,absent_until:choice.bis});
+  if(request!==replacementRequest||!inputUnchanged(binding)||JSON.stringify(choice)!==JSON.stringify(replacementChoice))return;
   renderReplacementResult(report);
  }).id='findReplacement';
 }
@@ -959,8 +1005,8 @@ function renderLiveProgress(steps,elapsed,limit){
  }
  if(laufend){
   const teile=[`${laufend.solutions??0} Lösungen gefunden`];
-  if(Number.isFinite(laufend.objective))teile.push(`beste Bewertung ${zahl(laufend.objective)}`);
-  if(Number.isFinite(laufend.bound))teile.push(`untere Schranke ${zahl(laufend.bound)}`);
+  if(Number.isFinite(ProjectJSON.number(laufend.objective)))teile.push(`beste Bewertung ${zahl(laufend.objective)}`);
+  if(Number.isFinite(ProjectJSON.number(laufend.bound)))teile.push(`untere Schranke ${zahl(laufend.bound)}`);
   zeile(`${PHASENNAMEN[laufend.phase]??laufend.phase} · sucht`,teile.join(' · '),false).classList.add('running');
  }
  const letzteBelegung=[...steps].reverse().find(step=>Array.isArray(step.grid));
@@ -1036,6 +1082,15 @@ function openRulesReview(id){
  const disclosure=target.closest('details');if(disclosure)disclosure.open=true;
  const heading=target.querySelector('h3')??target;heading.tabIndex=-1;heading.focus();target.scrollIntoView({block:'start'});
 }
+function diagnosticCounts(report){
+ if(!Array.isArray(report?.diagnostics)||report.diagnostics.some(d=>!d||typeof d.message!=='string'||typeof d.code!=='string'))throw Error('Unvollständiger Prüfbericht.');
+ const shown=report.diagnostics.length,total=report.diagnostics_total??shown,omitted=report.diagnostics_omitted??(total-shown);
+ if(!Number.isSafeInteger(total)||!Number.isSafeInteger(omitted)||omitted<0||total!==shown+omitted)throw Error('Unvollständige Hinweiszahlen im Prüfbericht.');
+ return {shown,total,omitted};
+}
+function renderDiagnosticOmissions(parent,{shown,total,omitted}){
+ if(omitted)el('p',`Prüfbericht gekürzt: ${total.toLocaleString('de-DE')} Hinweise insgesamt; ${shown.toLocaleString('de-DE')} angezeigt, ${omitted.toLocaleString('de-DE')} aus der Antwort ausgelassen. Einzelhinweise und Kategorien zeigen nur die übermittelte Auswahl. Das Prüfergebnis gilt für alle Hinweise.`,parent).className='diagnostic-volume-hint';
+}
 function refreshAutomaticReadiness(force=false){
  if(!snapshot||activePanel!=='calculate')return;
  const status=$('automaticReadinessStatus'),details=$('automaticReadinessDetails'),retry=$('retryReadiness');
@@ -1045,20 +1100,23 @@ function refreshAutomaticReadiness(force=false){
   display('draft','Offene JSON- oder Abwesenheitsbearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Vorprüfung.');return;
  }
  if(!force&&(readinessVersion===changeVersion||readinessPending===changeVersion))return;
+ let binding;try{binding=inputBinding();}catch(error){display('error',error.message);return;}
  const version=changeVersion,request=++readinessRequest;readinessVersion=-1;readinessPending=version;retry.hidden=true;details.replaceChildren();
  display('pending','Aktuelle Eingaben werden geprüft …');
- const current=()=>request===readinessRequest&&version===changeVersion&&!jsonDirty&&!personDraft;
- api('/api/readiness','POST',currentSnapshot()).then(result=>{
+ const current=()=>{try{return request===readinessRequest&&inputUnchanged(binding);}catch(error){notice(error.message,true);return false;}};
+ api('/api/readiness','POST',binding.data).then(result=>{
   if(!current())return;
-  if(typeof result?.ready!=='boolean'||!Array.isArray(result.diagnostics)||result.diagnostics.some(d=>!d||typeof d.message!=='string'||typeof d.code!=='string')||result.ready!==(result.diagnostics.length===0))throw Error('Unvollständige Antwort der Vorprüfung.');
+  const summary=diagnosticCounts(result);
+  if(typeof result?.ready!=='boolean'||result.ready!==(summary.total===0))throw Error('Unvollständige Antwort der Vorprüfung.');
   readinessVersion=version;readinessPending=-1;
-  display(result.ready?'ready':'issues',result.ready?'Keine offenen Eingabefehler gefunden. Die Berechnung und anschließende Ergebnisprüfung stehen noch aus.':`${result.diagnostics.length.toLocaleString('de-DE')} Hinweise vor der Berechnung prüfen.`,result.diagnostics.length);
+  display(result.ready?'ready':'issues',result.ready?'Keine offenen Eingabefehler gefunden. Die Berechnung und anschließende Ergebnisprüfung stehen noch aus.':`${summary.total.toLocaleString('de-DE')} Hinweise vor der Berechnung prüfen.`,summary.total);
+  renderDiagnosticOmissions(details,summary);
   if(result.diagnostics.length){
    const disclosure=el('details',undefined,details);disclosure.open=true;el('summary','Konkrete Prüfhinweise',disclosure);
    const counts=new Map();for(const diagnostic of result.diagnostics)counts.set(diagnostic.code,(counts.get(diagnostic.code)??0)+1);
    const state=pageState('automaticReadiness',10);if(!counts.has(state.filter)){state.filter='all';state.page=0;}
    const label=el('label','Hinweiskategorie',disclosure),filter=el('select',undefined,label);filter.id='readinessCategory';
-   el('option',`Alle Hinweise (${result.diagnostics.length.toLocaleString('de-DE')})`,filter).value='all';
+   el('option',`${summary.omitted?'Angezeigte Hinweise':'Alle Hinweise'} (${result.diagnostics.length.toLocaleString('de-DE')})`,filter).value='all';
    for(const [code,count] of counts)el('option',`${diagnosticTitles[code]??code} (${count.toLocaleString('de-DE')})`,filter).value=code;
    filter.value=state.filter;
    const actions=el('div',undefined,disclosure);actions.className='readiness-actions';
@@ -1112,8 +1170,10 @@ function renderApprovalLeverage(){
  const inhalt=el('div',undefined,box);
  el('p','Die Vorschau erteilt keine Freigabe und schlägt keine vor. Sie zeigt nur, wo die Freigabe die einzige Hürde wäre: welche sonst unbesetzbare Stelle dadurch besetzbar würde und wie viel vom Rückstand der Person in Reichweite käme. Ob die Suche die Arbeit dann wirklich verschiebt, entscheiden alle übrigen Regeln mit.',inhalt).className='helper-text';
  button(inhalt,'Vorschau berechnen',async()=>{
-  const bericht=await api('/api/approval-leverage','POST',{snapshot:currentSnapshot(),assignments});
-  const ziel=$('approvalLeverageResult');ziel.replaceChildren();
+  const binding=inputBinding(),ziel=$('approvalLeverageResult');
+  const bericht=await api('/api/approval-leverage','POST',{snapshot:binding.data,assignments:binding.data.assignments});
+  if(!inputUnchanged(binding)||!ziel?.isConnected||ziel!==$('approvalLeverageResult'))return;
+  ziel.replaceChildren();
   if(!bericht.rows.length){el('p','Keine Freigabe würde hier etwas öffnen: überall steht noch etwas anderes im Weg.',ziel);return;}
   const idx=dataIndex(),dienste=new Map((snapshot.metadata.services??[]).map(s=>[s.function_id??'sp5:service:'+s.id,s]));
   const benennen=row=>[idx.employees.get(row.employee_id)?.name??row.employee_id,dienste.get(row.function_id)?.name??row.function_id];
@@ -1177,6 +1237,9 @@ function renderOpenDecisions(){
  }
 }
 function renderPlanMetrics(m){
+  // Presentation-only views: float zero must not turn into a truthy counter.
+  const numbers=record=>Object.fromEntries(Object.entries(record??{}).map(([key,value])=>{const n=ProjectJSON.number(value);return [key,Number.isFinite(n)?n:value];}));
+  m={...numbers(m),hours_attainment:numbers(m.hours_attainment),approval_reach:numbers(m.approval_reach),free_time:numbers(m.free_time)};
   if(m.split_weekends_in_plan||m.split_weekends_forced_by_demand){
    const n=m.split_weekends_in_plan,forcedSplits=m.split_weekends_forced_by_demand,blocked=m.split_weekends_blocked_by_approval;
    const parts=[(n===1?'1 geteiltes Wochenende':`${n} geteilte Wochenenden`)+' im Plan.'];
@@ -1215,7 +1278,7 @@ function renderPlanMetrics(m){
    el('p','Bei diesen Stellen ist die persönliche Dienstfreigabe die einzige Hürde; ohne sie bleibt die Stelle unbesetzbar. Die Liste nennt nur, wo eine Freigabe fehlt. Sie erteilt keine und schlägt auch keine vor.',gapBox);
    if(gapHours)el('p','Sortiert nach der Arbeitszeit, die eine einzelne Freigabe zugänglich machen würde – oben steht, was am meisten bringt.',gapBox).className='helper-text';
    button(gapBox,'Fehlende Freigaben als CSV',()=>{
-    const quote=value=>{const text=String(value??'');return /[";\r\n]/.test(text)?'"'+text.replace(/"/g,'""')+'"':text;};
+    const quote=TeamTransfer.csvCell;
     const lines=[['Person','Dienst','Blockierte Stellen','Blockierte Stunden'],
      ...gaps.map(row=>[...gapName(row),row.blocked_demands,((row.blocked_minutes??0)/60).toLocaleString('de-DE',{maximumFractionDigits:1})])];
     download(new Blob(['\ufeff'+lines.map(line=>line.map(quote).join(';')).join('\r\n')+'\r\n'],{type:'text/csv;charset=utf-8'}),
@@ -1232,11 +1295,12 @@ function renderPlanMetrics(m){
   }
 }
 function renderValidation(report){
- $('validation').textContent=JSON.stringify(report,null,2);$('validationSummary')?.remove();
+ $('validation').textContent=ProjectJSON.stringify(report,null,2);$('validationSummary')?.remove();
  let raw=$('validationRaw');if(!raw){raw=el('details');raw.id='validationRaw';el('summary','Technischer Prüfbericht (JSON)',raw);$('validation').before(raw);raw.append($('validation'));}
  const box=el('div');box.id='validationSummary';box.className='validation-summary';raw.before(box);
  const heading=el('p',report.valid?(report.complete?'Vollständig und geprüft':'Gültiger Teilplan mit offenen Stellen'):'Regelverletzungen müssen korrigiert werden',box);heading.className=report.valid&&report.complete?'good':'bad';
- if(!report.diagnostics.length){el('p','Die unabhängige Prüfung hat keine Regelverletzungen oder unbesetzten Stellen gefunden.',box);return;}
+ const summary=diagnosticCounts(report);renderDiagnosticOmissions(box,summary);
+ if(!summary.shown){el('p',report.valid&&report.complete&&summary.total===0?'Die unabhängige Prüfung hat keine Regelverletzungen oder unbesetzten Stellen gefunden.':'Keine Einzelhinweise in dieser Antwort enthalten. Das Prüfergebnis oben bleibt maßgeblich; Eingaben prüfen und erneut prüfen lassen.',box);return;}
  const grouped=new Map(),idx=dataIndex();for(const diagnostic of report.diagnostics){if(!grouped.has(diagnostic.code))grouped.set(diagnostic.code,[]);grouped.get(diagnostic.code).push(diagnostic);}
  for(const [code,entries] of grouped){const group=el('details',undefined,box);group.className='validation-group';group.open=grouped.size===1;el('summary',`${diagnosticTitles[code]??'Regel prüfen'} · ${entries.length}`,group);
  if(entries.length>20)el('p','Viele gleichartige Befunde lassen sich meist gesammelt erledigen.',group).className='diagnostic-volume-hint';
@@ -1252,28 +1316,39 @@ async function save(){
  if(jsonDirty)throw Error('JSON-Änderungen zuerst übernehmen oder mit „Aktuelle Daten anzeigen“ verwerfen.');
  const invalid=$('workspace').querySelector('input:invalid');
  if(invalid){const panel=invalid.closest('[data-panel]')?.dataset.panel;if(panel){renderedPanels.set(panel,changeVersion);navigate(panel);}let parent=invalid.parentElement;while(parent){if(parent.tagName==='DETAILS')parent.open=true;parent=parent.parentElement;}invalid.scrollIntoView({block:'center',behavior:'smooth'});invalid.reportValidity();throw Error('Ungültige oder fehlende Eingabe korrigieren.');}
- const persisted=await api('/api/snapshots','PUT',currentSnapshot());
- snapshot.revision=persisted.revision;snapshot.assignments=structuredClone(assignments);dirty=false;jsonVersion=-1;updateSaveStatus();$('source').textContent=`Quelle: ${snapshot.source==='synthetic'?'SYNTHETISCHE DEMO':snapshot.source} · ${periodText(snapshot.period_start,snapshot.period_end)} · ${snapshot.timezone} · Stand ${snapshot.revision}`;
- syncJson();
- await saved();notice('Regeln und Entwurf dauerhaft gespeichert.');
+ const owner=snapshot,version=changeVersion,sent=ProjectJSON.clone(currentSnapshot());
+ const stagedAssignments=ProjectJSON.clone(sent.assignments),stagedInput=ProjectJSON.clone(sent);
+ const persisted=await api('/api/snapshots','PUT',sent);
+ if(snapshot!==owner||snapshot.id!==sent.id||snapshot.revision!==sent.revision)return;
+ const unchanged=version===changeVersion&&!jsonDirty&&!personDraft&&ProjectJSON.stringify(currentSnapshot())===ProjectJSON.stringify(sent);
+ stagedInput.revision=persisted.revision;const text=unchanged?ProjectJSON.stringify(stagedInput,null,2):null;
+ snapshot.revision=persisted.revision;snapshot.assignments=stagedAssignments;dirty=!unchanged;jsonVersion=-1;updateSaveStatus();$('source').textContent=`Quelle: ${snapshot.source==='synthetic'?'SYNTHETISCHE DEMO':snapshot.source} · ${periodText(snapshot.period_start,snapshot.period_end)} · ${snapshot.timezone} · Stand ${snapshot.revision}`;
+ if(unchanged){$('json').value=text;jsonVersion=changeVersion;}
+ const binding=unchanged?{owner:snapshot,version:changeVersion,data:stagedInput}:null;
+ await saved();if(snapshot===owner)notice(dirty?'Übertragener Stand gespeichert; neuere Änderungen sind noch ungespeichert.':'Regeln und Entwurf dauerhaft gespeichert.');
+ return binding;
 }
 async function solve(){
  if(solving||jobId)throw Error('Eine Berechnung läuft bereits.');if(!snapshot)throw Error('Zuerst Daten laden');
  if(!$('limit').checkValidity()){$('limit').reportValidity();throw Error('Zeitlimit zwischen 1 und 600 Sekunden eingeben.');}
  solving=true;updateJobButtons();navigate('calculate');
- try{await save();const j=await api('/api/jobs','POST',{snapshot_id:snapshot.id,snapshot_revision:snapshot.revision,time_limit:Number($('limit').value),partial:$('partial').checked});jobId=j.id;updateJobButtons();clearTimeout(timer);await poll();await savedJobs().catch(e=>notice('Liste der Berechnungen konnte nicht aktualisiert werden. '+e.message,true));}
+ try{const binding=await save();if(!inputUnchanged(binding))throw Error('Projekt während des Speicherns geändert. Aktuellen Stand erneut berechnen.');
+ const j=await api('/api/jobs','POST',{snapshot_id:binding.data.id,snapshot_revision:binding.data.revision,time_limit:Number($('limit').value),partial:$('partial').checked});
+ if(!inputUnchanged(binding)){notice('Projekt geändert. Berechnung bleibt separat gespeichert; kein Ergebnis wird übernommen.');await savedJobs();return;}
+ jobId=j.id;jobInput=binding;updateJobButtons();clearTimeout(timer);await poll();await savedJobs().catch(e=>notice('Liste der Berechnungen konnte nicht aktualisiert werden. '+e.message,true));}
  finally{solving=false;updateJobButtons();}
 }
 async function poll(){
- const requestedJob=jobId;if(!requestedJob)return;
+ const requestedJob=jobId,binding=jobInput;if(!requestedJob)return;
+ const current=()=>{if(jobId!==requestedJob)return false;if(inputUnchanged(binding))return true;jobId=null;jobInput=null;updateJobButtons();notice('Projekt geändert. Veraltetes Berechnungsergebnis nicht übernommen. Berechnung separat öffnen oder erneut starten.');return false;};
  try{
-  let j=await api('/api/jobs/'+encodeURIComponent(requestedJob)+'/status');if(jobId!==requestedJob)return;
-  if(!['queued','running'].includes(j.state)){j=await api('/api/jobs/'+encodeURIComponent(requestedJob));if(jobId!==requestedJob)return;}
+  let j=await api('/api/jobs/'+encodeURIComponent(requestedJob)+'/status');if(!current())return;
+  if(!['queued','running'].includes(j.state)){j=await api('/api/jobs/'+encodeURIComponent(requestedJob));if(!current())return;}
   $('job').textContent=`${jobStates[j.state]??j.state} · ${Math.max(0,Math.round((j.finished_at??Date.now()/1000)-(j.started_at??j.created_at)))} Sekunden`;
   if(['queued','running'].includes(j.state)){
    renderLiveProgress(Array.isArray(j.progress)?j.progress:[],j.elapsed_seconds??0,Number($('limit').value)||0);
    timer=setTimeout(poll,1000);return;}
-  jobId=null;updateJobButtons();
+  jobId=null;jobInput=null;updateJobButtons();
   if(j.error)notice(j.error,true);
   if(j.result){
    const valid=j.result.validation.valid,complete=j.result.validation.complete;
@@ -1285,7 +1360,7 @@ async function poll(){
    if(j.result.solver_status==='UNKNOWN')el('p','Eine Suche ohne Lösung beweist keine Unlösbarkeit. Prüfhinweise beachten; bei einem Zeitlimit mit mehr Suchzeit erneut berechnen.',$('result'));
    renderPlanMetrics(j.result.metrics??{});
    renderSearchTrace($('result'),j.result.parameters);
-   const evaluation=el('details',undefined,$('result'));el('summary','Technische Auswertung',evaluation);evaluation.ontoggle=()=>{if(evaluation.open&&!evaluation.querySelector('pre'))el('pre',JSON.stringify({solver_status:j.result.solver_status,offene_Stellen:j.result.vacancies,auswertung:j.result.metrics},null,2),evaluation);};
+   const evaluation=el('details',undefined,$('result'));el('summary','Technische Auswertung',evaluation);evaluation.ontoggle=()=>{if(evaluation.open&&!evaluation.querySelector('pre'))el('pre',ProjectJSON.stringify({solver_status:j.result.solver_status,offene_Stellen:j.result.vacancies,auswertung:j.result.metrics},null,2),evaluation);};
    renderValidation(j.result.validation);$('validationDetails').open=!valid||!complete;
    if(accepted&&previous.length){const old=new Set(previous.map(a=>a.employee_id+'|'+a.demand_id)),next=new Set(assignments.map(a=>a.employee_id+'|'+a.demand_id));el('p',`Vergleich: ${[...next].filter(x=>!old.has(x)).length} hinzugefügt, ${[...old].filter(x=>!next.has(x)).length} entfernt.`,$('result'));}
    navigate('plan');renderPlan();syncJson();publishState();notice(!accepted?'Kein neuer Plan übernommen. Bisherige Einteilungen und Prüfbericht beachten.':complete?'Berechnung abgeschlossen. Entwurf prüfen und dauerhaft speichern.':'Berechnung abgeschlossen. Prüfbericht und offene Stellen beachten.',!accepted);
@@ -1299,36 +1374,35 @@ async function poll(){
   $('job').textContent='Verbindung zur Berechnung unterbrochen. Status wird erneut abgerufen …';timer=setTimeout(poll,2000);
  }
 }
-action('demo',async()=>{if(canReplace())load(await api('/api/demo'));});
+action('demo',async()=>{if(canReplace()){const binding=replacementBinding(),candidate=await api('/api/demo');requireReplacement(binding);load(candidate);}});
 action('inspect',async()=>{const key=JSON.stringify([$('sourceType').value,$('directory').value]);const source=await api($('sourceType').value==='api'?'/api/remote-source':'/api/source?directory='+encodeURIComponent($('directory').value));if(key!==JSON.stringify([$('sourceType').value,$('directory').value])){notice('Datenquelle geändert. Teams erneut laden.');return;}groups=source.groups;checkedTeams.clear();renderTeams();notice(`${groups.length} Teams gefunden. Gewünschte Teams auswählen.`);});
-action('import',async()=>{if(!checkedTeams.size)throw Error('Mindestens ein Team auswählen.');if($('reuseSetup').checked&&!snapshot)throw Error('Zuerst das bisherige Projekt öffnen.');if(!canReplace())return;const setupPrevious=$('reuseSetup').checked?currentSnapshot():null;const setupOptions={sameSource:$('reuseSetup').checked,classify:$('autoKind').checked,rule:{start:$('setupNightStart').value,end:$('setupNightEnd').value,minimum:Number($('setupNightMin').value)}};notice('Import einschließlich historischer Basis läuft …');const r=await api($('sourceType').value==='api'?'/api/remote-import':'/api/import','POST',{...($('sourceType').value==='directory'?{directory:$('directory').value}:{}),period_start:$('start').value,period_end:$('end').value,team_ids:[...checkedTeams],timezone:$('timezone').value,history_plan:$('historyPlan').value,reference_plan:$('referencePlan').value,auto_history:$('autoHistory').checked,history_min_days:Number($('historyMinDays').value),existing_plan_mode:$('existingPlanMode').value,demand_source:$('demandSource').value,demand_history_start:$('demandHistoryStart').value||null,demand_history_end:$('demandHistoryEnd').value||null,history_start:$('historyStart').value||null,history_end:$('historyEnd').value||null});const prepared=SetupAssistant.prepare(r.snapshot,setupPrevious,setupOptions);const checked=await api('/api/snapshots/check','POST',prepared);load(checked);navigate('rules');});
+action('import',async()=>{if(!checkedTeams.size)throw Error('Mindestens ein Team auswählen.');if($('reuseSetup').checked&&!snapshot)throw Error('Zuerst das bisherige Projekt öffnen.');if(!canReplace())return;const binding=replacementBinding();const setupPrevious=$('reuseSetup').checked?currentSnapshot():null;const setupOptions={sameSource:$('reuseSetup').checked,classify:$('autoKind').checked,rule:{start:$('setupNightStart').value,end:$('setupNightEnd').value,minimum:Number($('setupNightMin').value)}};notice('Import einschließlich historischer Basis läuft …');const r=await api($('sourceType').value==='api'?'/api/remote-import':'/api/import','POST',{...($('sourceType').value==='directory'?{directory:$('directory').value}:{}),period_start:$('start').value,period_end:$('end').value,team_ids:[...checkedTeams],timezone:$('timezone').value,history_plan:$('historyPlan').value,reference_plan:$('referencePlan').value,auto_history:$('autoHistory').checked,history_min_days:Number($('historyMinDays').value),existing_plan_mode:$('existingPlanMode').value,demand_source:$('demandSource').value,demand_history_start:$('demandHistoryStart').value||null,demand_history_end:$('demandHistoryEnd').value||null,history_start:$('historyStart').value||null,history_end:$('historyEnd').value||null});const prepared=SetupAssistant.prepare(r.snapshot,setupPrevious,setupOptions);const checked=await api('/api/snapshots/check','POST',prepared);requireReplacement(binding);load(checked);navigate('rules');});
 action('save',save);action('saveDraft',save);
 function projectSwitchBusy(){return projectBusy||solving||!!jobId||['save','saveDraft','demo','import','applyJson','file'].some(id=>$(id).dataset.busy==='true');}
 async function openSavedProject(id){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');if(!id||!canReplace())return false;
- projectBusy=true;updateJobButtons();try{const original=await api('/api/snapshots/'+encodeURIComponent(id));const checked=await api('/api/snapshots/check','POST',original);load(checked,true);return true;}finally{projectBusy=false;updateJobButtons();}
+ const binding=replacementBinding();projectBusy=true;updateJobButtons();try{const original=await api('/api/snapshots/'+encodeURIComponent(id));const checked=await api('/api/snapshots/check','POST',original);requireReplacement(binding);load(checked,true);return true;}finally{projectBusy=false;updateJobButtons();}
 }
 async function openJob(id){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');if(!id||!canReplace())return false;
- projectBusy=true;updateJobButtons();try{const stored=await api('/api/jobs/'+encodeURIComponent(id)+'/snapshot');const original=await api('/api/snapshots/check','POST',stored);original.id=projectId();original.revision='0';original.metadata={...original.metadata,restored_from_job:id};load(original);jobId=id;updateJobButtons();navigate('calculate');await poll();return true;}finally{projectBusy=false;updateJobButtons();}
+ const binding=replacementBinding();projectBusy=true;updateJobButtons();try{const stored=await api('/api/jobs/'+encodeURIComponent(id)+'/snapshot');const original=await api('/api/snapshots/check','POST',stored);original.id=projectId();original.revision='0';original.metadata={...original.metadata,restored_from_job:id};requireReplacement(binding);const restored=ProjectJSON.clone(original);load(original);jobId=id;jobInput={owner:snapshot,version:changeVersion,data:restored};updateJobButtons();navigate('calculate');await poll();return true;}finally{projectBusy=false;updateJobButtons();}
 }
 action('restore',()=>openSavedProject($('saved').value));action('refreshJobs',savedJobs);action('restoreJob',()=>openJob($('savedJobs').value));
 action('solve',solve);
 action('cancel',async()=>{await api('/api/jobs/'+encodeURIComponent(jobId)+'/cancel','POST');await poll();});
 action('retryReadiness',()=>refreshAutomaticReadiness(true));
 action('validate',async()=>{
- const version=changeVersion;$('validationDetails').open=true;const report=await api('/api/validate','POST',{snapshot,assignments});
- if(version!==changeVersion){notice('Daten während der Prüfung geändert. Aktuellen Entwurf erneut prüfen.');return;}
+ const binding=inputBinding();$('validationDetails').open=true;const report=await api('/api/validate','POST',{snapshot,assignments});
+ if(!inputUnchanged(binding)){notice('Daten während der Prüfung geändert. Aktuellen Entwurf erneut prüfen.');return;}
  renderValidation(report);
  notice(report.valid?(report.complete?'Entwurf ist vollständig und geprüft.':'Teilplan geprüft. Offene Stellen im Prüfbericht beachten.'):'Entwurf enthält Regelverletzungen. Prüfbericht beachten.',!report.valid);
 });
 action('recompute',async()=>{previous=structuredClone(assignments);await solve();});
-action('refreshJson',()=>{if(jsonDirty&&!window.confirm('Nicht übernommene JSON-Änderungen verwerfen?'))return;jsonDirty=false;jsonVersion=-1;syncJson(true);updateSaveStatus();});
-action('applyJson',async()=>{const checked=await readProject($('json').value);load(checked);});
-$('json').oninput=()=>{jsonDirty=true;updateSaveStatus();};
+action('refreshJson',()=>{if(jsonDirty&&!window.confirm('Nicht übernommene JSON-Änderungen verwerfen?'))return;const text=ProjectJSON.stringify(currentSnapshot(),null,2);$('json').value=text;jsonDirty=false;jsonVersion=changeVersion;updateSaveStatus();});
+action('applyJson',async()=>{const binding=replacementBinding(),checked=await readProject($('json').value);requireReplacement(binding);load(checked);});
+$('json').oninput=()=>{if(projectSwitchBusy())return;jsonDirty=true;updateSaveStatus();};
 $('file').onchange=()=>runAction($('file'),async()=>{
- try{const file=$('file').files[0];if(!file)return;if(file.size>16*1024*1024)throw Error('Projektdatei überschreitet die Grenze von 16 MiB.');const checked=await readProject(await file.text());if(canReplace())load(checked);}
- finally{$('file').value='';}
+ const binding=replacementBinding(),file=$('file').files[0];if(!file)return;if(file.size>16*1024*1024)throw Error('Projektdatei überschreitet die Grenze von 16 MiB.');const checked=await readProject(await file.text());requireReplacement(binding);if(canReplace()){load(checked);$('file').value='';}
 });
 let teamTransferReport=null,teamTransferVersion=-1;
 action('teamExport',()=>{
@@ -1342,8 +1416,10 @@ $('teamImport').onchange=()=>runAction($('teamImport'),async()=>{
   const file=$('teamImport').files[0];if(!file)return;
   if(!snapshot)throw Error('Zuerst ein Projekt öffnen.');
   if(file.size>16*1024*1024)throw Error('Die Datei überschreitet die Grenze von 16 MiB.');
-  teamTransferReport=TeamTransfer.preview(currentSnapshot(),await file.text());
-  teamTransferVersion=changeVersion;
+  const binding=inputBinding(),text=await file.text();
+  if(!inputUnchanged(binding)){notice('Projekt seit dem Einlesen geändert. Datei erneut prüfen.');return;}
+  teamTransferReport=TeamTransfer.preview(binding.data,text);
+  teamTransferVersion=binding.version;
   renderTeamTransfer();
  } finally {$('teamImport').value='';}
 });
@@ -1379,13 +1455,13 @@ action('backup',()=>{
  checkPeopleReady();
  if(personDraft)throw Error('Die bearbeitete Abwesenheit zuerst übernehmen oder abbrechen.');
  if(jsonDirty)throw Error('JSON-Änderungen zuerst übernehmen oder verwerfen, damit die Projektsicherung den angezeigten Stand enthält.');
- download(new Blob([JSON.stringify(currentSnapshot(),null,2)],{type:'application/json'}),`projekt-${snapshot.period_start}-${snapshot.period_end}.json`);notice('Vollständiges Projekt mit Regeln und aktuellem Entwurf heruntergeladen.');
+ download(new Blob([ProjectJSON.stringify(currentSnapshot(),null,2)],{type:'application/json'}),`projekt-${snapshot.period_start}-${snapshot.period_end}.json`);notice('Vollständiges Projekt mit Regeln und aktuellem Entwurf heruntergeladen.');
 });
 document.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>runAction(b,async()=>{
  checkPeopleReady();
  if(personDraft)throw Error('Die bearbeitete Abwesenheit zuerst übernehmen oder abbrechen.');
  if(jsonDirty)throw Error('JSON-Änderungen zuerst übernehmen oder verwerfen.');
- const f=b.dataset.export,r=await fetch('/api/export/'+f,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({snapshot,assignments})});
+ const f=b.dataset.export,r=await fetch('/api/export/'+f,{method:'POST',headers:{'Content-Type':'application/json'},body:ProjectJSON.stringify({snapshot,assignments})});
  if(!r.ok)throw await responseError(r);if(r.redirected)throw Error('Anmeldung abgelaufen. Projekt sichern und erneut anmelden.');download(await r.blob(),'plan.'+f);
 }));
 $('saved').onchange=updateJobButtons;$('savedJobs').onchange=updateJobButtons;
@@ -1427,7 +1503,7 @@ action('prepareNextPeriod',()=>{
  notice(`${periodText(next.start,next.end)} und Historie vorbelegt. Quelle, Teams und Importoptionen prüfen; erst „Daten importieren“ startet den Import. Das geöffnete Projekt bleibt unverändert.`);
 });
 $('followPeriodMode').onchange=()=>updateJobButtons();
-function serviceMatrix(){return snapshot?.metadata?.service_matrix_version===1;}
+function serviceMatrix(){return ProjectJSON.number(snapshot?.metadata?.service_matrix_version)===1;}
 function relatedApproval(a,p){return a.function_id===p.function_id&&(serviceMatrix()&&p.workplace_id==='*'||a.workplace_id===p.workplace_id);}
 function samePosition(a,b){return a.function_id===b.function_id&&a.workplace_id===b.workplace_id;}
 function approved(e,p){return e.approvals.some(a=>samePosition(a,p)&&a.valid_from<=snapshot.period_start&&a.valid_until>=snapshot.period_end);}
@@ -1435,8 +1511,20 @@ function suggested(e,p){return (dataIndex().history.get(e.id)?.suggested_approva
 function dayOffset(day,delta){const date=new Date(day+'T12:00:00Z');date.setUTCDate(date.getUTCDate()+delta);return date.toISOString().slice(0,10);}
 function setApproval(e,p,enabled,quiet){
  invalidateResult();
- if(enabled){if(!approved(e,p))e.approvals.push({function_id:p.function_id,workplace_id:p.workplace_id,valid_from:snapshot.period_start,valid_until:snapshot.period_end,supervised:e.approvals.some(a=>relatedApproval(a,p)&&a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start)});}
- else {e.approvals=e.approvals.flatMap(a=>{if(!relatedApproval(a,p)||a.valid_until<snapshot.period_start||a.valid_from>snapshot.period_end)return[a];const remaining=[];if(a.valid_from<snapshot.period_start)remaining.push({...a,valid_until:dayOffset(snapshot.period_start,-1)});if(a.valid_until>snapshot.period_end)remaining.push({...a,valid_from:dayOffset(snapshot.period_end,1)});return remaining;});}
+ if(enabled){
+  if(!approved(e,p)){
+   const members=familyMembers(p),serviceMode=serviceMatrix();
+   // Service-family identity ignores the matrix workplace; inheritance must
+   // still intersect the proposed grant's scope. Position-mode families retain
+   // their original member scopes. Removal's relatedApproval stays directional.
+   const supervised=e.approvals.some(a=>a.supervised&&a.valid_from<=snapshot.period_end&&a.valid_until>=snapshot.period_start
+    &&members.some(member=>{
+     const scope=serviceMode?p.workplace_id:member.workplace_id;
+     return a.function_id===member.function_id&&(a.workplace_id===scope||a.workplace_id==='*'||(serviceMode&&scope==='*'));
+    }));
+   e.approvals.push({function_id:p.function_id,workplace_id:p.workplace_id,valid_from:snapshot.period_start,valid_until:snapshot.period_end,supervised});
+  }
+ } else {e.approvals=e.approvals.flatMap(a=>{if(!relatedApproval(a,p)||a.valid_until<snapshot.period_start||a.valid_from>snapshot.period_end)return[a];const remaining=[];if(a.valid_from<snapshot.period_start)remaining.push({...a,valid_until:dayOffset(snapshot.period_start,-1)});if(a.valid_until>snapshot.period_end)remaining.push({...a,valid_from:dayOffset(snapshot.period_end,1)});return remaining;});}
  if(!quiet)notice('Freigabe im Planungszeitraum geändert. Qualifikationen und Freigaben außerhalb des Zeitraums bleiben erhalten. Änderungen speichern.');
 }
 // Freigegeben wird eine Tätigkeit, keine Uhrzeit. Die Quelle führt jede Zeitlage
@@ -1477,7 +1565,7 @@ function matrixPositions(){
 }
 function workplaceName(id){return dataIndex().workplaces.get(id)?.name??id;}
 function approvalPositions(){const positions=[...matrixPositions()];if(serviceMatrix())snapshot.positions.forEach(p=>positions.push({...p,name:`${p.name} · ${workplaceName(p.workplace_id)} (eingeschränkt)`}));return positions;}
-function matrixFiltered(){const q=fold($('matrixSearch').value.trim()),positions=matrixColumns();if(!q)return {employees:snapshot.employees,positions};const matchingPeople=snapshot.employees.filter(e=>fold(e.name).includes(q));const matchingPositions=positions.filter(p=>fold(p.name).includes(q));return {employees:matchingPositions.length?snapshot.employees:matchingPeople,positions:matchingPeople.length?positions:matchingPositions};}
+function matrixFiltered(){const q=fold($('matrixSearch').value.trim()),positions=matrixColumns();if(!q)return {employees:snapshot.employees,positions};const matchingPeople=snapshot.employees.filter(e=>fold(e.name).includes(q));const matchingPositions=positions.filter(p=>[p,...columnMembers(p)].some(member=>[member.name,member.id,member.function_id].some(value=>fold(value).includes(q))));return {employees:matchingPositions.length?snapshot.employees:matchingPeople,positions:matchingPeople.length?positions:matchingPositions};}
 function matrixVisible(){
  const {employees,positions}=matrixFiltered();
  const wahl=$('matrixFilter')?.value??'alle';
@@ -1547,10 +1635,10 @@ function renderCalendar(){
    if(!personal.has(cellKey))personal.set(cellKey,[]);personal.get(cellKey).push({work,label,timeLabel:times.join(' / ')});});
  }
  const gaps=new Map();let required=0,filled=0;
- for(const demand of snapshot.demands){const shift=idx.shifts.get(demand.shift_id),position=idx.positions.get(demand.position_id),first=shift?.segments[0]?.start;if(!first)continue;const day=localDay(first);if(day<start||day>last||day<snapshot.period_start||day>snapshot.period_end)continue;
- const staffed=counts.get(demand.id)?.size??0;required+=demand.minimum;filled+=Math.min(demand.minimum,staffed);const gap=Math.max(0,demand.minimum-staffed);
+ for(const group of staffingGroups(snapshot.demands,counts)){const demand=group.demands[0],shift=idx.shifts.get(demand.shift_id),position=idx.positions.get(demand.position_id),first=shift?.segments[0]?.start;if(!first)continue;const day=localDay(first);if(day<start||day>last||day<snapshot.period_start||day>snapshot.period_end)continue;
+ required+=group.minimum;filled+=group.filled;const gap=group.gap;
  if(byPosition&&position&&gap){const cellKey=JSON.stringify([rowKey(position),day]);if(!gaps.has(cellKey))gaps.set(cellKey,[]);gaps.get(cellKey).push({demand,gap});}}
- const coverage=el('div');coverage.className='coverage-summary';coverage.setAttribute('role','status');el('strong',`${filled} / ${required} erforderliche Plätze besetzt`,coverage);el('span',required===filled?' · Keine offenen Mindestplätze':' · '+(required-filled)+' offene Plätze',coverage);el('small','Besetzung im angezeigten Monat. Die Regelprüfung erfolgt separat.',coverage);view.content.before(coverage);
+ const coverage=el('div');coverage.className='coverage-summary';coverage.setAttribute('role','status');el('strong',`${filled} / ${required} erforderliche Plätze besetzt`,coverage);el('span',required===filled?' · Keine offenen Mindestplätze':' · '+(required-filled)+' offene Plätze',coverage);el('small','Besetzung im angezeigten Monat. Alternativen zählen gemeinsam beim ersten Bedarf der Gruppe. Die Regelprüfung erfolgt separat.',coverage);view.content.before(coverage);
  view.items.forEach(row=>{const tr=el('tr',undefined,body);const th=el('th',row.name,tr);th.scope='row';days.forEach(day=>{const td=el('td',undefined,tr);td.dataset.date=day;if(weekends.has(day))td.classList.add('weekend');if(day<snapshot.period_start||day>snapshot.period_end)td.classList.add('outside-period');
  const cellKey=JSON.stringify([rowKey(row),day]);(indexed.get(cellKey)??[]).forEach(x=>{
  const badge=button(td,`${x.a.fixed?'◆ ':''}${byPosition?(x.employee?.name??'Unbekannte Person'):(x.shift?.name??'Dienst')}\n${x.timeLabel}${!byPosition?'\n'+(x.position?.name??''):''}`,()=>focusAssignment(x.index));badge.className='shift-badge '+(x.shift?.kind==='night'?'night':'day');badge.title=`${x.employee?.name??''} · ${x.position?.name??''}${x.a.fixed?' · Fixiert':''}`;});
@@ -1563,9 +1651,17 @@ function renderCalendar(){
 $('matrixSearch').oninput=debounce(()=>{if(!snapshot)return;pageState('matrixPeople',30).page=0;pageState('matrixPositions',16).page=0;renderMatrix();});
 action('transpose',()=>{transposed=!transposed;$('transpose').setAttribute('aria-pressed',String(transposed));renderMatrix();});
 // Alle Zeitlagen derselben Dienstart, zu der ein Vorschlag gehört.
+function familyMembers(position){
+ // Service identity survives the matrix's wildcard normalization. Neither
+ // the proposed workplace nor the display toggle changes family membership.
+ const family=ServiceFamilies.group(matrixPositions()).find(f=>f.members.some(m=>serviceMatrix()?m.function_id===position.function_id:samePosition(m,position)));
+ return family?.members??[position];
+}
 function familyTargets(proposal){
- const spalte=matrixColumns().find(col=>columnMembers(col).some(m=>samePosition(m,proposal)));
- return spalte?columnMembers(spalte):[proposal];
+ const members=familyMembers(proposal);
+ // A grouped historical grant expands service variants, not workplaces.
+ // Ordinary position-mode columns keep their existing concrete targets.
+ return serviceMatrix()?members.map(member=>({...member,workplace_id:proposal.workplace_id})):members;
 }
 function pendingHistoryApprovals(){
  const pairs=[],seen=new Set(),employees=dataIndex().employees;
@@ -1643,13 +1739,13 @@ api('/api/version').then(v=>{$('version').textContent='Version '+v.version;$('lo
 // The application shell and project wizard use this API instead of mutating editor state.
 window.PlannerApp={
  getState:plannerState,
- async openProject(candidate){
+ async openProject(candidate,binding=replacementBinding()){
   if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');
   projectBusy=true;updateJobButtons();
-  try{const checked=await api('/api/snapshots/check','POST',candidate);if(!canReplace())return false;load(checked);return true;}
+  try{const checked=await api('/api/snapshots/check','POST',candidate);requireReplacement(binding);if(!canReplace())return false;load(checked);return true;}
   finally{projectBusy=false;updateJobButtons();}
  },
- openSavedProject,openJob,
+ openSavedProject,openJob,captureInput:replacementBinding,
  refreshProjects:saved,refreshJobs:savedJobs
 };
 window.addEventListener('planner:navigate',event=>{const panel=event.detail?.panel;if(!['projects','team','rules','demand','calculate','plan'].includes(panel))return;activePanel=panel;renderActivePanel();refreshAutomaticReadiness();});

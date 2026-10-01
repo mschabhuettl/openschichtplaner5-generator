@@ -6,6 +6,7 @@ from collections import defaultdict, deque
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 from .models import Diagnostic
+from .security_limits import PlanningBudgetExceeded, bounded_normalized_planning
 from .timeutils import (
     minute,
     local_day,
@@ -37,6 +38,18 @@ COLLECTION_LIMITS = {
 }
 
 
+def staffing_groups(snapshot):
+    """Group coverage alternatives; None and empty IDs mean independent demand.
+
+    Nonempty identifiers are exact, including whitespace. Tuple keys keep
+    independent demand IDs separate from user-supplied alternative IDs.
+    """
+    groups = defaultdict(list)
+    for demand in snapshot.demands:
+        groups[demand.alternative_group or ("einzeln", demand.id)].append(demand)
+    return groups
+
+
 def staffing_gaps(snapshot, counts):
     """Offene Mindeststellen je Bedarf; Alternativen zählen gemeinsam.
 
@@ -45,9 +58,7 @@ def staffing_gaps(snapshot, counts):
     übrigen Mitglieder gelten damit als gedeckt — sonst erschiene derselbe
     Posten mehrfach als unbesetzt.
     """
-    gruppen = defaultdict(list)
-    for demand in snapshot.demands:
-        gruppen[demand.alternative_group or ("einzeln", demand.id)].append(demand)
+    gruppen = staffing_groups(snapshot)
     luecken = {demand.id: 0 for demand in snapshot.demands}
     for mitglieder in gruppen.values():
         bedarf = max(demand.minimum for demand in mitglieder)
@@ -257,6 +268,12 @@ def input_diagnostics(snapshot):
 
     def issue(code, message, employee_id=None):
         errors.append(Diagnostic(code=code, message=message, employee_id=employee_id))
+
+    try:
+        bounded_normalized_planning(snapshot)
+    except PlanningBudgetExceeded as exc:
+        issue("size_limit", str(exc))
+        return errors
 
     planning_days = (snapshot.period_end - snapshot.period_start).days + 1
     context_days = (snapshot.context_end - snapshot.context_start).days + 1
@@ -511,7 +528,8 @@ def pair_conflict(snapshot, employee, left, right):
 
 def night_block_conflict(snapshot, employee, left, right):
     """Extra block rest applies to consecutive selected duties, not arbitrary pairs."""
-    if left.kind != "night" or right.kind != "night":
+    if (left.kind != "night" or right.kind != "night"
+            or not left.segments or not right.segments):
         return False
     la, lb = bounds(left)
     ra, rb = bounds(right)

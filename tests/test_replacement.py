@@ -6,6 +6,7 @@ from sp5generator.demo import make_demo
 from sp5generator.models import Assignment
 from sp5generator.replacement import replacement_candidates
 from sp5generator.solver import solve
+from sp5generator.validator import validate
 
 
 @pytest.fixture(scope="module")
@@ -62,8 +63,17 @@ def test_a_multi_day_absence_names_who_can_cover_all_of_it(planned):
     sick = _absent(planned, date(2026, 1, 8))
     report = replacement_candidates(snapshot, assignments, sick,
                                     date(2026, 1, 8), date(2026, 1, 12))
-    per_duty = [{c["employee_id"] for c in duty["candidates"]} for duty in report["duties"]]
-    expected = set.intersection(*per_duty) if per_duty else set()
+    demand_ids = {duty["demand_id"] for duty in report["duties"]}
+    # Independent employee universe: joint rules need not be monotonic in the
+    # number of transferred duties (a night may bridge two separate blocks).
+    expected = {
+        pid for pid in {e.id for e in snapshot.employees} - {sick}
+        if demand_ids and validate(snapshot, [
+            a.model_copy(update={"employee_id": pid})
+            if a.employee_id == sick and a.demand_id in demand_ids else a
+            for a in assignments
+        ]).valid
+    }
     assert set(report["covers_whole_absence"]) == expected
     assert report["absent_from"] == "2026-01-08" and report["absent_until"] == "2026-01-12"
 
@@ -131,14 +141,23 @@ def test_someone_already_working_at_that_hour_is_not_offered(planned):
     busy = snapshot.model_copy(deep=True)
     busy.boundary_work.append(BoundaryWork(
         id="eigener-dienst", employee_id=free, segments=shift.segments, kind=shift.kind,
+        in_period=True,
     ))
     report = replacement_candidates(busy, assignments, sick, day, day)
     same = next(d for d in report["duties"] if d["demand_id"] == duty["demand_id"])
     assert free not in {c["employee_id"] for c in same["candidates"]}
     assert same["blocked"].get("overlap"), same["blocked"]
-    # Everyone else keeps their place; only the now-busy person drops out.
-    assert {c["employee_id"] for c in same["candidates"]} == \
-        {c["employee_id"] for c in duty["candidates"]} - {free}
+    # Extra personal work may also exhaust an existing person's cumulative
+    # limits. Keep only replacements whose entire hypothetical plan is valid.
+    expected = {
+        candidate["employee_id"] for candidate in duty["candidates"]
+        if validate(busy, [
+            a.model_copy(update={"employee_id": candidate["employee_id"]})
+            if a.employee_id == sick and a.demand_id == duty["demand_id"] else a
+            for a in assignments
+        ]).valid
+    }
+    assert {c["employee_id"] for c in same["candidates"]} == expected
 
 
 def test_the_absent_person_appears_nowhere_not_even_as_a_blocked_count(planned):

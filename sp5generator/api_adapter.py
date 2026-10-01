@@ -335,4 +335,5 @@ def import_api(
     )
     snapshot.id = "sp5:api-import:" + str(uuid4())
     snapshot.revision = "1"
-    return snapshot
+    from .security_limits import bounded_normalized_planning
+    return bounded_normalized_planning(snapshot)

@@ -21,6 +21,8 @@
   };
   const dispatch = (name,detail) => window.dispatchEvent(new CustomEvent('planner:'+name,{detail}));
   const date = (value, options={day:'2-digit',month:'2-digit',year:'numeric'}) => {
+    const numeric=ProjectJSON.number(value);
+    if(Number.isFinite(numeric))value=numeric;else if(typeof value!=='string')return '—';
     if(!value)return '—';
     const parsed = new Date(typeof value==='number'?value*1000:/^\d{4}-\d\d-\d\d$/.test(value)?value+'T12:00:00Z':value);
     if(Number.isNaN(+parsed))return '—';
@@ -97,10 +99,12 @@
       const row=node('button',undefined,'job-row');row.type='button';row.disabled=busy();row.dataset.jobId=job.id;
       const symbol=node('span',undefined,'job-row-icon');symbol.append(icon('clock'));row.append(symbol);
       const info=node('span');info.append(node('span',job.project_name||(project?projectName(project):'Dienstplan-Berechnung'),'job-row-name'));
-      const created=typeof job.created_at==='number'?new Date(job.created_at*1000):new Date(job.created_at);
+      const numeric=ProjectJSON.number(job.created_at);
+      const created=Number.isFinite(numeric)?new Date(numeric*1000):new Date(typeof job.created_at==='string'?job.created_at:NaN);
       info.append(node('span',Number.isNaN(+created)?'Gespeicherte Berechnung':created.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),'job-row-date'));
       row.append(info,node('span',states[job.state]||job.state,'job-badge '+(job.state==='succeeded'?'finished':['queued','running','failed','cancelled'].includes(job.state)?job.state:'')));
-      const elapsed=job.finished_at&&job.started_at?Math.max(0,Math.round(job.finished_at-job.started_at)):null;
+      const finished=ProjectJSON.number(job.finished_at),started=ProjectJSON.number(job.started_at);
+      const elapsed=finished&&started&&Number.isFinite(finished)&&Number.isFinite(started)?Math.max(0,Math.round(finished-started)):null;
       row.append(node('span',elapsed===null?'':`${number(elapsed)} Sekunden`,'job-row-duration'),icon('arrow'));
       row.setAttribute('aria-label',`${project?projectName(project):'Berechnung'}: ${states[job.state]||job.state} öffnen`);
       row.addEventListener('click',()=>dispatch('open-job',{id:job.id}));list.append(row);
@@ -125,11 +129,12 @@
     if(activePanel!=='projects')byId('workspace').hidden=false;
     const employees=project.employees||[],demands=project.demands||[],shifts=project.shifts||[],profiles=project.profiles||[];
     const assignments=current.assignments||[];
-    const minimum=demands.reduce((sum,demand)=>sum+Math.max(0,Number(demand.minimum)||0),0);
     const peopleIds=new Set(employees.map(person=>person.id));
     const byDemand=new Map();
     assignments.forEach(assignment=>{if(!peopleIds.has(assignment.employee_id))return;if(!byDemand.has(assignment.demand_id))byDemand.set(assignment.demand_id,new Set());byDemand.get(assignment.demand_id).add(assignment.employee_id);});
-    const filled=demands.reduce((sum,demand)=>sum+Math.min(Math.max(0,Number(demand.minimum)||0),byDemand.get(demand.id)?.size||0),0);
+    const groups=staffingGroups(demands,byDemand);
+    const minimum=groups.reduce((sum,group)=>sum+group.minimum,0);
+    const filled=groups.reduce((sum,group)=>sum+group.filled,0);
     const coverage=minimum?Math.round(filled/minimum*100):0;
     const days=Math.max(0,Math.round((Date.parse(project.period_end)-Date.parse(project.period_start))/86400000)+1);
     const readiness=current.readiness||{state:'unchecked',count:null};

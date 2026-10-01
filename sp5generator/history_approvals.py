@@ -1,8 +1,10 @@
 """Explicitly selected history-based service approvals; no inferred qualifications."""
 from .models import Approval
+from .security_limits import bounded_normalized_planning
 
 
 def apply_history_approvals(snapshot, minimum_days=3):
+    bounded_normalized_planning(snapshot)
     if isinstance(minimum_days, bool) or not isinstance(minimum_days, int) or not 2 <= minimum_days <= 1097:
         raise ValueError("Mindestens 2 bis höchstens 1097 unterschiedliche Einsatztage wählen.")
     people = {e.id: e for e in snapshot.employees}
@@ -35,4 +37,4 @@ def apply_history_approvals(snapshot, minimum_days=3):
         "Die Mindestanzahl zählt unterschiedliche historische Einsatztage. "
         "Freigaben gelten nur im Planungszeitraum und ersetzen keine Qualifikationsnachweise."
     )
-    return snapshot
+    return bounded_normalized_planning(snapshot)

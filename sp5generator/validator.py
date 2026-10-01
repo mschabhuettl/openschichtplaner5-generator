@@ -1,10 +1,11 @@
 """Independent arithmetic validation of proposed assignments, without solver state."""
 
 from collections import defaultdict
-from datetime import timedelta, datetime, timezone
+from datetime import date, timedelta, datetime, timezone
 from itertools import combinations
 from zoneinfo import ZoneInfo
 from .models import Diagnostic, Validation
+from .security_limits import bounded_normalized_planning
 from .domain import (
     MAX_ASSIGNMENTS,
     input_diagnostics,
@@ -13,6 +14,7 @@ from .domain import (
     supervised,
     night_block_conflict,
     maximum_matching,
+    staffing_groups,
 )
 from .timeutils import (
     bounds,
@@ -127,6 +129,7 @@ class PreparedValidator:
     """
 
     def __init__(self, snapshot):
+        bounded_normalized_planning(snapshot)
         self._snapshot = snapshot.model_copy(deep=True)
         self._input_errors = input_diagnostics(self._snapshot)
 
@@ -215,9 +218,7 @@ def _validate(snapshot, assignments, input_errors=None):
     for a in snapshot.assignments:
         if a.fixed and (a.employee_id, a.demand_id) not in seen:
             add("fixed", "Fixierte Einteilung fehlt.", a.employee_id, a.demand_id)
-    gruppen = defaultdict(list)
-    for d in snapshot.demands:
-        gruppen[d.alternative_group or ("einzeln", d.id)].append(d)
+    gruppen = staffing_groups(snapshot)
     for mitglieder in gruppen.values():
         # Alternativen decken denselben Posten: geprüft wird ihre Summe gegen
         # die höchste geforderte Mindestbesetzung.
@@ -252,8 +253,13 @@ def _validate(snapshot, assignments, input_errors=None):
                     e.id,
                     a.demand_id if a else None,
                 )
-        ordered = sorted(entries, key=lambda item: midnight(
-            day_of(item[1], snapshot.timezone), snapshot.timezone))
+        # Block neighbors are timed duties ordered by their actual UTC start,
+        # including distinct instants within a DST fold. Untimed personal work
+        # neither provides a clock interval nor bridges a timed night block.
+        ordered = sorted(
+            (item for item in entries if item[1].segments),
+            key=lambda item: bounds(item[1])[0],
+        )
         for (a, left), (b, right) in zip(ordered, ordered[1:]):
             if night_block_conflict(snapshot, e, left, right):
                 add(
@@ -278,6 +284,15 @@ def _validate(snapshot, assignments, input_errors=None):
                 paid += s.paid_minutes
                 planning_duty_days.update(dm)
             spans.extend(segments(s))
+        # Employee caps use paid minutes of duties starting in the period,
+        # including personal work, independently of profile elapsed-time caps.
+        # Neither credits nor the opening account balance reduce worked time.
+        if e.max_period_minutes is not None and paid > e.max_period_minutes:
+            add(
+                "personal_period_limit",
+                "Persönliche Obergrenze für bezahlte Periodenminuten überschritten.",
+                e.id,
+            )
         for p in snapshot.profiles:
             if p.id not in e.profile_ids:
                 continue
@@ -338,14 +353,30 @@ def _validate(snapshot, assignments, input_errors=None):
                 (nights, p.max_consecutive_nights, "consecutive_nights"),
             ):
                 if limit:
-                    for day in dates(
+                    window_ends = set(dates(
                         max(p.valid_from, snapshot.period_start),
                         min(
                             p.valid_until,
                             snapshot.context_end,
                             snapshot.period_end + timedelta(days=limit),
                         ),
-                    ):
+                    ))
+                    if code == "consecutive_work":
+                        # Only selected planning work activates later windows.
+                        # Each affected window contains an actual worked day;
+                        # gaps in a split duty do not widen the entire horizon.
+                        # Ordinals keep late tails safe near the calendar limit.
+                        for worked_day in planning_duty_days:
+                            first = max(p.valid_from.toordinal(), worked_day.toordinal())
+                            last = min(p.valid_until.toordinal(), worked_day.toordinal() + limit)
+                            if first <= last:
+                                limit_context_end = max(limit_context_end, date.fromordinal(last))
+                                window_ends.update(
+                                    date.fromordinal(n) for n in range(
+                                        first, min(last, snapshot.context_end.toordinal()) + 1,
+                                    )
+                                )
+                    for day in sorted(window_ends):
                         if all(
                             day - timedelta(days=i) in occupied
                             for i in range(limit + 1)

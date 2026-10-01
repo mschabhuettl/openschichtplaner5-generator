@@ -1,5 +1,6 @@
 /* Group equal service/time patterns without changing individual confirmations. */
 (function(root){
+ const ProjectJSON=typeof module!=='undefined'&&module.exports?require('./project-json.js'):root.ProjectJSON;
  function groups(snapshot){
   const positions=new Map(snapshot.positions.map(p=>[p.id,p]));
   const services=new Map();
@@ -16,12 +17,12 @@
   }
   for(const work of snapshot.boundary_work??[]){
    const origin=snapshot.metadata?.provenance?.[work.id];
-   if(!origin?.function_id||!work.segments.length)continue;
+   if(!origin?.function_id||ProjectJSON.number(origin.function_id)===0||!work.segments.length)continue;
    const anchor=parts(work.segments[0].start).day;
    const times=work.segments.map(s=>{const a=parts(s.start),b=parts(s.end);return [a.day-anchor,a.time,b.day-anchor,b.time];});
    // Boundary work has no paid-time contract. Keep its confirmation separate
    // from staffing patterns, whose key also includes paid minutes.
-   const key=JSON.stringify([origin.function_id,times,null,'boundary']);
+   const key=ProjectJSON.stringify([origin.function_id,times,null,'boundary']);
    if(!rows.has(key))rows.set(key,{key,name:(origin.name||origin.function_id)+' (Randarbeit)',times,paidMinutes:null,shiftIds:[],boundaryIds:[],pending:0});
    const row=rows.get(key);row.boundaryIds.push(work.id);if(work.kind==='unknown')row.pending++;
   }
@@ -37,6 +38,7 @@
   return count;
  }
  function suggest(group,start='22:00',end='06:00',minimum=180){
+  minimum=ProjectJSON.number(minimum);
   const minute=t=>{if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(t))throw Error('Gültige Nachtzeit eingeben.');return +t.slice(0,2)*60 + +t.slice(3);};
   const a=minute(start),b=minute(end);
   if(a===b||!Number.isInteger(minimum)||minimum<1||minimum>1440)throw Error('Nachtfenster und Mindestdauer prüfen.');

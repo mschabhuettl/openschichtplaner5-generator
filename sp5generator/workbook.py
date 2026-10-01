@@ -10,6 +10,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .export import rows, safe_cell, vacancy_counts
+from .export_work import export_work
 from .timeutils import bounds, local_day
 
 
@@ -92,25 +93,32 @@ def planning_workbook(snapshot, result):
     paid = defaultdict(int)
     nights = defaultdict(set)
     workdays = defaultdict(set)
-    for assignment in result.assignments:
-        demand = demands[assignment.demand_id]
-        shift, position = shifts[demand.shift_id], positions[demand.position_id]
-        first_day = local_day(bounds(shift)[0], snapshot.timezone)
+    for entry in export_work(snapshot, result.assignments):
+        shift = entry.work
+        first_day = entry.day
+        paid[entry.employee_id] += entry.period_paid_minutes
         if snapshot.period_start <= first_day <= snapshot.period_end:
-            paid[assignment.employee_id] += shift.paid_minutes
             if shift.kind == "night":
-                nights[assignment.employee_id].add(first_day)
+                nights[entry.employee_id].add(first_day)
+        title = f"{'◆ ' if entry.fixed else ''}{entry.name}"
+        if entry.position_name:
+            title += " · " + entry.position_name
+        if not shift.segments:
+            if snapshot.period_start <= first_day <= snapshot.period_end:
+                workdays[entry.employee_id].add(first_day)
+                calendar[entry.employee_id, first_day].append((title + "\nohne Zeiten", shift.kind))
+            continue
         for interval in shift.segments:
             begin, end = interval.start.astimezone(zone), interval.end.astimezone(zone)
             last = (end.astimezone(ZoneInfo("UTC")) - timedelta(microseconds=1)).astimezone(zone).date()
             day = max(begin.date(), snapshot.period_start)
             while day <= min(last, snapshot.period_end):
-                workdays[assignment.employee_id].add(day)
+                workdays[entry.employee_id].add(day)
                 time_label = f"{begin:%H:%M}–{end:%H:%M}"
                 if begin.date() != end.date():
                     time_label += " (+1)" if (end.date() - begin.date()).days == 1 else f" (+{(end.date() - begin.date()).days})"
-                label = f"{'◆ ' if assignment.fixed else ''}{shift.name} · {position.name}\n{time_label}"
-                calendar[assignment.employee_id, day].append((label, shift.kind))
+                label = f"{title}\n{time_label}"
+                calendar[entry.employee_id, day].append((label, shift.kind))
                 day += timedelta(days=1)
 
     project_name = str(snapshot.metadata.get("project_name") or "Dienstplan")
@@ -209,7 +217,7 @@ def planning_workbook(snapshot, result):
             _heading(detail, row_number, values)
     detail.freeze_panes = "C4"
     detail.column_dimensions["B"].width = 30
-    for column in "ACDEFGHIJ":
+    for column in "ACDEFGHIJKL":
         detail.column_dimensions[column].width = 25
     for row in detail:
         for cell in row:

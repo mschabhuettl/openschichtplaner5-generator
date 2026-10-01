@@ -2,13 +2,14 @@
 
 import os
 from collections import Counter, defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from math import isfinite
 from random import Random
 from time import monotonic
 from types import SimpleNamespace
 from ortools.sat.python import cp_model
 from .models import Assignment, Diagnostic, Result, Validation
+from .security_limits import PlanningBudgetExceeded, bounded_normalized_planning
 from .domain import (
     MAX_ASSIGNMENTS,
     snapshot_hash,
@@ -19,6 +20,7 @@ from .domain import (
     night_block_conflict,
     maximum_matching,
     staffing_gaps,
+    staffing_groups,
 )
 from .timeutils import (
     bounds,
@@ -318,6 +320,18 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
           workers=None):
     if not isfinite(time_limit):
         raise ValueError('Zeitlimit muss eine endliche Zahl in Sekunden sein.')
+    try:
+        bounded_normalized_planning(snapshot)
+    except PlanningBudgetExceeded as exc:
+        # Retain the native invalid-input Result contract, but never dump/hash
+        # rejected input just to construct that report. No usable hash exists.
+        return Result(
+            snapshot_id=snapshot.id, snapshot_hash='', solver_status='MODEL_INVALID',
+            validation=Validation(valid=False, complete=False, diagnostics=[
+                Diagnostic(code='size_limit', message=str(exc)),
+            ]), runtime_seconds=0,
+            parameters={'time_limit': time_limit, 'partial': partial, 'input_rejected': 'size_limit'},
+        )
     workers = SEARCH_WORKERS if workers is None else max(1, int(workers))
     started = monotonic()
     deadline = started + time_limit
@@ -375,7 +389,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
         kwargs.setdefault("metrics", {})["split_weekends_blocked_by_approval"] = 0
         kwargs.setdefault("metrics", {})["split_weekends_forced_by_demand"] = 0
         kwargs.setdefault("metrics", {})["split_weekends_in_plan"] = 0
-        bezahlt = defaultdict(int)
+        bezahlt = defaultdict(int, personal_period_paid)
         for a in assignments:
             if snapshot.period_start <= shift_day[demands[a.demand_id].shift_id] <= snapshot.period_end:
                 bezahlt[a.employee_id] += shifts[demands[a.demand_id].shift_id].paid_minutes
@@ -516,12 +530,25 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
                 }
             # User fixations, including boundary duties, remain hard constraints.
             released -= fixed
-            candidate = snapshot.model_copy(deep=True)
-            candidate.assignments = [
-                a.model_copy(deep=True, update={
-                    "fixed": (a.employee_id, a.demand_id) not in released,
-                }) for a in best.assignments
-            ]
+            # A result's separate assignments may not fit back into the input.
+            # Check the actual combined fields before expensive isolated copies;
+            # this is a Snapshot, not an artificial HTTP request envelope.
+            candidate = snapshot.model_copy(update={"assignments": best.assignments})
+            try:
+                bounded_normalized_planning(candidate)
+            except PlanningBudgetExceeded:
+                note({
+                    "phase": "repair", "neighborhood": neighborhood,
+                    "released_assignments": len(released),
+                    "started_seconds": round_started - started,
+                    "budget_seconds": round_budget, "solver_status": "MODEL_INVALID",
+                    "accepted": False, "reason": "size_limit",
+                    "round_seconds": monotonic() - round_started,
+                })
+                break  # Keep the independently valid incumbent unchanged.
+            candidate = candidate.model_copy(deep=True)
+            for assignment in candidate.assignments:
+                assignment.fixed = (assignment.employee_id, assignment.demand_id) not in released
             if deadline - monotonic() <= round_budget:
                 break
             repaired = solve(candidate, round_budget, partial=True, _repair=False,
@@ -596,9 +623,6 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
         return best
 
     personal_period_paid = defaultdict(int)
-    for work in snapshot.boundary_work:
-        if work.in_period:
-            personal_period_paid[work.employee_id] += work.paid_minutes
     issues = input_diagnostics(snapshot)
     timings["input_validation"] = monotonic() - started
     if issues:
@@ -606,6 +630,11 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
             "MODEL_INVALID",
             validation=Validation(valid=False, complete=False, diagnostics=issues),
         )
+    # Match the model's paid terms, personal cap, validator and exports. The
+    # import marker is not an accounting date; untimed work retains its day.
+    for work in snapshot.boundary_work:
+        if snapshot.period_start <= day_of(work, snapshot.timezone) <= snapshot.period_end:
+            personal_period_paid[work.employee_id] += work.paid_minutes
     if time_limit <= 0:
         return result(
             "UNKNOWN",
@@ -783,10 +812,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
     vacancies = []
     # Alternativen decken denselben Posten ab: gefordert ist ihre Summe, nicht
     # jeder Bedarf für sich. Die Höchstbesetzung bleibt je Bedarf einzeln.
-    alternativen = defaultdict(list)
-    for d in snapshot.demands:
-        alternativen[d.alternative_group].append(d)
-    alternativen.pop(None, None)
+    alternativen = staffing_groups(snapshot)
     erledigt = set()
     for d in snapshot.demands:
         choices = by_demand[d.id]
@@ -962,7 +988,8 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
             for p in snapshot.profiles
         ):
             ordered = sorted(
-                entries, key=lambda item: bounds(shifts[item[0].shift_id])[0]
+                (item for item in entries if shifts[item[0].shift_id].segments),
+                key=lambda item: bounds(shifts[item[0].shift_id])[0],
             )
             for i, (da, xa) in enumerate(ordered):
                 if monotonic() >= deadline:
@@ -1233,14 +1260,15 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
                 (nv, p.max_consecutive_nights),
             ):
                 if limit:
-                    for day in dates(
+                    window_ends = set(dates(
                         max(p.valid_from, snapshot.period_start),
                         min(
                             p.valid_until,
                             snapshot.context_end,
                             snapshot.period_end + timedelta(days=limit),
                         ),
-                    ):
+                    ))
+                    for day in sorted(window_ends):
                         model.add(
                             sum(
                                 variables.get(day - timedelta(days=i), 0)
@@ -1248,6 +1276,24 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
                             )
                             <= limit
                         )
+                    if variables is wv:
+                        # Work-day tails, unlike night start days, can be far
+                        # beyond the period. An unselected candidate must not
+                        # activate a future context-only series violation.
+                        for x, tail in planning_tails:
+                            tail_ends = {
+                                date.fromordinal(n) for day in tail
+                                for n in range(
+                                    max(p.valid_from.toordinal(), day.toordinal()),
+                                    min(p.valid_until.toordinal(), snapshot.context_end.toordinal(),
+                                        day.toordinal() + limit) + 1,
+                                )
+                            }
+                            for day in sorted(tail_ends - window_ends):
+                                model.add(
+                                    sum(wv.get(day - timedelta(days=i), 0)
+                                        for i in range(limit + 1)) <= limit
+                                ).only_enforce_if(x)
         upper = (
             sum(shifts[d.shift_id].paid_minutes for d, x in entries)
             + abs(e.balance_minutes)
@@ -1528,7 +1574,11 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
                 )
             return local_validators[employee.id]
         load = {
-            eid: sum(shifts[demands[a.demand_id].shift_id].paid_minutes for a in plan)
+            eid: personal_period_paid[eid] + sum(
+                shifts[demands[a.demand_id].shift_id].paid_minutes for a in plan
+                if snapshot.period_start <= shift_day[demands[a.demand_id].shift_id]
+                <= snapshot.period_end
+            )
             for eid, plan in plans.items()
         }
         failed = False
@@ -1564,7 +1614,8 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
                     failed = True
                     break
                 plans[chosen.employee_id].append(chosen)
-                load[chosen.employee_id] += shifts[d.shift_id].paid_minutes
+                if snapshot.period_start <= shift_day[d.shift_id] <= snapshot.period_end:
+                    load[chosen.employee_id] += shifts[d.shift_id].paid_minutes
             if failed:
                 break
         if not failed:
@@ -1630,8 +1681,7 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
         parameters["quality_presolve"] = False
         plan, checked = warm
         warm_counts = Counter(a.demand_id for a in plan)
-        warm_vacancies = sum(max(0, d.minimum - warm_counts[d.id])
-                             for d in snapshot.demands)
+        warm_vacancies = sum(staffing_gaps(snapshot, warm_counts).values())
         metrics = {
             "employees": {},
             "approval_reach": approval_reach,
@@ -1833,8 +1883,11 @@ def solve(snapshot, time_limit=30, partial=False, _repair=True, progress=None,
         timings["result_validation"] = (
             timings.get("result_validation", 0) + monotonic() - validation_started
         )
-        hard = [d for d in checked.diagnostics if d.code not in ("vacancy", "context")]
-        trace["independently_valid"] = checked.valid
+        # A full-plan incumbent must cover every minimum independently of
+        # model grouping. Context warnings may remain; vacancies may not.
+        ignored = ("vacancy", "context") if partial else ("context",)
+        hard = [d for d in checked.diagnostics if d.code not in ignored]
+        trace["independently_valid"] = not hard
         if hard:
             # Valid inequalities: violating employee schedules cannot remain
             # entirely selected. For non-monotone rules use exact no-good.

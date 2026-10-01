@@ -4,11 +4,13 @@
       "additionalProperties": false,
       "properties": {
         "function_id": {
+          "maxLength": 200,
           "title": "Function Id",
           "type": "string"
         },
         "workplace_id": {
           "description": "Exact workplace ID, or * for an explicitly confirmed service-wide approval",
+          "maxLength": 200,
           "title": "Workplace Id",
           "type": "string"
         },
@@ -41,10 +43,12 @@
       "additionalProperties": false,
       "properties": {
         "employee_id": {
+          "maxLength": 200,
           "title": "Employee Id",
           "type": "string"
         },
         "demand_id": {
+          "maxLength": 200,
           "title": "Demand Id",
           "type": "string"
         },
@@ -141,10 +145,12 @@
       "description": "Immutable personal work context, not a staffing demand or an approval.",
       "properties": {
         "id": {
+          "maxLength": 200,
           "title": "Id",
           "type": "string"
         },
         "employee_id": {
+          "maxLength": 200,
           "title": "Employee Id",
           "type": "string"
         },
@@ -212,14 +218,17 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "maxLength": 200,
           "title": "Id",
           "type": "string"
         },
         "shift_id": {
+          "maxLength": 200,
           "title": "Shift Id",
           "type": "string"
         },
         "position_id": {
+          "maxLength": 200,
           "title": "Position Id",
           "type": "string"
         },
@@ -243,10 +252,24 @@
         },
         "team_ids": {
           "items": {
+            "maxLength": 200,
             "type": "string"
           },
           "title": "Team Ids",
           "type": "array"
+        },
+        "alternative_group": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alternative Group"
         },
         "source": {
           "default": "additional",
@@ -268,6 +291,7 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "maxLength": 200,
           "title": "Id",
           "type": "string"
         },
@@ -275,10 +299,17 @@
           "title": "Name",
           "type": "string"
         },
+        "excluded": {
+          "default": false,
+          "title": "Excluded",
+          "type": "boolean"
+        },
         "team_ids": {
           "items": {
+            "maxLength": 200,
             "type": "string"
           },
+          "maxItems": 1000,
           "title": "Team Ids",
           "type": "array"
         },
@@ -296,6 +327,7 @@
           "items": {
             "$ref": "#/$defs/Approval"
           },
+          "maxItems": 1000,
           "title": "Approvals",
           "type": "array"
         },
@@ -303,6 +335,7 @@
           "items": {
             "$ref": "#/$defs/Qualification"
           },
+          "maxItems": 1000,
           "title": "Qualifications",
           "type": "array"
         },
@@ -310,6 +343,7 @@
           "items": {
             "$ref": "#/$defs/Availability"
           },
+          "maxItems": 1000,
           "title": "Availability",
           "type": "array"
         },
@@ -317,6 +351,7 @@
           "items": {
             "$ref": "#/$defs/Interval"
           },
+          "maxItems": 1000,
           "title": "Unavailable",
           "type": "array"
         },
@@ -324,6 +359,7 @@
           "items": {
             "type": "string"
           },
+          "maxItems": 1000,
           "title": "Allowed Kinds",
           "type": "array"
         },
@@ -341,8 +377,10 @@
         },
         "preferred_functions": {
           "items": {
+            "maxLength": 200,
             "type": "string"
           },
+          "maxItems": 1000,
           "title": "Preferred Functions",
           "type": "array"
         },
@@ -358,8 +396,10 @@
         },
         "profile_ids": {
           "items": {
+            "maxLength": 200,
             "type": "string"
           },
+          "maxItems": 1000,
           "title": "Profile Ids",
           "type": "array"
         },
@@ -423,6 +463,19 @@
           "minimum": 0,
           "title": "Mentor Capacity",
           "type": "integer"
+        },
+        "max_period_minutes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Period Minutes"
         }
       },
       "required": [
@@ -466,10 +519,40 @@
           "title": "Workday Transitions",
           "type": "integer"
         },
+        "isolated_days": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Isolated Days",
+          "type": "integer"
+        },
+        "split_weekends": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Split Weekends",
+          "type": "integer"
+        },
+        "block_shape": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Block Shape",
+          "type": "integer"
+        },
         "hours": {
           "default": 1,
           "minimum": 0,
           "title": "Hours",
+          "type": "integer"
+        },
+        "hours_fairness": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Hours Fairness",
+          "type": "integer"
+        },
+        "duty_fairness": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Duty Fairness",
           "type": "integer"
         },
         "nights": {
@@ -510,6 +593,7 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "maxLength": 200,
           "title": "Id",
           "type": "string"
         },
@@ -518,15 +602,18 @@
           "type": "string"
         },
         "function_id": {
+          "maxLength": 200,
           "title": "Function Id",
           "type": "string"
         },
         "workplace_id": {
+          "maxLength": 200,
           "title": "Workplace Id",
           "type": "string"
         },
         "qualification_ids": {
           "items": {
+            "maxLength": 200,
             "type": "string"
           },
           "title": "Qualification Ids",
@@ -557,6 +644,7 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "maxLength": 200,
           "title": "Id",
           "type": "string"
         },
@@ -589,10 +677,12 @@
       "additionalProperties": false,
       "properties": {
         "employee_id": {
+          "maxLength": 200,
           "title": "Employee Id",
           "type": "string"
         },
         "shift_id": {
+          "maxLength": 200,
           "title": "Shift Id",
           "type": "string"
         },
@@ -623,6 +713,7 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "maxLength": 200,
           "title": "Id",
           "type": "string"
         },
@@ -819,6 +910,7 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "maxLength": 200,
           "title": "Id",
           "type": "string"
         },
@@ -831,6 +923,7 @@
           "type": "string"
         },
         "team_id": {
+          "maxLength": 200,
           "title": "Team Id",
           "type": "string"
         },
@@ -872,10 +965,12 @@
       "additionalProperties": false,
       "properties": {
         "employee_id": {
+          "maxLength": 200,
           "title": "Employee Id",
           "type": "string"
         },
         "shift_id": {
+          "maxLength": 200,
           "title": "Shift Id",
           "type": "string"
         },
@@ -909,6 +1004,7 @@
       "type": "string"
     },
     "id": {
+      "maxLength": 200,
       "title": "Id",
       "type": "string"
     },
@@ -974,6 +1070,7 @@
       "items": {
         "$ref": "#/$defs/Employee"
       },
+      "maxItems": 1000,
       "title": "Employees",
       "type": "array"
     },
@@ -981,6 +1078,7 @@
       "items": {
         "$ref": "#/$defs/Position"
       },
+      "maxItems": 2000,
       "title": "Positions",
       "type": "array"
     },
@@ -988,6 +1086,7 @@
       "items": {
         "$ref": "#/$defs/Shift"
       },
+      "maxItems": 10000,
       "title": "Shifts",
       "type": "array"
     },
@@ -995,6 +1094,7 @@
       "items": {
         "$ref": "#/$defs/Demand"
       },
+      "maxItems": 20000,
       "title": "Demands",
       "type": "array"
     },
@@ -1002,6 +1102,7 @@
       "items": {
         "$ref": "#/$defs/RuleProfile"
       },
+      "maxItems": 1000,
       "title": "Profiles",
       "type": "array"
     },
@@ -1009,6 +1110,7 @@
       "items": {
         "$ref": "#/$defs/Assignment"
       },
+      "maxItems": 5000,
       "title": "Assignments",
       "type": "array"
     },
@@ -1016,6 +1118,7 @@
       "items": {
         "$ref": "#/$defs/BoundaryWork"
       },
+      "maxItems": 5000,
       "title": "Boundary Work",
       "type": "array"
     },
@@ -1023,6 +1126,7 @@
       "items": {
         "$ref": "#/$defs/Restriction"
       },
+      "maxItems": 20000,
       "title": "Restrictions",
       "type": "array"
     },
@@ -1030,6 +1134,7 @@
       "items": {
         "$ref": "#/$defs/Wish"
       },
+      "maxItems": 20000,
       "title": "Wishes",
       "type": "array"
     },
@@ -1040,6 +1145,7 @@
       "items": {
         "type": "string"
       },
+      "maxItems": 1000,
       "title": "Unresolved",
       "type": "array"
     },

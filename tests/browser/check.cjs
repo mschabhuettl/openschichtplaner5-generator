@@ -329,22 +329,24 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.deepEqual(await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())})),beforeReferenceSearch);
     await uploadProject(originalPath);await navigate('rules');await page.setViewportSize({width:1440,height:1000});
 
-    // Large warning lists stay scrollable and searchable; resolving a filtered duplicate removes only that row.
+    // Exercise the accepted 1000-entry boundary; oversized-input rejection is
+    // covered by the HTTP security tests. Filtering must still retain all rows.
     const issuesFixture=structuredClone(snapshot);
-    issuesFixture.unresolved=Array.from({length:1001},(_,i)=>`Synthetische Prüfangabe ${String(i+1).padStart(4,'0')}`);
+    const warningCount=1000;
+    issuesFixture.unresolved=Array.from({length:warningCount},(_,i)=>`Synthetische Prüfangabe ${String(i+1).padStart(4,'0')}`);
     issuesFixture.unresolved[17]=issuesFixture.unresolved[999]='Gezielter synthetischer Hinweis';
     const issuesPath=path.join(state,'import-issues.json');fs.writeFileSync(issuesPath,JSON.stringify(issuesFixture));
     await uploadProject(issuesPath);await navigate('rules');
     await page.evaluate(()=>selectConfig('offen'));
     const issuesBox=page.locator('#unresolved'),issueSearch=issuesBox.getByRole('searchbox',{name:'Offene Angaben suchen',exact:true});
-    assert.equal(await issuesBox.locator('.card').count(),1001);
-    assert.match(await issuesBox.innerText(),/1001 Offene Angaben/);
+    assert.equal(await issuesBox.locator('.card').count(),warningCount);
+    assert.match(await issuesBox.innerText(),new RegExp(`${warningCount} Offene Angaben`));
     const beforeIssueSearch=await page.evaluate(()=>({version:changeVersion,dirty,snapshot:JSON.stringify(currentSnapshot())}));
     assert.equal(await issuesBox.locator('[data-page-direction]').count(),0);
     const scrollRegion=issuesBox.locator('.collection-content');
     await scrollRegion.focus();await page.keyboard.press('End');
     await page.waitForFunction(()=>document.querySelector('#unresolved .collection-content').scrollTop>0);
-    assert.equal(await issuesBox.locator('.card').count(),1001,'Scrolling does not discard hidden rows');
+    assert.equal(await issuesBox.locator('.card').count(),warningCount,'Scrolling does not discard hidden rows');
     await issueSearch.fill('nicht vorhanden xxx');
     await page.waitForFunction(()=>document.querySelector('#unresolved').textContent.includes('Keine passenden Angaben'));
     assert.equal(await issuesBox.locator('.card').count(),0);
@@ -358,7 +360,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.deepEqual(await page.evaluate(()=>currentSnapshot().employees),issuesFixture.employees);
     assert.deepEqual(await page.evaluate(()=>currentSnapshot().profiles),issuesFixture.profiles);
     await issueSearch.fill('');
-    await page.waitForFunction(()=>document.querySelectorAll('#unresolved .card').length===1000);
+    await page.waitForFunction(count=>document.querySelectorAll('#unresolved .card').length===count,warningCount-1);
     for(const width of [1440,390]){
       await page.setViewportSize({width,height:1000});
       if(process.env.WEB_TEST_SCREENSHOT_DIR)await page.locator('.unresolved-surface').screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,`paged-import-issues-${width}.png`)});
