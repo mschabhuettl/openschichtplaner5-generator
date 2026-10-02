@@ -110,13 +110,14 @@ a  { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-of
   padding: 9px 10px; color: var(--shell-ink); font: inherit; font-size: 13px; font-weight: 500;
   cursor: pointer; text-align: left; min-height: 44px;
 }
-.nav-item:hover:not(:disabled) { background: #2b2926; }
-.nav-item.active { background: var(--accent); color: #fff; font-weight: 600; }
+/* Navigation owns both colors: the generic button hover uses dark ink. */
+.nav-item:hover:not(:disabled) { background: #2b2926; color: var(--shell-ink); }
+.nav-item.active, .nav-item.active:hover:not(:disabled) { background: var(--accent-ink); color: #fff; font-weight: 600; }
 .nav-item:disabled { opacity: .4; cursor: default; }
-.nav-item .icon { opacity: .85; }
+.nav-item .icon { opacity: 1; }
 .nav-item span:first-of-type { flex: 1 1 auto; }
 .nav-divider { height: 1px; background: var(--shell-line); margin: 8px 8px; }
-.nav-count { font-size: 11px; font-weight: 600; color: var(--shell-muted); }
+.nav-item .nav-count { font-size: 11px; font-weight: 600; color: var(--shell-ink); }
 .nav-item.active .nav-count { color: #fff; }
 .nav-count.warning { color: #f0b37a; }
 .running-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
@@ -491,6 +492,8 @@ th.weekend, td.weekend { background: var(--surface-2); }
 .month-navigation { display: flex; align-items: center; gap: 10px; }
 .month-navigation strong { font-family: var(--display); font-size: 16px; min-width: 132px; text-align: center; }
 .calendar-view select { max-width: 280px; }
+/* The two primary plan controls keep usable targets at every text size. */
+#solve, #planView { min-height: 44px; }
 .plan-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .plan-empty { margin: 0; }
 .setup-nav { margin-bottom: 18px; }
@@ -534,6 +537,8 @@ th.weekend, td.weekend { background: var(--surface-2); }
   body[data-active-panel="plan"] #projectKind { display: none; }
   body[data-active-panel="plan"] .topbar { padding-top: 8px; padding-bottom: 8px; gap: 8px; }
   .plan-panel .export-actions { gap: 6px; }
+  /* Trade surrounding whitespace, not target size, for first-row visibility. */
+  .plan-panel .calendar-toolbar { padding-top: 5px; padding-bottom: 5px; }
   .plan-panel #openCalculationOptions { order: 1; }
   .plan-panel #job { margin-top: -8px; }
   h1 { font-size: 23px; }

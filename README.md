@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.31.0** bündelt die Arbeit in vier Bereichen: Projekte, Plan, Team und Einrichtung. Berechnung, Fortschritt und Kalender bleiben zusammen im Plan; Rechenoptionen und ausführliche Eingabehinweise sind bei Bedarf aufklappbar. Schmale Ansichten und lange Namen erhalten lokale Umbrüche statt dokumentweitem Überlauf. Die [Releasehinweise](docs/release-0.31.0.md) erläutern den Umfang und die Messgrenzen; die weitere Vereinfachung von Team, Import und Plankorrektur bleibt ein eigener Schritt.
+**Version 0.31.1** bündelt die Arbeit in vier Bereichen: Projekte, Plan, Team und Einrichtung. Berechnung, Fortschritt und Kalender bleiben zusammen im Plan; Rechenoptionen und ausführliche Eingabehinweise sind bei Bedarf aufklappbar. Schmale Ansichten und lange Namen erhalten lokale Umbrüche statt dokumentweitem Überlauf. Die [Releasehinweise](docs/release-0.31.1.md) erläutern den Umfang und die Messgrenzen; die weitere Vereinfachung von Team, Import und Plankorrektur bleibt ein eigener Schritt.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -61,7 +61,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.31.0-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.31.1-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
@@ -112,7 +112,7 @@ Der Container-Workflow prüft Python, Browser, saubere Paketinstallationen, den 
 
 - [UX-Ausgangsmessung](docs/ux/BASELINE.md) und [Zielablauf](docs/ux/TARGET-WORKFLOW.md)
 - [Prüfungen und gemessene Laufzeiten](docs/verification.md)
-- [Release 0.31.0 und Aktualisierung](docs/release-0.31.0.md)
+- [Release 0.31.1 und Aktualisierung](docs/release-0.31.1.md)
 - [Regeln, Zeitberechnung und Zielfunktion](docs/rules.md)
 - [Architektur und Integration](docs/architecture.md)
 - [SP5-Zuordnung und offene Semantik](docs/sp5-mapping.md)
