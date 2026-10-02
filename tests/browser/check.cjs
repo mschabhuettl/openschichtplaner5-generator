@@ -43,6 +43,8 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       const target=page.locator(selector);
       const panel=await target.evaluate(element=>element.closest('[data-panel]')?.dataset.panel);
       if(panel)await navigate(panel);
+      const teamView=await target.evaluate(element=>element.closest('[data-team-view]')?.dataset.teamView);
+      if(teamView)await page.locator(`[data-team-to="${teamView}"]`).click();
       // Einstellungsbereiche zeigen einen Abschnitt zur Zeit; erst auswählen.
       const area=await target.evaluate(element=>element.closest('[data-config]')?.dataset.config);
       if(area)await page.evaluate(name=>selectConfig(name),area);
@@ -635,7 +637,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     await patternRow.getByRole('button',{name:'Offene Vorkommen übernehmen'}).click();
     await page.waitForFunction(()=>document.querySelector('#metricBlockersLabel').textContent==='noch nicht geprüft');
     assert.equal(await page.locator('#metricBlockers').innerText(),'—');
-    await navigate('team');
+    await navigate('team');await reveal('#matrix');
 
     assert(!snapshot.employees.some(e => e.id==='sp5:employee:102'));
     await page.waitForSelector('.matrix-cell');
@@ -663,7 +665,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     }
     await page.setViewportSize({width:1440,height:1000});
-    await screenshot('matrix.png');
+    await reveal('#matrix');await screenshot('matrix.png');
     await page.click(selector);
     assert.equal(await page.locator(selector).getAttribute('aria-pressed'), 'true');
     await page.click('#transpose');
@@ -681,6 +683,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const dated = structuredClone(snapshot); dated.id += ":dated";
     dated.employees[0].approvals = [{function_id:'sp5:service:201',workplace_id:'*',valid_from:'2026-01-01',valid_until:'2026-03-31',supervised:true}];
     await uploadProject( {name:'synthetic-dated.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(dated))});
+    await reveal('#matrix');
     // Die Zelle zeigt nur noch das Zeichen; der Wortlaut steht im Kurzhinweis.
     await page.waitForFunction(() => [...document.querySelectorAll('.matrix-cell')].some(b=>(b.title||'').includes('Betreut')));
     await page.click(selector);
@@ -694,6 +697,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     const partial = structuredClone(snapshot); partial.id += ":partial";
     partial.employees[0].approvals = [{function_id:'sp5:service:201',workplace_id:'sp5:workplace:301',valid_from:'2026-02-02',valid_until:'2026-02-03',supervised:true}];
     await uploadProject( {name:'synthetic-partial.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(partial))});
+    await reveal('#matrix');
     await page.waitForFunction(() => document.querySelector('.matrix-cell[data-employee-id="sp5:employee:101"][data-function-id="sp5:service:201"]').getAttribute('aria-pressed')==='false');
     assert.match(await page.locator(selector).getAttribute('title'), /Einzelne Arbeitsplätze/);
     await page.click(selector);

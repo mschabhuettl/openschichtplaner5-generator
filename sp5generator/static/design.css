@@ -407,6 +407,29 @@ th.weekend, td.weekend { background: var(--surface-2); }
 .collection-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
 .collection-content { display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow: auto; }
 .collection-count { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+/* People-first: frequent work fits before optional group administration. */
+#teamPeople { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+#teamPeople[hidden] { display: none; }
+#teamPeople #details:empty { display: none; }
+#people table { table-layout: fixed; }
+#people td, #people th { padding: 7px 6px; overflow-wrap: anywhere; white-space: normal; }
+#people th:nth-child(2) { width: 80px; white-space: nowrap; }
+#people th:nth-child(3) { width: 190px; }
+#people th:nth-child(4) { width: 112px; }
+#people td label { font-size: 0; gap: 0; min-width: 0; }
+#people input[type="number"] { width: 100%; min-width: 0; min-height: 44px; }
+#people td:has(input[type="checkbox"]) label { min-height: 44px; justify-content: center; }
+#people button { min-height: 44px; padding: 5px 7px; font-size: 12px; white-space: nowrap; }
+#peopleActions { flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+#teamNav { flex-direction: row; position: static; flex-wrap: wrap; }
+#teamNav button { width: auto; min-height: 44px; }
+@media (max-width: 600px) {
+  #people tr { display: grid; grid-template-columns: minmax(80px,1fr) 64px 104px; }
+  #people th:nth-child(n), #people td { width: auto; min-width: 0; }
+  #people th:nth-child(4) { position: absolute; width: 1px; height: 1px; padding: 0; clip-path: inset(50%); overflow: hidden; }
+  #people td:nth-child(4) { grid-column: 1 / -1; text-align: right; padding-top: 0; }
+  #people td:nth-child(-n+3) { border-bottom: 0; }
+}
 .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); padding-top: 12px; }
 .pagination-buttons { display: flex; gap: 8px; }
 

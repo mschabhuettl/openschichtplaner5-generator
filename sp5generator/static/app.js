@@ -64,6 +64,16 @@ function detailsVisible(id){
  const bereich=$(id)?.closest('[data-config]');if(bereich&&bereich.hidden)return false;
  const details=$(id)?.closest('details');return !details||details.open;
 }
+// Local team views only reveal existing nodes: never redraw or admit input.
+function selectTeam(name){
+ if(!['people','approvals'].includes(name))return;
+ for(const view of document.querySelectorAll('[data-team-view]'))view.hidden=view.dataset.teamView!==name;
+ for(const control of document.querySelectorAll('[data-team-to]')){
+  const selected=control.dataset.teamTo===name;
+  control.classList.toggle('active',selected);control.setAttribute('aria-pressed',String(selected));
+ }
+}
+for(const control of document.querySelectorAll('[data-team-to]'))control.addEventListener('click',()=>selectTeam(control.dataset.teamTo));
 function renderActivePanel(force=false){
  if(!snapshot)return;
  if(!force&&renderedPanels.get(activePanel)===changeVersion)return;
@@ -182,6 +192,7 @@ function load(s,persisted=false,{panel='team',focus=false}={}){
  snapshot=s;personDraft=false;assignments=stagedAssignments;changeVersion++;dirty=!persisted;jsonDirty=false;jsonVersion=-1;indexes=null;matrixCache=null;renderedPanels.clear();collections.clear();
  $('result').textContent=`${persisted&&assignments.length?'Gespeicherter Entwurf · ':''}Planvalidierung: noch nicht geprüft.`;
  // Reset is local to the opened project; no extra fields enter the snapshot.
+ selectTeam('people');$('teamTools').open=false;
  originalDemands=new Map(s.demands.map(d=>[d.id,{minimum:d.minimum,maximum:d.maximum,source:d.source}]));createdDemands=new Set();demandView='dates';
  for(const id of ['details','people','history','shifts','positions','demands','demandBoard','demandSummary','profiles','plan','calendar','matrix'])$(id).replaceChildren();
  $('json').value='';updateSaveStatus();updateJobButtons();$('planView').querySelector('[value=positions]').textContent=serviceMatrix()?'Einsatzplan · Dienste':'Einsatzplan · Funktionen / Arbeitsplätze';
@@ -266,11 +277,11 @@ function renderTeamScope(){
 function renderPeople(){
  renderTeamScope();
  const view=collection($('people'),'people',snapshot.employees,{label:'Personen',search:e=>e.name+' '+e.id,redraw:renderPeople});
- const body=table(view.content,['Person','Planen','Dienstart','Bevorzugt','Sollstunden','Teams','Profile','Details']),idx=dataIndex();
+ const body=table(view.content,['Person','Planen','Soll (h)','Details']);
  view.items.forEach(e=>{
   const tr=el('tr',undefined,body);tr.dataset.employeeId=e.id;tr.classList.toggle('excluded',!!e.excluded);el('td',e.name||'Neue Person',tr);
   const planning=field(el('td',undefined,tr),'Planen',!e.excluded,v=>{e.excluded=!v;tr.classList.toggle('excluded',e.excluded);},'checkbox');planning.dataset.employeePlanning=e.id;tableInputNavigation(planning,'planning');planning.setAttribute('aria-label',`${e.name||'Neue Person'}: Planen`);
-  select(el('td',undefined,tr),'Erlaubt',e.allowed_kinds.join(','),[['day','Nur Tag'],['night','Nur Nacht'],['day,night','Tag und Nacht']],v=>e.allowed_kinds=v.split(','));select(el('td',undefined,tr),'Wunsch',e.preferred_kind??'',[['','Keine Präferenz'],['day','Bevorzugt Tag'],['night','Bevorzugt Nacht']],v=>e.preferred_kind=v||null);const hours=field(el('td',undefined,tr),'Stunden',e.target_minutes==null?'':e.target_minutes/60,v=>setTargetHours(e,v),'number');hours.dataset.employeeHours=e.id;tableInputNavigation(hours,'hours');hours.required=true;hours.min='0';el('td',e.team_ids.map(id=>idx.groups.get(id)?.name??id).join(', '),tr);el('td',e.profile_ids.join(', '),tr);button(el('td',undefined,tr),'Bearbeiten',()=>personDetails(e));
+  const hours=field(el('td',undefined,tr),'Stunden',e.target_minutes==null?'':e.target_minutes/60,v=>setTargetHours(e,v),'number');hours.dataset.employeeHours=e.id;hours.setAttribute('aria-label',`${e.name||'Neue Person'}: Sollstunden`);tableInputNavigation(hours,'hours');hours.required=true;hours.min='0';button(el('td',undefined,tr),'Bearbeiten',()=>personDetails(e));
  });
 }
 function addPerson(){
@@ -298,7 +309,7 @@ function localDateTime(value){
  const parts=Object.fromEntries(formatter.formatToParts(new Date(value)).map(part=>[part.type,part.value]));return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 function personDetails(e){
- if(personDraft&&!window.confirm('Nicht übernommene Abwesenheit verwerfen?'))return;personDraft=false;navigate('team');
+ if(personDraft&&!window.confirm('Nicht übernommene Abwesenheit verwerfen?'))return;personDraft=false;navigate('team');selectTeam('people');
  const box=$('details');box.replaceChildren();const title=el('h3',e.name,box);box.classList.add('person-editor');
  const grid=el('div',undefined,box);grid.className='grid';
  const name=field(grid,'Name',e.name,v=>{e.name=v.trim();title.textContent=e.name;});name.required=true;name.maxLength=160;
@@ -355,7 +366,12 @@ function personDetails(e){
  const cycle=field(times,'Alle wie viele Wochen?',a.cycle_weeks,v=>a.cycle_weeks=v,'number');cycle.min='1';cycle.step='1';const phase=field(times,'Woche im Zyklus (erste = 0)',a.cycle_phase,v=>a.cycle_phase=v,'number');phase.min='0';phase.step='1';field(times,'Zyklus beginnt am',a.cycle_anchor??'',v=>a.cycle_anchor=v||null,'date');button(row,'Zeitfenster entfernen',()=>{e.availability.splice(i,1);invalidateResult();drawAvail();});});};
  drawAvail();button(box,'Zeitfenster hinzufügen',()=>{e.availability.push({valid_from:snapshot.period_start,valid_until:snapshot.period_end,weekdays:[0,1,2,3,4],start_time:'08:00',end_time:'13:00',cycle_weeks:1,cycle_phase:0,cycle_anchor:null,source:'additional'});invalidateResult();drawAvail();});
  const remove=button(box,'Person entfernen',()=>removePerson(e));remove.id='removePerson';remove.className='danger';
- button(box,'Details schließen',()=>{if(personDraft&&!window.confirm('Nicht übernommene Abwesenheit verwerfen?'))return;personDraft=false;box.replaceChildren();render();});box.scrollIntoView({block:'start',behavior:'smooth'});
+ const close=()=>{if(projectSwitchBusy())return;if(personDraft&&!window.confirm('Nicht übernommene Abwesenheit verwerfen?'))return;personDraft=false;box.replaceChildren();render();
+  const row=[...$('people').querySelectorAll('tr[data-employee-id]')].find(row=>row.dataset.employeeId===e.id);
+  const target=row?.querySelector('button')??$('people').querySelector('input');target?.scrollIntoView({block:'center'});target?.focus({preventScroll:true});
+ };
+ button(box,'Details schließen',close);box.onkeydown=event=>{if(event.key==='Escape'&&!event.defaultPrevented){event.preventDefault();close();}};
+ const owner=snapshot;requestAnimationFrame(()=>{if(snapshot!==owner||!name.isConnected||projectSwitchBusy())return;name.scrollIntoView({block:'center'});name.focus({preventScroll:true});});
 }
 function renderHistory(){
  const box=$('history'),rows=snapshot.metadata.history_matrix??[],idx=dataIndex();
@@ -1159,8 +1175,8 @@ function renderShortageSummary(box,entries){
   el('td',row.name,tr);el('td',String(row.demands),tr);el('td',String(row.slots),tr);
   el('td',String(row.approved),tr);
   button(el('td',undefined,tr),'Freigaben öffnen',()=>{
-   $('matrixSearch').value=row.name;navigate('team');renderMatrix();
-   $('matrix').scrollIntoView({block:'center'});
+   $('matrixSearch').value=row.name;navigate('team');selectTeam('approvals');renderMatrix();
+   $('matrixSearch').scrollIntoView({block:'center'});$('matrixSearch').focus({preventScroll:true});
   });
  }
 }
@@ -1318,6 +1334,7 @@ function revealInvalidInput(input){
  const owner=snapshot,version=changeVersion,panel=input.closest('[data-panel]')?.dataset.panel;
  // Preserve the actual invalid node, including text not yet admitted to data.
  if(panel){renderedPanels.set(panel,changeVersion);navigate(panel);}
+ const teamView=input.closest('[data-team-view]');if(teamView)selectTeam(teamView.dataset.teamView);
  const config=input.closest('[data-config]');if(config)selectConfig(config.dataset.config,{render:false});
  for(let parent=input.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
  // Save/solve release inert controls in their finally blocks before focus.
@@ -1328,7 +1345,7 @@ function revealInvalidInput(input){
 }
 async function save(){
  checkPeopleReady();
- if(personDraft){navigate('team');$('details').scrollIntoView({block:'center',behavior:'smooth'});throw Error('Die bearbeitete Abwesenheit zuerst übernehmen oder abbrechen.');}
+ if(personDraft){const draft=$('details').querySelector('input[type="datetime-local"]');if(draft)revealInvalidInput(draft);throw Error('Die bearbeitete Abwesenheit zuerst übernehmen oder abbrechen.');}
  if(jsonDirty)throw Error('JSON-Änderungen zuerst übernehmen oder mit „Aktuelle Daten anzeigen“ verwerfen.');
  const invalid=$('workspace').querySelector('input:invalid');
  if(invalid){revealInvalidInput(invalid);throw Error('Ungültige oder fehlende Eingabe korrigieren.');}
@@ -1781,4 +1798,4 @@ for(const [id,draw] of [['people',renderPeople],['shifts',renderShifts],['positi
 $('json').closest('details')?.addEventListener('toggle',()=>syncJson());
 publishState();
 
-const addPersonButton=button($('matrixSearch').closest('.surface-toolbar')??$('matrixSearch').parentElement.parentElement,'Person hinzufügen',addPerson);addPersonButton.id='addPerson';addPersonButton.className='primary';updateJobButtons();
+const addPersonButton=button($('peopleActions'),'Person hinzufügen',addPerson);addPersonButton.id='addPerson';addPersonButton.className='primary';updateJobButtons();

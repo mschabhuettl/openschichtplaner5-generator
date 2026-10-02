@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.31.1** bündelt die Arbeit in vier Bereichen: Projekte, Plan, Team und Einrichtung. Berechnung, Fortschritt und Kalender bleiben zusammen im Plan; Rechenoptionen und ausführliche Eingabehinweise sind bei Bedarf aufklappbar. Schmale Ansichten und lange Namen erhalten lokale Umbrüche statt dokumentweitem Überlauf. Die [Releasehinweise](docs/release-0.31.1.md) erläutern den Umfang und die Messgrenzen; die weitere Vereinfachung von Team, Import und Plankorrektur bleibt ein eigener Schritt.
+**Version 0.32.0** stellt im Team die Personen in den Vordergrund: Einplanung und Sollstunden sind direkt erreichbar, weitere persönliche Vorgaben über **Bearbeiten**. Die lokale Ansicht **Freigaben** enthält die Matrix; Gruppenwerkzeuge bleiben eingeklappt verfügbar. Die vier Arbeitsbereiche Projekte, Plan, Team und Einrichtung bleiben erhalten. Die [Releasehinweise](docs/release-0.32.0.md) erläutern den Umfang und die Messgrenzen; weitere Vereinfachungen von Import und Plankorrektur folgen getrennt.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -18,7 +18,7 @@ docker compose up -d
 Im Browser [http://127.0.0.1:8080](http://127.0.0.1:8080) öffnen. Compose verwendet das veröffentlichte Linux-amd64-Image und ein dauerhaftes Zustandsvolume.
 
 1. **Neues Projekt** wählen und Zeitraum, Personen, Funktionen und wiederkehrende Schichten anlegen.
-2. Unter **Team** festlegen, wer welche Funktion übernehmen darf. Dienstwünsche, Arbeitszeit und Verfügbarkeit bearbeiten.
+2. Unter **Team → Personen** Einplanung und Sollstunden festlegen; weitere Vorgaben über **Bearbeiten** öffnen. Unter **Team → Freigaben** festlegen, wer welche Funktion übernehmen darf.
 3. Unter **Einrichtung → Regeln & Projektdaten** Dienste und Ruheprofile prüfen und ausdrücklich bestätigen.
 4. Unter **Einrichtung → Dienste & Bedarf** die Mindestbesetzung in der Tagesmatrix anpassen und die Bedarfsstunden mit den Vertragssollstunden abgleichen.
 5. Im **Plan** mit **Speichern und berechnen** starten. Rechenzeit und Teilplanung stehen unter **Rechenoptionen**. Die Berechnung läuft im Hintergrund weiter, wenn der Browser geschlossen wird.
@@ -30,7 +30,7 @@ Zum Kennenlernen gibt es ein ausschließlich synthetisches Demoprojekt. Für eig
 
 - **Projekte:** gespeicherte Projekte und Berechnungen wieder öffnen, eigene Projekte anlegen und vorhandene Daten importieren.
 - **Plan:** Monatsansicht nach Personen oder Funktionen, Berechnung mit begrenzter Rechenzeit und optionaler Teilplanung, Fortschritt und Abbruch. Manuelle Einteilungen, Fixierungen, unabhängige Prüfung und Exporte bleiben im selben Arbeitsbereich. Ausführliche Eingabeprüfung und Rechenoptionen sind aufklappbar.
-- **Team:** Personenmatrix mit Suche und vertauschbaren Achsen; persönliche Vorgaben und zeitlich begrenzte Freigaben bearbeiten.
+- **Team:** startet mit Personen, Einplanung und Sollstunden. **Bearbeiten** öffnet persönliche Vorgaben. **Freigaben** enthält die Matrix mit Suche, vertauschbaren Achsen und zeitlich begrenzten Freigaben; Gruppenwerkzeuge sind aufklappbar.
 - **Einrichtung:** lokal zwischen **Dienste & Bedarf** und **Regeln & Projektdaten** wechseln. Die Bedarfsmatrix fasst Dienste derselben Funktionskennung mit gleichen lokalen Zeitsegmenten und bezahlten Minuten zusammen; Mindestbesetzung direkt oder gesammelt überschreiben und mit Vertragssollstunden vergleichen. Schichten, Funktionen, Einzelbedarfe, Ruheprofile, offene Angaben, Optimierungswünsche und Projekt-JSON bleiben in den vorhandenen Detailbereichen erreichbar.
 
 Größere Listen werden seitenweise dargestellt. Ausgeblendete Detailtabellen entstehen erst beim Öffnen. Die Monatsansicht zeigt pro Seite bis zu 30 Zeilen; die Einteilungsliste bis zu 40. Das vollständige Projekt bleibt erhalten und wird vollständig berechnet und exportiert.
@@ -61,7 +61,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.31.1-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.32.0-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
@@ -112,7 +112,7 @@ Der Container-Workflow prüft Python, Browser, saubere Paketinstallationen, den 
 
 - [UX-Ausgangsmessung](docs/ux/BASELINE.md) und [Zielablauf](docs/ux/TARGET-WORKFLOW.md)
 - [Prüfungen und gemessene Laufzeiten](docs/verification.md)
-- [Release 0.31.1 und Aktualisierung](docs/release-0.31.1.md)
+- [Release 0.32.0 und Aktualisierung](docs/release-0.32.0.md)
 - [Regeln, Zeitberechnung und Zielfunktion](docs/rules.md)
 - [Architektur und Integration](docs/architecture.md)
 - [SP5-Zuordnung und offene Semantik](docs/sp5-mapping.md)

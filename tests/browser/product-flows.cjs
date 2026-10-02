@@ -50,12 +50,12 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   assert.equal(snapshot.period_start,'2026-02-02');
   await page.locator('#createProjectDialog').waitFor({state:'hidden'});
   await navigate('team');
-  await page.waitForSelector('.matrix-cell');
+  await reveal('#matrix');await page.waitForSelector('.matrix-cell');
   if(await page.locator('#transpose').getAttribute('aria-pressed')==='true')await page.click('#transpose');
   const approval=page.locator('.matrix-cell').first();
   await approval.click();
   assert.equal(await approval.getAttribute('aria-pressed'),'false');
-  await page.click('#addPerson');
+  await reveal('#people');await page.click('#addPerson');
   assert.equal(await page.locator('#details').getByLabel('Name',{exact:true}).inputValue(),'');
   assert.equal(await page.locator('#details').getByLabel('Sollstunden im Planungszeitraum',{exact:true}).inputValue(),'');
   await page.locator('#details').getByLabel('Name',{exact:true}).fill('Testperson 005');
@@ -193,7 +193,7 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   large.id+=':browser-performance';
   const input={name:'synthetic-large-project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(large))};
   const importMs=await measure(()=>uploadProject(input));
-  await navigate('team');
+  await navigate('team');await reveal('#matrix');
   assert.equal(await page.locator('#matrix tbody tr').count(),large.employees.length,'All people appear in matrix without paging');
   const matrixEditMs=await measure(()=>page.locator('.matrix-cell').first().click());
   const searchMs=await measure(async()=>{

@@ -16,6 +16,7 @@ module.exports=async function serviceFamilyMatrix({page,base}){
    suggested_approvals:[{function_id:'f-nct-6',workplace_id:'*'}]}];
   invalidateResult();navigate('team');renderActivePanel(true);
  });
+ await page.locator('[data-team-to="approvals"]').click();
  const kopf=page.locator('#matrix thead th');
  await kopf.first().waitFor();
  const spalten=async()=>(await kopf.allInnerTexts()).slice(1).map(t=>t.trim());

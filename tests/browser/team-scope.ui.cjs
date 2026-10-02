@@ -10,6 +10,7 @@ module.exports=async function teamScopeUi({page,base}){
                                 {id:'sp5:group:fremd',name:'Fremder Bereich',children:[]}];
   invalidateResult();navigate('team');renderActivePanel(true);
  });
+ await page.locator('#teamTools > summary').click();
  const scope=page.locator('#teamScopeFields');
  await scope.waitFor();
  const counts=await page.evaluate(()=>[snapshot.employees.filter(e=>e.team_ids[0]==='sp5:group:fremd').length,snapshot.employees.length]);

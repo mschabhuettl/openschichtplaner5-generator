@@ -277,9 +277,21 @@
       </section>
       <div id="workspace" hidden>
         <section class="panel" data-panel="team" hidden aria-labelledby="teamTitle">
-          <div class="section-heading page-section-heading"><div><h2 id="teamTitle">Team &amp; Freigaben</h2><p>Wer kann welchen Dienst übernehmen? Freigaben und persönliche Vorgaben an einem Ort.</p></div><button type="button" class="quiet" data-navigate="rules">Weiter zu Regeln<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
+          <div class="section-heading page-section-heading"><div><h2 id="teamTitle">Team</h2><p>Personen einplanen und Sollstunden festlegen. Weitere Vorgaben unter „Bearbeiten“.</p></div><button type="button" class="quiet" data-navigate="rules">Weiter zu Regeln<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
           <p id="mappingWarning" class="inline-warning" hidden>Alter SP5-Snapshot: Die frühere Arbeitsplatz-Zuordnung kann nicht automatisch in Dienste umgewandelt werden. Bitte mit den gewünschten Teams und Zeiträumen neu importieren.</p>
-          <div class="surface matrix-surface">
+          <nav id="teamNav" class="sub-nav" aria-label="Teamansichten">
+            <button type="button" data-team-to="people" aria-controls="teamPeople" aria-pressed="true" class="active">Personen</button>
+            <button type="button" data-team-to="approvals" aria-controls="teamApprovals" aria-pressed="false">Freigaben</button>
+          </nav>
+          <div id="teamPeople" data-team-view="people">
+            <section class="surface padded" aria-label="Personen und Sollstunden">
+              <div id="peopleActions" class="section-heading"><h3>Personen &amp; Sollstunden</h3></div>
+              <div id="people" class="scroll"></div>
+              <p class="helper-text">Sollstunden gelten für den Planungszeitraum. Eingabetaste, ↓ und ↑ wechseln zwischen den sichtbaren Zeilen.</p>
+            </section>
+            <div id="details"></div>
+          </div>
+          <div id="teamApprovals" data-team-view="approvals" class="surface matrix-surface" hidden>
             <div class="bulk-approve" id="historyBulk" data-pending="0">
               <div><strong id="historyBulkTitle">Historische Vorschläge</strong>
                 <small>Übernimmt alle Vorschläge im gesamten Projekt – unabhängig von Suche und sichtbaren Zeilen. Bestehende Freigaben und Qualifikationen bleiben unverändert.
@@ -313,16 +325,11 @@
             <div class="surface-footer"><span class="helper-text">Klicken oder Leertaste: Freigabe im Planungszeitraum ändern.</span>
             </div>
           </div>
-          <div id="details"></div>
-          <details class="surface" open>
-            <summary>Persönliche Vorgaben <span class="summary-description">Dienstart, Sollstunden und Regelprofile</span>
+          <details class="surface" id="teamTools">
+            <summary>Gruppen &amp; Sammelaktionen <span class="summary-description">Planungsteilnahme, Ausbildung und persönliche Höchstgrenzen</span>
             </summary>
             <div class="details-content">
-              <p class="helper-text">„Nur“ ist verbindlich. „Bevorzugt“ ist ein Wunsch. Bei Sollstunden und „Planen“ wechseln Eingabetaste, ↓ und ↑ zwischen den sichtbaren Zeilen.
-              </p>
               <div id="teamScope"></div>
-              <div id="people" class="scroll">
-              </div>
             </div>
           </details>
           <details class="surface" id="teamTransfer">

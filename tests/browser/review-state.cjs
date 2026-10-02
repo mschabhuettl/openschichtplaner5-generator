@@ -136,6 +136,7 @@ test('UI-003 real specific workplace keeps wildcard mentoring validation',async(
   return {approvals:structuredClone(snapshot.employees[0].approvals),report:await api('/api/validate','POST',{snapshot:currentSnapshot(),assignments})};
  });
  assert(before.report.diagnostics.some(d=>d.code==='mentoring'),'positive control: wildcard requires a mentor');
+ await page.locator('[data-team-to="approvals"]').click();
  await page.locator('.matrix-cell[data-employee-id="e000"][data-function-id="f0"][data-workplace-id="w0"]').click();
  const after=await page.evaluate(async()=>({approvals:snapshot.employees[0].approvals,report:await api('/api/validate','POST',{snapshot:currentSnapshot(),assignments})}));
  assert(after.report.diagnostics.some(d=>d.code==='mentoring'),'specific grant must not remove the real mentoring violation');
@@ -157,6 +158,7 @@ for(const route of ['matrix','history'])test(`UI-003 real ungrouped ${route} ret
   return {approvals:structuredClone(snapshot.employees[0].approvals),report:await api('/api/validate','POST',{snapshot:currentSnapshot(),assignments})};
  });
  assert(before.report.diagnostics.some(d=>d.code==='approval'),'new member initially has no approval');
+ await page.locator('[data-team-to="approvals"]').click();
  await page.uncheck('#groupFamilies');
  if(route==='matrix')await page.locator('.matrix-cell[data-employee-id="e000"][data-function-id="f1"]').click();else await page.click('#confirmHistory');
  const after=await page.evaluate(async()=>({grouped:familienModus,approvals:snapshot.employees[0].approvals,report:await api('/api/validate','POST',{snapshot:currentSnapshot(),assignments})}));
@@ -184,7 +186,7 @@ async function importFamilyProject(page,s,grouped){
  await page.locator('#file').setInputFiles({name:'family-scope.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(s))});
  const checked=await checking;assert.equal(checked.status(),200,'the actual file-import schema accepts the fixture');
  await page.waitForFunction(()=>snapshot?.metadata.history_matrix?.length===1&&!projectSwitchBusy());
- await page.locator('.main-nav [data-navigate="team"]').click();await page.locator('#groupFamilies').setChecked(grouped);
+ await page.locator('.main-nav [data-navigate="team"]').click();await page.locator('[data-team-to="approvals"]').click();await page.locator('#groupFamilies').setChecked(grouped);
  assert.equal(await page.evaluate(()=>familienModus),grouped);
  return checked.json();
 }
@@ -278,6 +280,7 @@ for(const grouped of [true,false])for(const workplace of ['*','w1'])test(`UI-R2-
  await page.locator('#details').getByRole('button',{name:'Details schließen',exact:true}).click();
  const stored=await saveFamilyProject(page);assertScopeValidation(await validateAndExport(page,stored),true);
  // Remove supervision through the actual editor, not a synthetic validator stub.
+ await page.locator('[data-team-to="approvals"]').click();
  await page.locator('#matrix tbody th').getByRole('button',{name:input.employees[0].name,exact:true}).click();
  await page.locator('#details').getByLabel('Betreuung erforderlich',{exact:true}).last().uncheck();
  await page.locator('#details').getByRole('button',{name:'Details schließen',exact:true}).click();

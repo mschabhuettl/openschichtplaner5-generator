@@ -267,7 +267,7 @@ for(const kind of ['field','select','date-demand','function-demand','absence','j
  const s=fixture();s.positions=[{id:'p',name:'Day',function_id:'f',workplace_id:'*'}];s.shifts=[{id:'s',name:'Day',kind:'day',team_id:'t',paid_minutes:480,segments:[{start:'2026-10-01T08:00:00Z',end:'2026-10-01T16:00:00Z'}]}];s.demands=[{id:'d',shift_id:'s',position_id:'p',minimum:1,maximum:2}];
  const h=await harness(s);let input;
  if(kind==='field'){h.run('renderPeople()');input=h.document.querySelector('[data-employee-hours]');input.value='20';}
- if(kind==='select'){h.run('renderPeople()');input=h.get('people').querySelector('select');input.value='night';}
+ if(kind==='select'){h.run('personDetails(snapshot.employees[0])');input=h.get('details').querySelector('select');input.value='night';}
  if(kind==='date-demand'||kind==='function-demand'){h.run(kind==='date-demand'?'renderDemandBoard()':"switchDemandView('functions')");input=h.get('demandBoard').querySelector('.demand-value');input.value='3';}
  if(kind==='absence'){h.run('personDetails(snapshot.employees[0])');await h.button('details','Abwesenheit hinzufügen').onclick();input=h.get('details').querySelectorAll('input').find(i=>i.type==='datetime-local');input.value='2026-10-03T10:00';}
  if(kind==='json'){input=h.get('json');input.value='unapplied draft';}

@@ -23,6 +23,7 @@ module.exports=async function allProposals({page,base}){
    matrixCache=null;indexes=null;indexVersion=-1;planMonth=snapshot.period_start.slice(0,7);document.querySelector("#workspace").hidden=false;activePanel="team";
    render();navigate('team');
   });
+  await page.locator('[data-team-to="approvals"]').click();
   // Prominent and above the matrix, not hidden in the footer below long lists.
   const placement=await page.evaluate(()=>{const b=document.querySelector('#confirmHistory');
    return {inBanner:!!b.closest('#historyBulk'),beforeMatrix:!!(b.compareDocumentPosition(document.querySelector('#matrix'))&Node.DOCUMENT_POSITION_FOLLOWING),

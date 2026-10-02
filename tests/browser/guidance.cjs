@@ -62,6 +62,7 @@ module.exports=async function guidance({page,base}){
  // Ohne offene Vorschläge wird kein Übernehmen angeboten.
  await page.locator('.main-nav [data-navigate="team"]').click();
  await page.locator('[data-panel="team"]').waitFor({state:'visible'});
+ await page.locator('[data-team-to="approvals"]').click();
  assert.equal(await page.locator('#historyBulk').isVisible(),false,'Kein Streifen ohne historische Vorschläge');
 
  assert.deepEqual(errors,[]);
