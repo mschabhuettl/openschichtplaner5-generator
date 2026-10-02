@@ -7,7 +7,7 @@ const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'../..');
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function bounded(promise,ms,label){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' timed out')),ms);})]);}finally{clearTimeout(timer);}}
-const inputs=['tests/browser/review-workspace-layout.cjs','tests/browser/server.py','tests/browser/navigation.cjs','sp5generator/static/design.css','sp5generator/static/app.js','sp5generator/static/workspace.js','sp5generator/static/index.html'];
+const inputs=['tests/browser/workspace-layout-geometry.cjs','tests/browser/review-workspace-layout.cjs','tests/browser/server.py','tests/browser/navigation.cjs','sp5generator/static/design.css','sp5generator/static/app.js','sp5generator/static/workspace.js','sp5generator/static/index.html'];
 const hashes=()=>Object.fromEntries(inputs.map(file=>[file,crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')]));
 const cases=[
  {name:'standard',title:'Synthetisches Team Oktober',people:['Testperson A','Testperson B','Testperson C']},
@@ -18,7 +18,7 @@ const cases=[
 assert(cases.length,'LAYOUT_TEXT_CASE must name a declared text fixture');
 const viewports=[{width:320,height:1000},{width:390,height:1000},{width:768,height:1000},{width:1440,height:1000},{width:390,height:800}];
 const csp="default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'";
-async function settle(page){await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));await pause(90);}
+const {settle,measure,reach}=require('./workspace-layout-geometry.cjs');
 async function top(page){await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0);document.querySelectorAll('#calendar,#calendar *').forEach(e=>{e.scrollTop=0;e.scrollLeft=0;});});await settle(page);}
 async function font(page,scale){
  return page.evaluate(scale=>{
@@ -30,24 +30,6 @@ async function font(page,scale){
   const proof=baseline.map(({e,size})=>({tag:e.tagName,id:e.id,before:size,after:parseFloat(getComputedStyle(e).fontSize)}));
   return {scale,dpr:devicePixelRatio,count:proof.length,mismatches:proof.filter(p=>Math.abs(p.after-p.before*scale)>.02),samples:proof.filter(p=>['solve','planTitle','projectName','planView'].includes(p.id))};
  },scale);
-}
-async function measure(page,selector){return page.locator(selector).first().evaluate(e=>{
- const r=e.getBoundingClientRect(),h=document.querySelector('.topbar').getBoundingClientRect();
- const rect={left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};
- const overlap=r.right>h.left&&r.left<h.right&&!e.closest('.topbar,.sidebar');
- const clip={left:0,right:innerWidth,top:overlap?Math.max(0,h.bottom):0,bottom:innerHeight};
- const ancestors=[];
- for(let p=e.parentElement;p;p=p.parentElement){const s=getComputedStyle(p),q=p.getBoundingClientRect();
-  if(/auto|scroll|hidden|clip/.test(s.overflowX)){clip.left=Math.max(clip.left,q.left+p.clientLeft);clip.right=Math.min(clip.right,q.left+p.clientLeft+p.clientWidth);}
-  if(/auto|scroll|hidden|clip/.test(s.overflowY)){clip.top=Math.max(clip.top,q.top+p.clientTop);clip.bottom=Math.min(clip.bottom,q.top+p.clientTop+p.clientHeight);}
-  if(p.scrollLeft||p.scrollTop)ancestors.push({tag:p.tagName,id:p.id,className:p.className,x:p.scrollLeft,y:p.scrollTop});
- }
- const uncovered=[[.1,.1],[.5,.5],[.9,.9]].every(([x,y])=>{const hit=document.elementFromPoint(r.left+r.width*x,r.top+r.height*y);return hit===e||e.contains(hit);});
- return {...rect,clip,uncovered,fullyVisible:r.width>0&&r.height>0&&r.left>=clip.left-.1&&r.right<=clip.right+.1&&r.top>=clip.top-.1&&r.bottom<=clip.bottom+.1,focused:document.activeElement===e,text:e.textContent,scrollX,scrollY,ancestors};
- });}
-async function reach(page,selector,focus=false){
- await page.locator(selector).first().evaluate((e,focus)=>{e.scrollIntoView({block:'center',inline:'end',behavior:'instant'});if(focus)e.focus({preventScroll:true});},focus);
- await settle(page);return measure(page,selector);
 }
 async function shell(page){return page.evaluate(()=>({width:innerWidth,height:innerHeight,scrollX,scrollY,documentWidth:document.documentElement.scrollWidth,navWidth:document.querySelector('.main-nav').clientWidth,navScroll:document.querySelector('.main-nav').scrollWidth,rootOverflow:getComputedStyle(document.documentElement).overflowX,bodyOverflow:getComputedStyle(document.body).overflowX,outside:[...document.querySelectorAll('#mainContent *,.topbar *')].filter(e=>e.getClientRects().length&&!e.closest('.scroll,.sr-only')&&![...document.querySelectorAll('details:not([open])')].some(d=>d.contains(e)&&!d.querySelector(':scope > summary')?.contains(e))).map(e=>{const r=e.getBoundingClientRect();return {id:e.id,tag:e.tagName,className:typeof e.className==='string'?e.className:'',left:r.left,right:r.right,width:r.width};}).filter(r=>r.left<0||r.right>innerWidth),localScrolls:[...document.querySelectorAll('#calendar,#calendar *')].filter(e=>e.scrollLeft||e.scrollTop).map(e=>({id:e.id,x:e.scrollLeft,y:e.scrollTop}))}));}
 async function createAndSolve(page,data){
