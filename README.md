@@ -2,7 +2,7 @@
 
 Dienstpläne erstellen, gemeinsam geltende Regeln festlegen, Freigaben verwalten und geprüfte Ergebnisse exportieren. Die Anwendung läuft auf dem eigenen Rechner oder Server und berechnet Pläne lokal.
 
-**Version 0.33.0** trennt beim Anlegen eines Projekts Schichten und Regelprüfung. Sieben Regelwerte bleiben sofort lesbar, Änderungen liegen unter **Regeln anpassen**. **Weiter** und **Projekt erstellen** bleiben am Dialogrand erreichbar. Eingaben bleiben beim Zurückgehen und beim Ändern anderer Vorlagen erhalten; Bestätigungen werden nicht vorausgewählt. Die vier Arbeitsbereiche und die Personenansicht im Team bleiben erhalten. Die [Releasehinweise](docs/release-0.33.0.md) erläutern Messung und Grenzen; Import und Plankorrektur sind weitere getrennte Schritte.
+**Version 0.34.0** trennt das Öffnen einer Projektdatei vom SP5-Import. Im Import folgen Quelle, Teams und Zeitraum aufeinander; Monatsvorgaben füllen nur das Formular aus. Erst **Daten importieren** startet den Import. Weitere Einstellungen bleiben aufklappbar und in der Zusammenfassung sichtbar. Unvollständige Zahleneingaben gehen bei Navigation und verspäteten Antworten nicht verloren. Die [Releasehinweise](docs/release-0.34.0.md) beschreiben den geprüften Umfang und seine Grenzen; die weitere Vereinfachung der Plankorrektur bleibt ein eigener Schritt.
 
 ![Dienstplanansicht mit ausschließlich synthetischen Beispieldaten](docs/preview-0.8.0.png)
 
@@ -24,7 +24,7 @@ Im Browser [http://127.0.0.1:8080](http://127.0.0.1:8080) öffnen. Compose verwe
 5. Im **Plan** mit **Speichern und berechnen** starten. Rechenzeit und Teilplanung stehen unter **Rechenoptionen**. Die Berechnung läuft im Hintergrund weiter, wenn der Browser geschlossen wird.
 6. Im selben **Plan** das Ergebnis ansehen, Einteilungen bei Bedarf ändern oder fixieren, erneut prüfen und als Excel, CSV oder JSON exportieren.
 
-Zum Kennenlernen gibt es ein ausschließlich synthetisches Demoprojekt. Für eigene Projekte ist kein SP5-Bestand erforderlich. Vorhandene Projektdateien und SP5-Daten lassen sich über **Vorhandene Daten importieren** laden.
+Zum Kennenlernen gibt es ein ausschließlich synthetisches Demoprojekt. Für eigene Projekte ist kein SP5-Bestand erforderlich. Unter **Projekte** führt **Projektdatei öffnen** direkt zur Dateiauswahl; **SP5 importieren** öffnet das Formular für Verzeichnis oder API.
 
 ## Arbeitsbereiche
 
@@ -61,7 +61,7 @@ sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 Alternativ das Wheel der passenden Version aus den [Release-Dateien](https://github.com/mschabhuettl/openschichtplaner5-generator/releases) herunterladen und anhand von `SHA256SUMS` prüfen. Die Dateien stehen nach erfolgreichem Workflow **Verified release assets** bereit. Für ältere Releases ohne angehängte Dateien bleibt das 30 Tage verfügbare Workflow-Artefakt `openschichtplaner5-generator-python`:
 
 ```sh
-python -m pip install './openschichtplaner5_generator-0.33.0-py3-none-any.whl[web,sp5]'
+python -m pip install './openschichtplaner5_generator-0.34.0-py3-none-any.whl[web,sp5]'
 sp5-generator serve --host 127.0.0.1 --port 8080 --state-dir ./generator-state
 ```
 
@@ -112,7 +112,7 @@ Der Container-Workflow prüft Python, Browser, saubere Paketinstallationen, den 
 
 - [UX-Ausgangsmessung](docs/ux/BASELINE.md) und [Zielablauf](docs/ux/TARGET-WORKFLOW.md)
 - [Prüfungen und gemessene Laufzeiten](docs/verification.md)
-- [Release 0.33.0 und Aktualisierung](docs/release-0.33.0.md)
+- [Release 0.34.0 und Aktualisierung](docs/release-0.34.0.md)
 - [Regeln, Zeitberechnung und Zielfunktion](docs/rules.md)
 - [Architektur und Integration](docs/architecture.md)
 - [SP5-Zuordnung und offene Semantik](docs/sp5-mapping.md)

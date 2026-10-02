@@ -5,11 +5,13 @@ module.exports=async function quickStart({page,base}){
  await page.goto(base);
  await page.click('#openImport');
  await page.locator('#quickStart').waitFor();
+ await page.click('#quickStart > summary');
 
- // Ohne Teams sagt der Schnellstart, was fehlt, statt einen leeren Import zu starten.
+ // Vorbelegen ist kein Import und benötigt noch keine Teams.
  await page.fill('#quickMonth','2027-01');
  await page.click('#quickPrepare');
- assert.match(await page.locator('#notice').textContent(),/Teams/);
+ assert.equal(await page.inputValue('#start'),'2027-01-01');
+ assert.equal(await page.evaluate(()=>snapshot),null);
 
  // Mit Teams setzt ein Monat alle abgeleiteten Felder.
  await page.evaluate(()=>{checkedTeams.add('1');});

@@ -83,12 +83,15 @@
             </p>
           </div>
           <div class="project-entry-actions">
+              <label class="file-upload">Projektdatei öffnen<input type="file" id="file" accept=".json">
+              </label>
             <button id="openImport" type="button"><svg class="icon"><use href="#icon-upload"/></svg>SP5 importieren
             </button>
             <button id="newProject" class="primary" type="button"><svg class="icon"><use href="#icon-plus"/></svg>Neues Projekt
             </button>
           </div>
         </div>
+        <p id="fileFeedback" class="notice" role="status" aria-live="polite" aria-label="Projektdatei" tabindex="-1" hidden></p>
         <div class="project-overview" aria-label="Projektübersicht">
           <div><span class="metric-label">Gespeicherte Projekte</span><strong id="projectTotal">—</strong>
           </div>
@@ -114,29 +117,13 @@
         <div class="section-heading history-heading"><div><h2>Letzte Berechnungen</h2><p>Ergebnisse öffnen oder eine laufende Berechnung weiterverfolgen.</p></div><button id="refreshJobs" type="button" class="quiet">Aktualisieren</button></div>
         <div id="jobCards" class="job-list"><div class="list-empty">Berechnungen werden geladen …</div></div>
         <details class="surface import-panel" id="importDetails">
-          <summary><span class="summary-icon"><svg class="icon"><use href="#icon-upload"/></svg></span><span><strong>Vorhandene Daten importieren</strong>
-            <small>SP5-Verzeichnis, konfigurierte API oder Projektdatei
+          <summary><span class="summary-icon"><svg class="icon"><use href="#icon-upload"/></svg></span><span><strong>SP5-Daten importieren</strong>
+            <small>Quelle auswählen, Teams laden und Zeitraum festlegen
             </small></span>
           </summary>
           <div class="details-content">
             <p class="helper-text">Ein SP5-Import liest Ihre Quelle. Die Dienstplanung wird anschließend als eigenes Projekt bearbeitet.
             </p>
-            <section class="import-stage" id="quickStart">
-              <h3>Schnellstart
-              </h3>
-              <p>Einen Monat wählen – alles Übrige wird gesetzt: Zeitraum, Bedarf aus dem gleichen Monat des Vorjahres, historische Basis der letzten drei Jahre, Tag- und Nachtzuordnung. Was fachlich zu bestätigen ist, bleibt Ihre Entscheidung und wird danach aufgelistet.
-              </p>
-              <div class="grid import-grid">
-                <label>Planungsmonat<input id="quickMonth" type="month">
-                </label>
-                <div class="actions">
-                  <button id="quickPrepare" type="button" class="primary">Monat vorbereiten
-                  </button>
-                </div>
-              </div>
-              <p id="quickHint" class="helper-text">Zuerst unten die Teams laden und auswählen.
-              </p>
-            </section>
             <section class="import-stage">
               <h3><span>1</span>Quelle &amp; Teams
               </h3>
@@ -149,6 +136,7 @@
                 </label>
                 <button id="inspect" type="button">Teams laden
                 </button>
+                <p id="sourceFeedback" class="notice" role="status" aria-live="polite" aria-label="Datenquelle und Teams" tabindex="-1" hidden></p>
                 <fieldset class="team-picker">
                   <legend>Teams auswählen
                   </legend>
@@ -164,20 +152,19 @@
             <section class="import-stage">
               <h3><span>2</span>Zeitraum &amp; Vergleich
               </h3>
-              <p>Ist und Soll sind unterschiedliche Vergleichsgrundlagen. Die Auswahl bestätigt keine Freigaben.
-              </p>
+              <details id="quickStart">
+                <summary>Ganzen Monat vorbelegen (optional)</summary>
+                <div class="grid import-grid">
+                  <label>Planungsmonat<input id="quickMonth" type="month"></label>
+                  <div class="actions"><button id="quickPrepare" type="button">Monat vorbelegen</button></div>
+                </div>
+                <p id="quickHint" class="helper-text">Optional: Monat setzt Zeitraum, Bedarf aus dem Vorjahresmonat, drei Jahre Historie und Tag/Nacht-Zuordnung. Noch kein Import; Freigaben bleiben offen.</p>
+              </details>
               <div class="grid import-grid">
-                <label>Zeitzone (IANA)<input id="timezone" value="UTC">
-                </label>
+
                 <label>Planung ab<input id="start" type="date" value="2026-01-05">
                 </label>
                 <label>Planung bis<input id="end" type="date" value="2026-01-18">
-                </label>
-                <label>Vergleichsdienste im Planungszeitraum<select id="referencePlan" aria-describedby="referencePlanHelp"><option value="ist">Istplan</option><option value="soll">Sollplan</option></select>
-                </label>
-                <label>Bestehender Plan im Planungszeitraum<select id="existingPlanMode" aria-describedby="referencePlanHelp"><option value="reference">Als Vergleich verwenden · neu planen</option><option value="fixed">Bestehende Einteilungen fixieren</option></select>
-                  <small id="referencePlanHelp">Die Auswahl betrifft normale Vergleichsdienste im Planungszeitraum. Abwesenheiten, Sonderdienste und Randkontext bleiben aus dem Istplan. Die historische Planbasis betrifft frühere Einsätze. Zuordnen ist keine Dienstfreigabe.
-                  </small>
                 </label>
                 <label>Besetzungsbedarf<select id="demandSource" aria-describedby="demandSourceHelp"><option value="requirements" selected>Aus der Bedarfstabelle der Quelle</option><option value="observed">Aus dem beobachteten Plan ableiten</option><option value="history">Aus der Historie ableiten (typischer Tag)</option></select>
                   <small id="demandSourceHelp">Abgeleiteter Bedarf stammt nicht aus der Quelle. „Beobachteter Plan“ übernimmt die tatsächliche Besetzung je Dienst, Arbeitsplatz und Tag – nur für bereits geplante Zeiträume. „Historie“ ist für künftige Zeiträume gedacht: aus dem unten gewählten historischen Fenster wird je Dienst, Arbeitsplatz und Wochentag die typische Besetzung vergleichbarer Tage übernommen, Feiertage wie Sonntage. Tage ohne Dienst zählen mit; was seltener als an der Hälfte der Tage besetzt war, wird nicht zum Bedarf.
@@ -187,10 +174,21 @@
                 </label>
               </div>
             </section>
+            <p id="importSummary" class="helper-text" role="status" aria-live="polite"></p>
             <details class="import-options" id="importOptions">
-              <summary><strong>Optionale Einrichtung &amp; Wiederverwendung</strong><span class="summary-description">Historie, Zeitregel und Folgezeitraum</span>
+              <summary><strong>Optionale Einrichtung &amp; Wiederverwendung</strong><span class="summary-description">Zeitzone, Vergleich, Historie, Zeitregel und Folgezeitraum</span>
               </summary>
               <div class="import-options-content">
+                <div class="grid import-grid">
+                <label>Zeitzone (IANA)<input id="timezone" value="UTC">
+                </label>
+                <label>Vergleichsdienste im Planungszeitraum<select id="referencePlan" aria-describedby="referencePlanHelp"><option value="ist">Istplan</option><option value="soll">Sollplan</option></select>
+                </label>
+                <label>Bestehender Plan im Planungszeitraum<select id="existingPlanMode" aria-describedby="referencePlanHelp"><option value="reference">Als Vergleich verwenden · neu planen</option><option value="fixed">Bestehende Einteilungen fixieren</option></select>
+                  <small id="referencePlanHelp">Die Auswahl betrifft normale Vergleichsdienste im Planungszeitraum. Abwesenheiten, Sonderdienste und Randkontext bleiben aus dem Istplan. Die historische Planbasis betrifft frühere Einsätze. Zuordnen ist keine Dienstfreigabe.
+                  </small>
+                </label>
+                </div>
                 <fieldset id="followPeriodPreparation">
                   <legend>Folgezeitraum vorbereiten
                   </legend>
@@ -251,15 +249,18 @@
             <div class="actions">
               <button id="import" class="primary" type="button">Daten importieren
               </button>
-              <button id="demo" type="button">Demoprojekt ausprobieren
-              </button>
-              <label class="file-upload">Projektdatei öffnen<input type="file" id="file" accept=".json">
-              </label>
+
+
             </div>
+            <p id="importFeedback" class="notice" role="status" aria-live="polite" aria-label="SP5-Import" tabindex="-1" hidden></p>
             <p class="helper-text small-text">Der Verzeichnispfad bezieht sich auf den Server; in Docker kann die Quelle z. B. unter /source eingebunden werden. API-Adresse und Zugang werden auf dem Server konfiguriert.
             </p>
           </div>
         </details>
+        <div class="actions">
+              <button id="demo" type="button">Demoprojekt ausprobieren
+              </button>
+        </div>
         <details class="legacy-access">
           <summary>Gespeicherten Stand direkt auswählen
           </summary>

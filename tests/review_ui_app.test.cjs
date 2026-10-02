@@ -162,6 +162,7 @@ class Element {
  set textContent(v){this._text=String(v??'');this.children.forEach(c=>c.parentElement=null);this.children=[];}
  get textContent(){return this._text+this.children.map(c=>c.textContent).join('');}
  get childNodes(){return this.children;}
+ get selectedOptions(){const options=this.querySelectorAll('option');return options.filter(o=>o.value===this.value||(this.value===''&&o===(options.find(n=>n.getAttribute('selected')!==null)||options[0])));}
  get isConnected(){return this===this.doc.body||!!this.parentElement?.isConnected;}
  append(...nodes){for(let n of nodes){if(typeof n!=='object'){const t=new Element('#text',this.doc);t._text=String(n);n=t;}n.remove();n.parentElement=this;this.children.push(n);}}
  replaceChildren(...nodes){this.textContent='';this.append(...nodes);}
@@ -461,6 +462,13 @@ test('UI-001 restored job binds the cloned input and applies its own valid resul
  await h.run("openJob('restored')");assert.equal(h.state().snapshot.metadata.restored_from_job,'restored');assert.notEqual(h.state().snapshot.id,'stored');assert.deepEqual(h.state().assignments,jobResult().result.assignments);
 });
 
+test('NATIVE-LEGACY-BINDING-FALLBACK restored job rejects a newer draft generation (DOM/API seam)',async()=>{
+ const h=await harness(),pending=deferred(),reached=deferred();h.c.respond=req=>{if(req.url.endsWith('/snapshot'))return fixture('stored');if(req.url==='/api/snapshots/check')return req.data;if(req.url.endsWith('/status')){reached.resolve();return pending.promise;}return jobResult();};
+ const opening=h.run("openJob('restored')");await reached.promise;const before=h.state();
+ // Isolated generation seam, not a claim of keyboard editing inert controls.
+ h.run('draftVersion++');pending.resolve(jobResult());await opening;
+ assert.deepEqual(h.state().snapshot,before.snapshot);assert.deepEqual(h.state().assignments,before.assignments,'restored job must use the same exact generation binding as a new job');assert.equal(h.state().jobId,null);
+});
 for(const change of ['same-id-reload','revision','unversioned','json-draft','person-draft'])test(`UI-001 pending result rejects changed basis: ${change}`,async()=>{
  const h=await harness(),pending=deferred(),reached=deferred();h.c.respond=req=>{if(req.url==='/api/snapshots')return {revision:'2'};if(req.url==='/api/jobs')return {id:'j'};if(req.url.endsWith('/status'))return jobResult();reached.resolve();return pending.promise;};
  const solving=h.run('solve()');await reached.promise;

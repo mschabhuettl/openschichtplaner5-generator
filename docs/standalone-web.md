@@ -13,8 +13,9 @@ Im Browser `http://127.0.0.1:8080` öffnen. Der lokale Dienst ist für eine Plan
 
 ## Eigenes Projekt und Arbeitsbereiche
 
-Vorhandene SP5-Daten werden im Bereich **Projekte** über **Vorhandene Daten
-importieren** geladen. Wer ohne SP5 plant, kann stattdessen **Neues Projekt**
+Vorhandene SP5-Daten werden im Bereich **Projekte** über **SP5 importieren**
+geladen. **Projektdatei öffnen** ist ein eigener Einstieg ohne SP5-Formular.
+Wer ohne SP5 plant, kann stattdessen **Neues Projekt**
 wählen; der Assistent fragt Zeitraum, Team, Funktionen und wiederkehrende
 Schichten mit ihrem Besetzungsbedarf ab. Ruhevorgaben werden ausdrücklich
 bestätigt. Freigaben und dienstfreie Randzeiten werden nur nach entsprechender
@@ -29,6 +30,21 @@ Schichttabellen und weitere Detailbereiche
 werden beim Öffnen geladen. Größere Listen und Monatspläne lassen sich
 seitenweise durchblättern; Berechnung und Exporte verwenden weiterhin sämtliche
 Daten des Projekts.
+
+## Import vorbereiten
+
+Zuerst Quelle auswählen und **Teams laden**, dann Teams und Planungszeitraum
+festlegen. **Ganzen Monat vorbelegen (optional)** setzt nur die Formularwerte;
+**Daten importieren** startet den eigentlichen Import. Die Monatsvorgabe setzt
+auch Bedarf aus dem Vorjahresmonat, drei Jahre Historie und die Tag/Nacht-Zuordnung,
+bestätigt aber keine Freigaben oder Regelprofile.
+
+Zeitzone, Vergleichsplan und historische Planbasis stehen unter **Optionale
+Einrichtung & Wiederverwendung**. Die Zusammenfassung zeigt diese Einstellungen
+einschließlich aktiver Schwelle für historische Freigaben. Nach einem Quellenwechsel
+Teams erneut laden. Fehler erscheinen bei der betroffenen Aktion; ungültige Dateien
+oder abgebrochene Ersetzungen überschreiben das aktuelle Projekt nicht.
+Dateiöffnung und Import speichern den Entwurf nicht automatisch.
 
 ## API laden
 

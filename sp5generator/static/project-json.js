@@ -24,7 +24,7 @@
  function parse(text){
   return guarded(()=>{
    if(typeof text!=='string')throw invalid();
-   return JSON.parse(text,(_key,value,context)=>{
+   try{return JSON.parse(text,(_key,value,context)=>{
     if(typeof value!=='number')return value;
     // A lexical integer may initially be Infinity in the native parser.
     if(/^-?\d+$/.test(context.source)){
@@ -33,7 +33,10 @@
     }
     if(!Number.isFinite(value))throw invalid();
     return Number.isInteger(value)?new Number(value):value;
-   });
+   });}catch(error){
+    if(error instanceof SyntaxError)throw failure('Ungültige JSON-Datei. Syntax prüfen; der aktuelle Stand und Ihre Eingaben bleiben erhalten.');
+    throw error;
+   }
   });
  }
  // Non-mutating native brand read view; never coerce opaque strings or BigInt.

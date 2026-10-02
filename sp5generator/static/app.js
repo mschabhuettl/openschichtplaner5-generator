@@ -8,6 +8,20 @@ let originalDemands=new Map(), createdDemands=new Set();
 let demandView='dates';
 let savedRequest=0,jobsRequest=0;
 let readinessVersion=-1,readinessPending=-1,readinessRequest=0,readinessSummary=null;
+// Unadmitted native text has its own generation: changing render versions
+// would rebuild inputs and destroy text such as the unfinished exponent 1e.
+let draftVersion=0;
+const nativeDrafts=new Set();
+const admittedFieldValues=new WeakMap();
+let nativeDraftOrigin=null;
+function hasNativeDraft(){for(const input of nativeDrafts)if(!input.isConnected)nativeDrafts.delete(input);return nativeDrafts.size>0;}
+function clearNativeDraft(input){
+ const tracked=nativeDrafts.delete(input);
+ if(tracked&&!hasNativeDraft()){
+  if(nativeDraftOrigin?.owner===snapshot&&nativeDraftOrigin.version===changeVersion)dirty=nativeDraftOrigin.dirty;
+  nativeDraftOrigin=null;updateSaveStatus();
+ }
+}
 const fold=value=>String(value??'').toLocaleLowerCase('de-DE');
 // Visible dates are TT.MM.JJJJ; stored and compared values stay ISO.
 function dayText(value){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value??''));return m?`${m[3]}.${m[2]}.${m[1]}`:String(value??'');}
@@ -20,7 +34,7 @@ function dataIndex(){
  indexVersion=changeVersion;matrixCache=null;return indexes;
 }
 function currentReadiness(){
- if(jsonDirty||personDraft)return {state:'draft',count:null};
+ if(jsonDirty||personDraft||hasNativeDraft())return {state:'draft',count:null};
  if(readinessSummary?.version===changeVersion&&readinessSummary.state!=='draft'&&(readinessSummary.state!=='pending'||readinessPending===changeVersion))return readinessSummary;
  return {state:'unchecked',count:null};
 }
@@ -104,7 +118,25 @@ async function api(path,method='GET',data){
  if(!r.headers.get('content-type')?.includes('application/json'))throw Error('Keine gültige Serverantwort. Bei abgelaufener Anmeldung die Seite neu laden. Ungespeicherte Änderungen vorher als Projekt sichern.');
  return ProjectJSON.parse(await r.text());
 }
-async function runAction(b,fn){if(b.disabled||b.dataset.busy==='true'||(projectSwitchBusy()&&b.id!=='cancel'&&b.id!=='refreshJobs'))return;b.dataset.busy='true';const disabled=b.disabled;b.disabled=true;b.setAttribute('aria-busy','true');updateJobButtons();try{await fn();}catch(e){notice(e.message,true);}finally{delete b.dataset.busy;b.removeAttribute('aria-busy');b.disabled=disabled;updateJobButtons();}}
+function importFeedback(id,text,error=false){
+ const target=$({inspect:'sourceFeedback',file:'fileFeedback',import:'importFeedback',quickPrepare:'importFeedback'}[id]);
+ if(!target)return null;
+ target.textContent=text;target.hidden=!text;target.classList.toggle('error',error);return target;
+}
+function revealImportFeedback(target){
+ const owner=snapshot,version=changeVersion;
+ requestAnimationFrame(()=>{
+  if(snapshot!==owner||changeVersion!==version||document.body.dataset.activePanel!=='projects'||!target?.getClientRects().length)return;
+  target.scrollIntoView({block:'center',behavior:'instant'});target.focus({preventScroll:true});
+ });
+}
+async function runAction(b,fn){
+ if(b.disabled||b.dataset.busy==='true'||(projectSwitchBusy()&&b.id!=='cancel'&&b.id!=='refreshJobs'))return;
+ b.dataset.busy='true';const disabled=b.disabled;b.disabled=true;b.setAttribute('aria-busy','true');updateJobButtons();let failedFeedback;
+ importFeedback(b.id,'');
+ try{await fn();}catch(e){notice(e.message,true);failedFeedback=importFeedback(b.id,e.message,true);}
+ finally{delete b.dataset.busy;b.removeAttribute('aria-busy');b.disabled=disabled;updateJobButtons();if(failedFeedback)revealImportFeedback(failedFeedback);}
+}
 const lockedControls=new Map();
 function updateJobButtons(){
  $('cancel').disabled=!jobId||$('cancel').dataset.busy==='true';
@@ -131,13 +163,13 @@ function projectId(){
 }
 function currentSnapshot(){return {...snapshot,assignments:ProjectJSON.clone(assignments)};}
 // Async results belong to one exact input, not merely to a project ID.
-function inputBinding(){return {owner:snapshot,version:changeVersion,data:ProjectJSON.clone(currentSnapshot())};}
-function inputUnchanged(binding){return !!binding&&snapshot===binding.owner&&changeVersion===binding.version&&!jsonDirty&&!personDraft&&ProjectJSON.stringify(currentSnapshot())===ProjectJSON.stringify(binding.data);}
+function inputBinding(){return {owner:snapshot,version:changeVersion,draftVersion,data:ProjectJSON.clone(currentSnapshot())};}
+function inputUnchanged(binding){return !!binding&&snapshot===binding.owner&&changeVersion===binding.version&&draftVersion===binding.draftVersion&&!jsonDirty&&!personDraft&&!hasNativeDraft()&&ProjectJSON.stringify(currentSnapshot())===ProjectJSON.stringify(binding.data);}
 // Replacement includes uncommitted text/person drafts; busy controls alone do
 // not protect against a late event or a newer programmatic edit.
-function replacementBinding(){return {owner:snapshot,version:changeVersion,dirty,jsonDirty,personDraft,text:$('json').value,data:snapshot?ProjectJSON.stringify(currentSnapshot()):null};}
+function replacementBinding(){return {owner:snapshot,version:changeVersion,draftVersion,dirty,jsonDirty,personDraft,text:$('json').value,data:snapshot?ProjectJSON.stringify(currentSnapshot()):null};}
 function requireReplacement(binding){
- if(snapshot!==binding.owner||changeVersion!==binding.version||dirty!==binding.dirty||jsonDirty!==binding.jsonDirty||personDraft!==binding.personDraft||$('json').value!==binding.text||(snapshot?ProjectJSON.stringify(currentSnapshot()):null)!==binding.data)throw Error('Projekt während des Ladens geändert. Eingaben bleiben erhalten; erneut öffnen.');
+ if(snapshot!==binding.owner||changeVersion!==binding.version||draftVersion!==binding.draftVersion||dirty!==binding.dirty||jsonDirty!==binding.jsonDirty||personDraft!==binding.personDraft||$('json').value!==binding.text||(snapshot?ProjectJSON.stringify(currentSnapshot()):null)!==binding.data)throw Error('Projekt während des Ladens geändert. Eingaben bleiben erhalten; erneut öffnen.');
 }
 function updateSaveStatus(){
  $('saveStatus').textContent=jsonDirty?'JSON-Änderungen noch nicht übernommen.':dirty?'Ungespeicherte Änderungen':`Gespeicherter Stand ${snapshot?.revision??''}`;
@@ -147,7 +179,16 @@ function markChanged(){changeVersion++;dirty=true;clearReplacement();updateSaveS
 function canReplace(){return !(dirty||jsonDirty)||window.confirm('Ungespeicherte Änderungen verwerfen und einen anderen Stand öffnen? Mit Abbrechen können Sie den aktuellen Stand zuerst speichern oder als Projekt sichern.');}
 window.addEventListener('beforeunload',event=>{if(dirty||jsonDirty){event.preventDefault();event.returnValue='';}});
 function action(id,fn){$(id).onclick=()=>runAction($(id),fn);}
-function field(parent,label,value,change,type='text',{updatesProject=true}={}){const l=el('label',label,parent),i=el('input',undefined,l);i.type=type;if(type==='number')i.step='any';if(type==='checkbox')i.checked=!!value;else i.value=value??'';i.onchange=()=>{if(updatesProject&&projectSwitchBusy())return;change(type==='checkbox'?i.checked:type==='number'?(i.value===''?null:Number(i.value)):i.value);if(updatesProject)invalidateResult();};return i;}
+function field(parent,label,value,change,type='text',{updatesProject=true}={}){
+ const l=el('label',label,parent),i=el('input',undefined,l);i.type=type;if(type==='number')i.step='any';if(type==='checkbox')i.checked=!!value;else i.value=value??'';
+ admittedFieldValues.set(i,i.value);
+ if(type==='number'&&updatesProject){
+  i.addEventListener('input',()=>{if(!hasNativeDraft())nativeDraftOrigin={owner:snapshot,version:changeVersion,dirty};nativeDrafts.add(i);draftVersion++;dirty=true;readinessVersion=-1;readinessPending=-1;updateSaveStatus();});
+  // A native edit/revert can omit change entirely when focus leaves the field.
+  i.addEventListener('blur',()=>{if(nativeDrafts.has(i))i.onchange();});
+ }
+ i.onchange=()=>{if(updatesProject&&projectSwitchBusy())return;if(type==='number'&&i.validity?.badInput){if(updatesProject){nativeDrafts.add(i);dirty=true;updateSaveStatus();}return;}if(type==='number'&&updatesProject&&i.value===admittedFieldValues.get(i)){clearNativeDraft(i);return;}change(type==='checkbox'?i.checked:type==='number'?(i.value===''?null:Number(i.value)):i.value);admittedFieldValues.set(i,i.value);clearNativeDraft(i);if(updatesProject)invalidateResult();};return i;
+}
 function tableInputNavigation(input,column){
  input.dataset.tableColumn=column;
  input.addEventListener('keydown',event=>{
@@ -199,6 +240,7 @@ function load(s,persisted=false,{panel='team',focus=false}={}){
  $('start').value=s.period_start;$('end').value=s.period_end;$('timezone').value=s.timezone;$('matrixSearch').value='';
  if(s.metadata.history_period){$('historyStart').value=s.metadata.history_period.start;$('historyEnd').value=s.metadata.history_period.end;}else historyDefaults();
  if(s.metadata.night_classification){$('setupNightStart').value=s.metadata.night_classification.start;$('setupNightEnd').value=s.metadata.night_classification.end;$('setupNightMin').value=s.metadata.night_classification.minimum;}
+ updateImportSummary();
  planMonth=s.period_start.slice(0,7);$('workspace').hidden=false;activePanel=panel;render();navigate(panel,{focus});updateJobButtons();
  notice(`Daten geladen: ${s.employees.length} Personen${s.metadata.selected_group_ids?' aus '+s.metadata.selected_group_ids.length+' ausgewählten Teams':''}. Regeln und offene Angaben prüfen.`);
 }
@@ -206,7 +248,13 @@ function render(){
  $('source').textContent=`Quelle: ${snapshot.source==='synthetic'?'SYNTHETISCHE DEMO':snapshot.source} · ${periodText(snapshot.period_start,snapshot.period_end)} · ${snapshot.timezone} · Stand ${snapshot.revision}`;
  renderActivePanel(true);publishState();
 }
-function setTargetHours(person,value){person.target_minutes=value===null?null:Math.round(value*60);for(const input of document.querySelectorAll('[data-employee-hours]'))if(input.dataset.employeeHours===person.id&&input!==document.activeElement)input.value=value===null?'':String(value);}
+function setTargetHours(person,value){
+ person.target_minutes=value===null?null:Math.round(value*60);
+ for(const input of document.querySelectorAll('[data-employee-hours]'))if(input.dataset.employeeHours===person.id&&input!==document.activeElement){
+  // Synchronize the admitted basis without discarding a pending native draft.
+  const admitted=value===null?'':String(value);admittedFieldValues.set(input,admitted);if(!nativeDrafts.has(input))input.value=admitted;
+ }
+}
 // A redraw after a bulk step must not throw away the group the planner picked.
 const teamScopeChoice={gruppe:'',ausbilder:'',lernende:'',kapazitaet:1,anteil:120};
 function renderTeamScope(){
@@ -617,7 +665,7 @@ function renderServiceGroups(){
  const automatic=el('fieldset',undefined,box);el('legend','Tag/Nacht aus Uhrzeiten erkennen',automatic);
  el('p','Vorschlagsregel, keine gesetzliche Vorgabe: Nacht bei mindestens der eingestellten Minutenzahl im Nachtfenster, sonst Tag. Geteilte Dienste zählen nur ihre Arbeitsblöcke. Bereits festgelegte Dienstarten bleiben erhalten.',automatic);
  const previewBox=el('div');previewBox.id='serviceRulePreview';previewBox.setAttribute('aria-live','polite');
- const editRule=(label,key,type)=>{const input=field(automatic,label,settings[key],()=>{},type);input.oninput=()=>{settings[key]=type==='number'?(input.value===''?null:Number(input.value)):input.value;previewBox.replaceChildren();};input.onchange=input.oninput;return input;};
+ const editRule=(label,key,type)=>{const input=field(automatic,label,settings[key],()=>{},type,{updatesProject:false});input.oninput=()=>{settings[key]=type==='number'?(input.value===''?null:Number(input.value)):input.value;previewBox.replaceChildren();};input.onchange=input.oninput;return input;};
  editRule('Nacht ab','start','time');editRule('Nacht bis','end','time');
  const threshold=editRule('Mindestens Minuten im Nachtfenster','minimum','number');threshold.min='1';threshold.max='1440';threshold.step='1';
  el('p','Zuerst Vorschau prüfen. Eingaben und Vorschau ändern noch keine Dienstart und speichern keine Zeitregel.',automatic).className='helper-text';
@@ -1115,9 +1163,9 @@ function refreshAutomaticReadiness(force=false){
  if(!snapshot||activePanel!=='plan')return;
  const status=$('automaticReadinessStatus'),details=$('automaticReadinessDetails'),retry=$('retryReadiness');
  const display=(state,message,count=null)=>{status.dataset.state=state;status.textContent=message;setReadinessSummary(state,count);};
- if(jsonDirty||personDraft){
+ if(jsonDirty||personDraft||hasNativeDraft()){
   readinessRequest++;readinessPending=-1;readinessVersion=-1;details.replaceChildren();retry.hidden=true;
-  display('draft','Offene JSON- oder Abwesenheitsbearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Vorprüfung.');return;
+  display('draft','Offene Zahlen-, JSON- oder Abwesenheitsbearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Vorprüfung.');return;
  }
  if(!force&&(readinessVersion===changeVersion||readinessPending===changeVersion))return;
  let binding;try{binding=inputBinding();}catch(error){display('error',error.message);return;}
@@ -1349,15 +1397,21 @@ async function save(){
  if(jsonDirty)throw Error('JSON-Änderungen zuerst übernehmen oder mit „Aktuelle Daten anzeigen“ verwerfen.');
  const invalid=$('workspace').querySelector('input:invalid');
  if(invalid){revealInvalidInput(invalid);throw Error('Ungültige oder fehlende Eingabe korrigieren.');}
- const owner=snapshot,version=changeVersion,sent=ProjectJSON.clone(currentSnapshot());
+ if(hasNativeDraft()){revealInvalidInput(nativeDrafts.values().next().value);throw Error('Zahleneingabe zuerst im markierten Feld bestätigen (Tab), danach erneut speichern oder berechnen.');}
+ const owner=snapshot,version=changeVersion,sentDraftVersion=draftVersion,sent=ProjectJSON.clone(currentSnapshot());
  const stagedAssignments=ProjectJSON.clone(sent.assignments),stagedInput=ProjectJSON.clone(sent);
  const persisted=await api('/api/snapshots','PUT',sent);
  if(snapshot!==owner||snapshot.id!==sent.id||snapshot.revision!==sent.revision)return;
- const unchanged=version===changeVersion&&!jsonDirty&&!personDraft&&ProjectJSON.stringify(currentSnapshot())===ProjectJSON.stringify(sent);
+ const canonicalUnchanged=version===changeVersion&&ProjectJSON.stringify(currentSnapshot())===ProjectJSON.stringify(sent);
+ const unchanged=canonicalUnchanged&&sentDraftVersion===draftVersion&&!jsonDirty&&!personDraft&&!hasNativeDraft();
+ // The PUT acknowledges the canonical generation even when newer native text
+ // remains pending. Reverting that text must restore the acknowledged origin,
+ // not the pre-save dirty flag; other canonical generations are never rebased.
+ if(canonicalUnchanged&&nativeDraftOrigin?.owner===owner&&nativeDraftOrigin.version===version)nativeDraftOrigin.dirty=false;
  stagedInput.revision=persisted.revision;const text=unchanged?ProjectJSON.stringify(stagedInput,null,2):null;
  snapshot.revision=persisted.revision;snapshot.assignments=stagedAssignments;dirty=!unchanged;jsonVersion=-1;updateSaveStatus();$('source').textContent=`Quelle: ${snapshot.source==='synthetic'?'SYNTHETISCHE DEMO':snapshot.source} · ${periodText(snapshot.period_start,snapshot.period_end)} · ${snapshot.timezone} · Stand ${snapshot.revision}`;
  if(unchanged){$('json').value=text;jsonVersion=changeVersion;}
- const binding=unchanged?{owner:snapshot,version:changeVersion,data:stagedInput}:null;
+ const binding=unchanged?{owner:snapshot,version:changeVersion,draftVersion,data:stagedInput}:null;
  await saved();if(snapshot===owner)notice(dirty?'Übertragener Stand gespeichert; neuere Änderungen sind noch ungespeichert.':'Regeln und Entwurf dauerhaft gespeichert.');
  return binding;
 }
@@ -1410,8 +1464,19 @@ async function poll(){
  }
 }
 action('demo',async()=>{if(canReplace()){const binding=replacementBinding(),candidate=await api('/api/demo');requireReplacement(binding);load(candidate);}});
-action('inspect',async()=>{const key=JSON.stringify([$('sourceType').value,$('directory').value]);const source=await api($('sourceType').value==='api'?'/api/remote-source':'/api/source?directory='+encodeURIComponent($('directory').value));if(key!==JSON.stringify([$('sourceType').value,$('directory').value])){notice('Datenquelle geändert. Teams erneut laden.');return;}groups=source.groups;checkedTeams.clear();renderTeams();notice(`${groups.length} Teams gefunden. Gewünschte Teams auswählen.`);});
-action('import',async()=>{if(!checkedTeams.size)throw Error('Mindestens ein Team auswählen.');if($('reuseSetup').checked&&!snapshot)throw Error('Zuerst das bisherige Projekt öffnen.');if(!canReplace())return;const binding=replacementBinding();const setupPrevious=$('reuseSetup').checked?currentSnapshot():null;const setupOptions={sameSource:$('reuseSetup').checked,classify:$('autoKind').checked,rule:{start:$('setupNightStart').value,end:$('setupNightEnd').value,minimum:Number($('setupNightMin').value)}};notice('Import einschließlich historischer Basis läuft …');const r=await api($('sourceType').value==='api'?'/api/remote-import':'/api/import','POST',{...($('sourceType').value==='directory'?{directory:$('directory').value}:{}),period_start:$('start').value,period_end:$('end').value,team_ids:[...checkedTeams],timezone:$('timezone').value,history_plan:$('historyPlan').value,reference_plan:$('referencePlan').value,auto_history:$('autoHistory').checked,history_min_days:Number($('historyMinDays').value),existing_plan_mode:$('existingPlanMode').value,demand_source:$('demandSource').value,demand_history_start:$('demandHistoryStart').value||null,demand_history_end:$('demandHistoryEnd').value||null,history_start:$('historyStart').value||null,history_end:$('historyEnd').value||null});const prepared=SetupAssistant.prepare(r.snapshot,setupPrevious,setupOptions);const checked=await api('/api/snapshots/check','POST',prepared);requireReplacement(binding);load(checked);navigate('rules');});
+action('inspect',async()=>{
+ const key=JSON.stringify([$('sourceType').value,$('directory').value]),version=importSourceVersion;
+ const current=()=>version===importSourceVersion&&key===JSON.stringify([$('sourceType').value,$('directory').value]);
+ importFeedback('inspect','Teams werden geladen …');
+ let source;
+ try{source=await api($('sourceType').value==='api'?'/api/remote-source':'/api/source?directory='+encodeURIComponent($('directory').value));}
+ catch(error){if(!current())return;throw error;}
+ if(!current())return;
+ groups=source.groups;checkedTeams.clear();renderTeams();
+ const message=groups.length?`${groups.length} Teams gefunden. Gewünschte Teams auswählen.`:'Keine Teams in dieser Datenquelle gefunden. Quelle prüfen und erneut laden.';
+ notice(message);importFeedback('inspect',message);
+});
+action('import',async()=>{if(!checkedTeams.size)throw Error('Mindestens ein Team auswählen.');if($('reuseSetup').checked&&!snapshot)throw Error('Zuerst das bisherige Projekt öffnen.');if(!canReplace()){importFeedback('import','Import abgebrochen. Ihr aktueller Stand bleibt erhalten.');return;}const binding=replacementBinding();const setupPrevious=$('reuseSetup').checked?currentSnapshot():null;const setupOptions={sameSource:$('reuseSetup').checked,classify:$('autoKind').checked,rule:{start:$('setupNightStart').value,end:$('setupNightEnd').value,minimum:Number($('setupNightMin').value)}};notice('Import einschließlich historischer Basis läuft …');importFeedback('import','Import einschließlich historischer Basis läuft …');const r=await api($('sourceType').value==='api'?'/api/remote-import':'/api/import','POST',{...($('sourceType').value==='directory'?{directory:$('directory').value}:{}),period_start:$('start').value,period_end:$('end').value,team_ids:[...checkedTeams],timezone:$('timezone').value,history_plan:$('historyPlan').value,reference_plan:$('referencePlan').value,auto_history:$('autoHistory').checked,history_min_days:Number($('historyMinDays').value),existing_plan_mode:$('existingPlanMode').value,demand_source:$('demandSource').value,demand_history_start:$('demandHistoryStart').value||null,demand_history_end:$('demandHistoryEnd').value||null,history_start:$('historyStart').value||null,history_end:$('historyEnd').value||null});const prepared=SetupAssistant.prepare(r.snapshot,setupPrevious,setupOptions);const checked=await api('/api/snapshots/check','POST',prepared);requireReplacement(binding);load(checked);importFeedback('import','Daten importiert. Fachliche Angaben unter Regeln prüfen.');navigate('rules');});
 action('save',save);action('saveDraft',save);
 function projectSwitchBusy(){return projectBusy||solving||!!jobId||['save','saveDraft','demo','import','applyJson','file'].some(id=>$(id).dataset.busy==='true');}
 async function openSavedProject(id){
@@ -1420,7 +1485,7 @@ async function openSavedProject(id){
 }
 async function openJob(id){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');if(!id||!canReplace())return false;
- const binding=replacementBinding();projectBusy=true;updateJobButtons();try{const stored=await api('/api/jobs/'+encodeURIComponent(id)+'/snapshot');const original=await api('/api/snapshots/check','POST',stored);original.id=projectId();original.revision='0';original.metadata={...original.metadata,restored_from_job:id};requireReplacement(binding);const restored=ProjectJSON.clone(original);load(original);jobId=id;jobInput={owner:snapshot,version:changeVersion,data:restored};updateJobButtons();navigate('plan');await poll();return true;}finally{projectBusy=false;updateJobButtons();}
+ const binding=replacementBinding();projectBusy=true;updateJobButtons();try{const stored=await api('/api/jobs/'+encodeURIComponent(id)+'/snapshot');const original=await api('/api/snapshots/check','POST',stored);original.id=projectId();original.revision='0';original.metadata={...original.metadata,restored_from_job:id};requireReplacement(binding);const restored=ProjectJSON.clone(original);load(original);jobId=id;jobInput={owner:snapshot,version:changeVersion,draftVersion,data:restored};updateJobButtons();navigate('plan');await poll();return true;}finally{projectBusy=false;updateJobButtons();}
 }
 action('restore',()=>openSavedProject($('saved').value));action('refreshJobs',savedJobs);action('restoreJob',()=>openJob($('savedJobs').value));
 action('solve',solve);
@@ -1436,9 +1501,9 @@ action('validate',async()=>{
 action('recompute',async()=>{previous=structuredClone(assignments);await solve();});
 action('refreshJson',()=>{if(jsonDirty&&!window.confirm('Nicht übernommene JSON-Änderungen verwerfen?'))return;const text=ProjectJSON.stringify(currentSnapshot(),null,2);$('json').value=text;jsonDirty=false;jsonVersion=changeVersion;updateSaveStatus();});
 action('applyJson',async()=>{const binding=replacementBinding(),checked=await readProject($('json').value);requireReplacement(binding);load(checked);});
-$('json').oninput=()=>{if(projectSwitchBusy())return;jsonDirty=true;updateSaveStatus();};
+$('json').oninput=()=>{if(projectSwitchBusy())return;draftVersion++;jsonDirty=true;readinessVersion=-1;readinessPending=-1;updateSaveStatus();};
 $('file').onchange=()=>runAction($('file'),async()=>{
- const binding=replacementBinding(),file=$('file').files[0];if(!file)return;if(file.size>16*1024*1024)throw Error('Projektdatei überschreitet die Grenze von 16 MiB.');const checked=await readProject(await file.text());requireReplacement(binding);if(canReplace()){load(checked);$('file').value='';}
+ const binding=replacementBinding(),file=$('file').files[0];if(!file)return;if(file.size>16*1024*1024)throw Error('Projektdatei überschreitet die Grenze von 16 MiB.');const checked=await readProject(await file.text());requireReplacement(binding);if(canReplace()){load(checked);$('file').value='';importFeedback('file','Projektdatei geöffnet.');}else importFeedback('file','Öffnen abgebrochen. Ihr aktueller Stand bleibt erhalten.');
 });
 let teamTransferReport=null,teamTransferVersion=-1;
 action('teamExport',()=>{
@@ -1503,8 +1568,12 @@ document.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>runAction(b,
 $('saved').onchange=updateJobButtons;$('savedJobs').onchange=updateJobButtons;
 saved().catch(e=>notice(e.message,true));savedJobs().catch(e=>notice(e.message,true));
 
-$('directory').oninput=()=>{if(groups.length||checkedTeams.size){groups=[];checkedTeams.clear();renderTeams();notice('Verzeichnis geändert. Teams erneut laden.');}};
-$('sourceType').onchange=()=>{$('directoryLabel').hidden=$('sourceType').value==='api';groups=[];checkedTeams.clear();renderTeams();notice('Datenquelle geändert. Teams erneut laden.');};
+let importSourceVersion=0;
+function invalidateImportSource(message){
+ importSourceVersion++;groups=[];checkedTeams.clear();renderTeams();notice(message);importFeedback('inspect',message);
+}
+$('directory').oninput=()=>invalidateImportSource('Verzeichnis geändert. Teams erneut laden.');
+$('sourceType').onchange=()=>{$('directoryLabel').hidden=$('sourceType').value==='api';invalidateImportSource('Datenquelle geändert. Teams erneut laden.');};
 
 function renderTeams(){
  const box=$('teamTree');box.replaceChildren();
@@ -1534,7 +1603,7 @@ function refreshFollowingPeriod(busy=false){
 action('prepareNextPeriod',()=>{
  if(!snapshot||jsonDirty||personDraft)throw Error('Zuerst einen vollständig übernommenen Projektstand öffnen.');
  const next=SetupAssistant.followingPeriod(snapshot,$('followPeriodMode').value);
- $('start').value=next.start;$('end').value=next.end;$('timezone').value=snapshot.timezone;historyDefaults();
+ $('start').value=next.start;$('end').value=next.end;$('timezone').value=snapshot.timezone;historyDefaults();updateImportSummary();
  $('start').focus();$('start').scrollIntoView({block:'center'});
  notice(`${periodText(next.start,next.end)} und Historie vorbelegt. Quelle, Teams und Importoptionen prüfen; erst „Daten importieren“ startet den Import. Das geöffnete Projekt bleibt unverändert.`);
 });
@@ -1740,18 +1809,23 @@ $('groupFamilies').addEventListener('change',event=>{
 });
 action('confirmHistory',()=>{const pairs=pendingHistoryApprovals();if(!pairs.length){notice('Keine unbestätigten historischen Vorschläge im gesamten Projekt.');return;}if(!window.confirm(`Alle ${pairs.length} historischen Vorschläge im gesamten Projekt für ${periodText(snapshot.period_start,snapshot.period_end)} freigeben – unabhängig von Suche und sichtbaren Zeilen? ${familienModus?' Bei zusammengefassten Zeitlagen gilt ein Nachweis für alle Zeitlagen derselben Dienstart.':''} Die vorgeschlagenen Arbeitsplätze bleiben unverändert. Qualifikationen werden dadurch nicht bestätigt.`))return;pairs.forEach(([e,p])=>setApproval(e,p,true));renderMatrix();renderHistory();notice(`${pairs.length} historische Vorschläge im gesamten Projekt übernommen. Bestehende Freigaben und Qualifikationen bleiben erhalten. Änderungen speichern.`);});
 $('start').addEventListener('change',historyDefaults);
-// Ein Weg statt zehn Schalter: der Monat setzt alles, was sich aus ihm ergibt.
+function updateImportSummary(){
+ const selected=id=>$(id).selectedOptions[0]?.textContent??'';
+ $('importSummary').textContent=`Zeitzone ${$('timezone').value} · Vergleichsplan: ${selected('referencePlan')} · ${selected('existingPlanMode')}. Bedarf: ${selected('demandSource')}. Historische Planbasis: ${selected('historyPlan')}. Historie ${$('historyStart').value||'nicht gesetzt'} bis ${$('historyEnd').value||'nicht gesetzt'}; Bedarfsfenster ${$('demandHistoryStart').value||$('historyStart').value} bis ${$('demandHistoryEnd').value||$('historyEnd').value}. Tag/Nacht: ${$('autoKind').checked?`Zeitregel ${$('setupNightStart').value}–${$('setupNightEnd').value}, mindestens ${$('setupNightMin').value} Nachtminuten`:'noch nicht zugeordnet'}. Historische Freigaben: ${$('autoHistory').checked?`automatisch, mindestens ${$('historyMinDays').value} Tage`:'nicht automatisch'}. Einstellungenübernahme: ${$('reuseSetup').checked?'eingeschaltet':'ausgeschaltet'}. Ändern unter „Optionale Einrichtung & Wiederverwendung“.`;
+}
+$('importDetails').addEventListener('input',updateImportSummary);
+$('importDetails').addEventListener('change',updateImportSummary);
+// Der Monat belegt nur vor. Erst die eindeutige Importaktion sendet Daten.
 // Fachliche Bestätigungen setzt er ausdrücklich nicht - die bleiben sichtbar offen.
 action('quickPrepare',async()=>{
  const f=SetupAssistant.quickStart($('quickMonth').value);
- if(!checkedTeams.size)throw Error('Zuerst unten die Teams laden und auswählen.');
  $('start').value=f.start;$('end').value=f.end;
  $('historyStart').value=f.historyStart;$('historyEnd').value=f.historyEnd;
  $('demandSource').value='history';demandSourceGuidance();
  $('demandHistoryStart').value=f.demandStart;$('demandHistoryEnd').value=f.demandEnd;
  $('autoKind').checked=true;
- $('quickHint').textContent=`Zeitraum ${f.start} bis ${f.end}; Bedarf aus ${f.demandStart} bis ${f.demandEnd}; Vorschläge ab ${f.historyStart}. Import läuft …`;
- $('import').click();
+ $('quickHint').textContent=`Zeitraum ${f.start} bis ${f.end}; Bedarf aus ${f.demandStart} bis ${f.demandEnd}; Vorschläge ab ${f.historyStart}. Einstellungen vorbelegt.`;
+ updateImportSummary();
 });
 // Deriving demand from history makes the history window a required entry, not an option.
 function demandSourceGuidance(){
@@ -1767,6 +1841,7 @@ $('demandSource').addEventListener('change',demandSourceGuidance);demandSourceGu
  $('start').value=`${year}-${month}-01`;$('end').value=`${year}-${month}-${new Date(year,today.getMonth()+1,0).getDate()}`;
  $('timezone').value=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';historyDefaults();
 }
+updateImportSummary();
 $('planView').onchange=renderCalendar;
 for(const [id,delta] of [['prevMonth',-1],['nextMonth',1]])action(id,()=>{const date=new Date(planMonth+'-01T12:00:00Z');date.setUTCMonth(date.getUTCMonth()+delta);planMonth=date.toISOString().slice(0,7);renderCalendar();});
 
