@@ -87,7 +87,7 @@ test('HARNESS honors WEB_TEST_CHROMIUM and cleans up failed launches',async()=>{
 });
 test('UI-001 real save locks decisions and never acknowledges later edits',async()=>withPage(async(page,gate)=>{
  await page.evaluate(async()=>load(await api('/api/demo')));
- await page.locator('.main-nav [data-navigate="calculate"]').click();
+ await require('./navigation.cjs')(page,'calculate');
  const cap=page.locator('#openDecisions').getByRole('button',{name:'Grenze bei 150 % des Solls setzen',exact:true});await cap.waitFor({state:'visible'});
  let captured;const delayed=gate();
  await page.route('**/api/snapshots',async route=>{if(route.request().method()!=='PUT')return route.continue();captured=route.request().postDataJSON();delayed.notify();await delayed.wait;await route.continue();});
@@ -308,7 +308,7 @@ for(const sample of ['empty','partial'])test(`SEC-04 real readiness and validati
   load(await api('/api/snapshots/check','POST',s),true);
  },sample);
  const readyResponse=page.waitForResponse(r=>r.url().endsWith('/api/readiness')&&r.request().method()==='POST');
- await page.locator('.main-nav [data-navigate="calculate"]').click();const readiness=await (await readyResponse).json();
+ await require('./navigation.cjs')(page,'calculate');const readiness=await (await readyResponse).json();
  assert.equal(readiness.ready,false);assert(readiness.diagnostics_omitted>0);assert.equal(readiness.diagnostics_total,readiness.diagnostics.length+readiness.diagnostics_omitted);
  if(sample==='empty')assert.equal(readiness.diagnostics.length,0);else assert(readiness.diagnostics.length>0);
  await page.waitForFunction(()=>document.querySelector('#automaticReadinessStatus').dataset.state!=='pending');

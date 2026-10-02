@@ -70,8 +70,7 @@ function renderActivePanel(force=false){
  if(activePanel==='team'){renderMatrix();if(detailsVisible('people'))renderPeople();renderHistory();}
  if(activePanel==='rules')renderRules();
  if(activePanel==='demand')renderDemandBoard();
- if(activePanel==='plan')renderPlan();
- if(activePanel==='calculate')renderOpenDecisions();
+ if(activePanel==='plan'){renderPlan();renderOpenDecisions();}
  renderedPanels.set(activePanel,changeVersion);syncJson();updateJobButtons();
 }
 
@@ -588,9 +587,11 @@ function switchDemandView(view){demandView=view;renderDemandBoard();}
 $('demandViewDates').onclick=()=>switchDemandView('dates');
 $('demandViewFunctions').onclick=()=>switchDemandView('functions');
 function openDemandReview(query){
- const state=pageState('demands',40);state.query=query;state.page=0;navigate('rules');
+ const state=pageState('demands',40);state.query=query;state.page=0;navigate('rules');selectConfig('bedarf');
  const target=$('demands');target.closest('details').open=true;renderDemands();
- target.querySelector('input[type="search"]')?.focus();target.scrollIntoView({block:'start'});
+ const input=target.querySelector('input[type="search"]');
+ // Scroll the focus target itself, not its container behind the sticky header.
+ input?.scrollIntoView({block:'center'});input?.focus({preventScroll:true});
 }
 function renderServiceGroups(){
  let box=$('serviceGroups');if(!box){box=el('section');box.id='serviceGroups';box.className='surface padded';$('profiles').before(box);}box.replaceChildren();
@@ -1016,7 +1017,7 @@ function renderLiveProgress(steps,elapsed,limit){
  renderFlowBoard(letzteBelegung?letzteBelegung.grid:null);
 }
 let configPanel='dienste';
-function selectConfig(name){
+function selectConfig(name,{render=true}={}){
  const bereiche=[...document.querySelectorAll('[data-config]')];
  if(!bereiche.length)return;
  if(!bereiche.some(bereich=>bereich.dataset.config===name))name=bereiche[0].dataset.config;
@@ -1025,7 +1026,7 @@ function selectConfig(name){
  for(const bereich of bereiche)bereich.hidden=bereich.dataset.config!==name;
  // Bisher zeichnete das Aufklappen; jetzt zeichnet der Wechsel. Eine erneute
  // Auswahl desselben Bereichs zeichnet nicht und verwirft damit keine Eingabe.
- if(gewechselt&&snapshot)for(const zeichne of ({dienste:[renderShifts,renderPositions],bedarf:[renderDemands],
+ if(render&&gewechselt&&snapshot)for(const zeichne of ({dienste:[renderShifts,renderPositions],bedarf:[renderDemands],
   profile:[renderProfiles],offen:[renderUnresolved],daten:[syncJson]}[name]??[]))zeichne();
  for(const knopf of document.querySelectorAll('[data-config-to]')){
   const gewählt=knopf.dataset.configTo===name;
@@ -1095,7 +1096,7 @@ function renderDiagnosticOmissions(parent,{shown,total,omitted}){
  if(omitted)el('p',`Prüfbericht gekürzt: ${total.toLocaleString('de-DE')} Hinweise insgesamt; ${shown.toLocaleString('de-DE')} angezeigt, ${omitted.toLocaleString('de-DE')} aus der Antwort ausgelassen. Einzelhinweise und Kategorien zeigen nur die übermittelte Auswahl. Das Prüfergebnis gilt für alle Hinweise.`,parent).className='diagnostic-volume-hint';
 }
 function refreshAutomaticReadiness(force=false){
- if(!snapshot||activePanel!=='calculate')return;
+ if(!snapshot||activePanel!=='plan')return;
  const status=$('automaticReadinessStatus'),details=$('automaticReadinessDetails'),retry=$('retryReadiness');
  const display=(state,message,count=null)=>{status.dataset.state=state;status.textContent=message;setReadinessSummary(state,count);};
  if(jsonDirty||personDraft){
@@ -1309,16 +1310,28 @@ function renderValidation(report){
  if(entries.length>20)el('p','Viele gleichartige Befunde lassen sich meist gesammelt erledigen.',group).className='diagnostic-volume-hint';
  if(diagnosticActions[code])el('p',diagnosticActions[code],group).className='diagnostic-action';
  const summary=code==='candidate_shortage'?el('div',undefined,group):null;
- const content=el('div',undefined,group);const draw=()=>{if(summary){summary.replaceChildren();renderShortageSummary(summary,entries);}const view=collection(content,'diagnostics-'+code,entries,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items){const line=el('article',undefined,view.content);line.className='diagnostic-item';const employee=idx.employees.get(d.employee_id),demand=idx.demands.get(d.demand_id);el('strong',[employee?.name,d.date&&dayText(d.date)].filter(Boolean).join(' · ')||diagnosticTitles[code]||code,line);el('p',diagnosticMessage(d),line);if(demand)el('small',demandLabel(demand),line);if(employee)button(line,'Person bearbeiten',()=>personDetails(employee));if(demand)button(line,'Bedarf öffnen',()=>{const state=pageState('demands',40);state.query=demand.id;state.page=0;navigate('rules');const details=$('demands').closest('details');if(details)details.open=true;renderDemands();$('demands').scrollIntoView({block:'center',behavior:'smooth'});});}};
+ const content=el('div',undefined,group);const draw=()=>{if(summary){summary.replaceChildren();renderShortageSummary(summary,entries);}const view=collection(content,'diagnostics-'+code,entries,{label:'Hinweise',size:20,redraw:draw});for(const d of view.items){const line=el('article',undefined,view.content);line.className='diagnostic-item';const employee=idx.employees.get(d.employee_id),demand=idx.demands.get(d.demand_id);el('strong',[employee?.name,d.date&&dayText(d.date)].filter(Boolean).join(' · ')||diagnosticTitles[code]||code,line);el('p',diagnosticMessage(d),line);if(demand)el('small',demandLabel(demand),line);if(employee)button(line,'Person bearbeiten',()=>personDetails(employee));if(demand)button(line,'Bedarf öffnen',()=>openDemandReview(demand.id));}};
  group.ontoggle=()=>{if(group.open&&!content.childNodes.length)draw();};if(group.open)draw();}
 }
 function checkPeopleReady(){const unfinished=snapshot.employees.find(person=>!person.name.trim()||person.target_minutes==null);if(unfinished){personDetails(unfinished);throw Error('Name und Sollstunden der neuen Person zuerst festlegen.');}}
+function revealInvalidInput(input){
+ const owner=snapshot,version=changeVersion,panel=input.closest('[data-panel]')?.dataset.panel;
+ // Preserve the actual invalid node, including text not yet admitted to data.
+ if(panel){renderedPanels.set(panel,changeVersion);navigate(panel);}
+ const config=input.closest('[data-config]');if(config)selectConfig(config.dataset.config,{render:false});
+ for(let parent=input.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+ // Save/solve release inert controls in their finally blocks before focus.
+ requestAnimationFrame(()=>{
+  if(snapshot!==owner||changeVersion!==version||!input.isConnected||projectSwitchBusy())return;
+  input.scrollIntoView({block:'center'});input.focus({preventScroll:true});input.reportValidity();
+ });
+}
 async function save(){
  checkPeopleReady();
  if(personDraft){navigate('team');$('details').scrollIntoView({block:'center',behavior:'smooth'});throw Error('Die bearbeitete Abwesenheit zuerst übernehmen oder abbrechen.');}
  if(jsonDirty)throw Error('JSON-Änderungen zuerst übernehmen oder mit „Aktuelle Daten anzeigen“ verwerfen.');
  const invalid=$('workspace').querySelector('input:invalid');
- if(invalid){const panel=invalid.closest('[data-panel]')?.dataset.panel;if(panel){renderedPanels.set(panel,changeVersion);navigate(panel);}let parent=invalid.parentElement;while(parent){if(parent.tagName==='DETAILS')parent.open=true;parent=parent.parentElement;}invalid.scrollIntoView({block:'center',behavior:'smooth'});invalid.reportValidity();throw Error('Ungültige oder fehlende Eingabe korrigieren.');}
+ if(invalid){revealInvalidInput(invalid);throw Error('Ungültige oder fehlende Eingabe korrigieren.');}
  const owner=snapshot,version=changeVersion,sent=ProjectJSON.clone(currentSnapshot());
  const stagedAssignments=ProjectJSON.clone(sent.assignments),stagedInput=ProjectJSON.clone(sent);
  const persisted=await api('/api/snapshots','PUT',sent);
@@ -1333,8 +1346,8 @@ async function save(){
 }
 async function solve(){
  if(solving||jobId)throw Error('Eine Berechnung läuft bereits.');if(!snapshot)throw Error('Zuerst Daten laden');
- if(!$('limit').checkValidity()){$('limit').reportValidity();throw Error('Zeitlimit zwischen 1 und 600 Sekunden eingeben.');}
- solving=true;updateJobButtons();navigate('calculate');
+ if(!$('limit').checkValidity()){revealInvalidInput($('limit'));throw Error('Zeitlimit zwischen 1 und 600 Sekunden eingeben.');}
+ solving=true;updateJobButtons();navigate('plan');
  try{const binding=await save();if(!inputUnchanged(binding))throw Error('Projekt während des Speicherns geändert. Aktuellen Stand erneut berechnen.');
  const j=await api('/api/jobs','POST',{snapshot_id:binding.data.id,snapshot_revision:binding.data.revision,time_limit:Number($('limit').value),partial:$('partial').checked});
  if(!inputUnchanged(binding)){notice('Projekt geändert. Berechnung bleibt separat gespeichert; kein Ergebnis wird übernommen.');await savedJobs();return;}
@@ -1390,7 +1403,7 @@ async function openSavedProject(id){
 }
 async function openJob(id){
  if(projectSwitchBusy())throw Error('Die laufende Aktion zuerst abschließen.');if(!id||!canReplace())return false;
- const binding=replacementBinding();projectBusy=true;updateJobButtons();try{const stored=await api('/api/jobs/'+encodeURIComponent(id)+'/snapshot');const original=await api('/api/snapshots/check','POST',stored);original.id=projectId();original.revision='0';original.metadata={...original.metadata,restored_from_job:id};requireReplacement(binding);const restored=ProjectJSON.clone(original);load(original);jobId=id;jobInput={owner:snapshot,version:changeVersion,data:restored};updateJobButtons();navigate('calculate');await poll();return true;}finally{projectBusy=false;updateJobButtons();}
+ const binding=replacementBinding();projectBusy=true;updateJobButtons();try{const stored=await api('/api/jobs/'+encodeURIComponent(id)+'/snapshot');const original=await api('/api/snapshots/check','POST',stored);original.id=projectId();original.revision='0';original.metadata={...original.metadata,restored_from_job:id};requireReplacement(binding);const restored=ProjectJSON.clone(original);load(original);jobId=id;jobInput={owner:snapshot,version:changeVersion,data:restored};updateJobButtons();navigate('plan');await poll();return true;}finally{projectBusy=false;updateJobButtons();}
 }
 action('restore',()=>openSavedProject($('saved').value));action('refreshJobs',savedJobs);action('restoreJob',()=>openJob($('savedJobs').value));
 action('solve',solve);
@@ -1650,7 +1663,7 @@ function renderCalendar(){
  const badge=button(td,`${x.a.fixed?'◆ ':''}${byPosition?(x.employee?.name??'Unbekannte Person'):(x.shift?.name??'Dienst')}\n${x.timeLabel}${!byPosition?'\n'+(x.position?.name??''):''}`,()=>focusAssignment(x.index));badge.className='shift-badge '+(x.shift?.kind==='night'?'night':'day');badge.title=`${x.employee?.name??''} · ${x.position?.name??''}${x.a.fixed?' · Fixiert':''}`;});
  (personal.get(cellKey)??[]).forEach(x=>{const badge=el('span',`◼ ${x.label}\n${x.timeLabel}`,td);badge.className='personal-badge';
  badge.title=`Persönliche Arbeit aus der Quelle · ${x.work.paid_minutes} bezahlte Minuten · deckt keinen Bedarf, sperrt aber die Person.`;});
- (gaps.get(cellKey)??[]).forEach(({demand,gap})=>{const badge=button(td,`${gap} offen`,()=>{const state=pageState('demands',40);state.query=demand.id;state.page=0;navigate('rules');const details=$('demands').closest('details');if(details)details.open=true;renderDemands();$('demands').scrollIntoView({block:'center',behavior:'smooth'});});badge.className='vacancy-badge';badge.title=demandLabel(demand);});});});
+ (gaps.get(cellKey)??[]).forEach(({demand,gap})=>{const badge=button(td,`${gap} offen`,()=>openDemandReview(demand.id));badge.className='vacancy-badge';badge.title=demandLabel(demand);});});});
  if(!view.total)el('p','Keine passenden Personen oder Dienste. Suche anpassen.',view.content);
  else if(!assignments.length)el('p','Noch keine Einteilungen. Unter Planen rechnen lassen oder Einteilungen im Detailbereich ergänzen.',view.content);
 }
@@ -1754,7 +1767,7 @@ window.PlannerApp={
  openSavedProject,openJob,captureInput:replacementBinding,
  refreshProjects:saved,refreshJobs:savedJobs
 };
-window.addEventListener('planner:navigate',event=>{const panel=event.detail?.panel;if(!['projects','team','rules','demand','calculate','plan'].includes(panel))return;activePanel=panel;renderActivePanel();refreshAutomaticReadiness();});
+window.addEventListener('planner:navigate',event=>{const panel=event.detail?.panel;if(!['projects','team','rules','demand','plan'].includes(panel))return;activePanel=panel;renderActivePanel();refreshAutomaticReadiness();});
 window.addEventListener('planner:open-project',event=>openSavedProject(event.detail?.id).catch(error=>notice(error.message,true)));
 window.addEventListener('planner:open-job',event=>openJob(event.detail?.id).catch(error=>notice(error.message,true)));
 window.addEventListener('planner:rename',event=>{

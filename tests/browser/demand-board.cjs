@@ -32,7 +32,7 @@ module.exports=async function demandBoard({page,base}){
  for(let i=0;i<2;i++)addShift(`b-day-${i}`,'Dienst B',days[i],'08:00','12:00',240);
  addDemand('d-b-0','b-day-0','position-b',1,1);
  await page.evaluate(value=>load(value,true),fixture);
- async function navigate(panel){await page.locator(`.main-nav [data-navigate="${panel}"]`).click();await page.locator(`[data-panel="${panel}"]`).waitFor({state:'visible'});}
+ async function navigate(panel){await require('./navigation.cjs')(page,panel);}
  await navigate('demand');
  const table=page.locator('#demandBoard table.demand-table');
  const rows=table.locator('tbody tr[data-demand-row]');
@@ -61,7 +61,7 @@ module.exports=async function demandBoard({page,base}){
  }
  assert.deepEqual(await table.locator('thead th.weekend').evaluateAll(cells=>cells.map(cell=>cell.dataset.demandDay)),days.slice(5),'Weekend headers are visibly distinguished');
  for(const row of [dayRow,lateRow,otherRow])assert.deepEqual(await row.locator('td.weekend').evaluateAll(cells=>cells.map(cell=>cell.dataset.demandDay)),days.slice(5),'Weekend columns remain marked through the entire matrix');
- assert.deepEqual(await page.locator('.main-nav [data-navigate]').evaluateAll(buttons=>buttons.map(button=>button.dataset.navigate)).then(panels=>panels.slice(panels.indexOf('rules'),panels.indexOf('calculate')+1)),['rules','demand','calculate']);
+ assert.deepEqual(await page.locator('.main-nav [data-navigate]').evaluateAll(buttons=>buttons.map(button=>button.dataset.navigate)),['projects','plan','team','setup']);
  const initialState=await page.evaluate(()=>({dirty,version:changeVersion,snapshot:currentSnapshot()}));
  await navigate('team');await navigate('demand');
  assert.deepEqual(await page.evaluate(()=>({dirty,version:changeVersion,snapshot:currentSnapshot()})),initialState,'Opening the board is read-only');

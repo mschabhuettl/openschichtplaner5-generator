@@ -39,8 +39,8 @@ module.exports=async function progressView({page,base}){
    inFlight.delete(finished);complete();
   }
  });
- await page.locator('.main-nav [data-navigate="calculate"]').click();
- await page.locator('[data-panel="calculate"]').waitFor({state:'visible'});
+ await require('./navigation.cjs')(page,'calculate');
+ await page.locator('[data-panel="plan"]').waitFor({state:'visible'});
  await page.fill('#limit','40');
  await page.check('#partial');
  await page.click('#solve');

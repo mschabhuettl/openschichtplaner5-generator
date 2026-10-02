@@ -39,8 +39,8 @@ module.exports=async function missingApprovals({page,base}){
   unresolved:[],metadata:{services:[{function_id:'service-b',name:'Nachtdienst B'}]},
  };
  await page.evaluate(value=>load(value,true),fixture);
- await page.locator('.main-nav [data-navigate="calculate"]').click();
- await page.locator('[data-panel="calculate"]').waitFor({state:'visible'});
+ await require('./navigation.cjs')(page,'calculate');
+ await page.locator('[data-panel="plan"]').waitFor({state:'visible'});
  await page.check('#partial');
  await page.click('#solve');
  await page.waitForFunction(()=>document.querySelector('#planAnalysisContent').textContent.includes('Fehlende Dienstfreigaben'),null,{timeout:30000});
@@ -68,8 +68,8 @@ module.exports=async function missingApprovals({page,base}){
 
  // Granting the approval removes the entry again.
  await page.evaluate(()=>{for(const person of snapshot.employees)person.approvals.push({function_id:'service-b',workplace_id:'*',valid_from:'2025-01-01',valid_until:'2027-12-31',supervised:false});invalidateResult();});
- await page.locator('.main-nav [data-navigate="calculate"]').click();
- await page.locator('[data-panel="calculate"]').waitFor({state:'visible'});
+ await require('./navigation.cjs')(page,'calculate');
+ await page.locator('[data-panel="plan"]').waitFor({state:'visible'});
  await page.click('#solve');
  await page.waitForFunction(()=>document.querySelector('#result').textContent.includes('Vollständig und geprüft'),null,{timeout:30000});
  assert.equal(await page.locator('#planAnalysisContent details',{hasText:'Fehlende Dienstfreigaben'}).count(),0,'A complete plan reports no missing approvals');

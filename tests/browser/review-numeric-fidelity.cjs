@@ -67,7 +67,7 @@ test('T07 real readiness, validation, replacement, approval and export send exac
  await page.evaluate(async()=>{
   assignments=[{employee_id:'p',demand_id:'d',segments:[]}];invalidateResult();
   renderSetupReview();await [...document.querySelectorAll('#setupReview button')].find(b=>b.textContent==='Planungsbereitschaft prüfen').onclick();
-  activePanel='calculate';refreshAutomaticReadiness(true);
+  activePanel='plan';refreshAutomaticReadiness(true);
   await document.querySelector('#validate').onclick();
   renderReplacementForm();await document.querySelector('#findReplacement').onclick();
   renderApprovalLeverage();await [...document.querySelectorAll('#approvalLeverage button')].find(b=>b.textContent==='Vorschau berechnen').onclick();

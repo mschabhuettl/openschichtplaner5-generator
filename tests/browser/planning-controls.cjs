@@ -39,7 +39,7 @@ module.exports=async function planningControls({page,base}){
  for(const [id,day] of [['before','2026-01-04'],['after','2026-01-12']]){
   shift(id,'Dienst A',day,'08:00','16:00',480);demand(`d-${id}`,id,'position-a');
  }
- async function navigate(panel){await page.locator(`.main-nav [data-navigate="${panel}"]`).click();await page.locator(`[data-panel="${panel}"]`).waitFor({state:'visible'});}
+ async function navigate(panel){await require('./navigation.cjs')(page,panel);}
  async function open(value=fixture){await page.evaluate(value=>load(value,true),structuredClone(value));await navigate('team');}
  const employeeRow=id=>page.locator(`#people tbody tr[data-employee-id="${id}"]`);
  const planning=id=>employeeRow(id).locator('input[data-employee-planning]');

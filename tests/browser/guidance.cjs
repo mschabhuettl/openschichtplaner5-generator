@@ -15,8 +15,8 @@ module.exports=async function guidance({page,base}){
  large.id+=':gross';
  async function open(project){
   await page.evaluate(value=>load(value,true),project);
-  await page.locator('.main-nav [data-navigate="calculate"]').click();
-  await page.locator('[data-panel="calculate"]').waitFor({state:'visible'});
+  await require('./navigation.cjs')(page,'calculate');
+  await page.locator('[data-panel="plan"]').waitFor({state:'visible'});
  }
 
  // Die vorgeschlagene Rechenzeit richtet sich nach dem Zuschnitt.
@@ -33,7 +33,7 @@ module.exports=async function guidance({page,base}){
  await page.fill('#limit','7');
  await page.evaluate(()=>{const s=window.PlannerApp.getState().snapshot;s.employees[0].name='Testperson geändert';invalidateResult();});
  await page.locator('.main-nav [data-navigate="team"]').click();
- await page.locator('.main-nav [data-navigate="calculate"]').click();
+ await require('./navigation.cjs')(page,'calculate');
  assert.equal(await page.locator('#limit').inputValue(),'7','Die eigene Rechenzeit bleibt stehen');
 
  // Von der Berechnung zu den Gewichten, die dort erwähnt werden.
@@ -48,7 +48,7 @@ module.exports=async function guidance({page,base}){
  await page.locator('[data-panel="demand"]').waitFor({state:'visible'});
 
  // Einstellungen: ein Bereich zur Zeit, über eine Unternavigation erreichbar.
- await page.locator('.main-nav [data-navigate="rules"]').click();
+ await require('./navigation.cjs')(page,'rules');
  await page.locator('[data-panel="rules"]').waitFor({state:'visible'});
  const bereiche=page.locator('#rulesNav button');
  assert.equal(await bereiche.count(),6,'Sechs Einstellungsbereiche');

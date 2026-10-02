@@ -27,8 +27,9 @@ module.exports=async function quickStart({page,base}){
   load(await api('/api/demo'));
   snapshot.profiles.forEach(p=>{p.confirmed=false;});
   snapshot.employees.forEach(e=>{e.max_period_minutes=null;});
-  navigate('calculate');renderActivePanel(true);
+  navigate('plan');renderActivePanel(true);
  });
+ await require('./navigation.cjs')(page,'calculate');
  const liste=page.locator('#openDecisions');
  await liste.locator('[data-open-decision]').first().waitFor();
  assert.match(await liste.innerText(),/Regelprofile sind noch nicht fachlich bestätigt/);

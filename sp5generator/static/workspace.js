@@ -1,9 +1,10 @@
 'use strict';
 (() => {
   const byId = id => document.getElementById(id);
-  const names = {projects:'Projekte',team:'Team & Freigaben',rules:'Regeln',demand:'Bedarf',calculate:'Planen',plan:'Dienstplan'};
+  const names = {projects:'Projekte',plan:'Plan',team:'Team',setup:'Einrichtung'};
+  const areaFor = panel => ['rules','demand'].includes(panel)?'setup':panel;
   const states = {queued:'In Warteschlange',running:'Wird berechnet',succeeded:'Beendet · Ergebnis prüfen',failed:'Fehlgeschlagen',cancelled:'Abgebrochen'};
-  let activePanel = 'projects';
+  let activePanel = 'projects', setupPanel = 'demand';
   let current = {snapshot:null,assignments:[],dirty:false,jsonDirty:false,jobId:null,solving:false};
   let projects = [], jobs = [], searchableProjects = [];
   let lastUiBusy=false;
@@ -37,19 +38,29 @@
   const show = (id, visible) => {const node=byId(id);if(node)node.hidden = !visible;};
   const text = (id, value) => {const node=byId(id);if(node)node.textContent = value;};
   function navigate(panel,options={}) {
-    if(!Object.hasOwn(names,panel))return false;
+    if(panel==='calculate')panel='plan';
+    if(panel==='setup')panel=setupPanel;
+    const area=areaFor(panel);
+    if(!Object.hasOwn(names,area))return false;
     if(panel!=='projects'&&!current.snapshot)return false;
+    if(area==='setup')setupPanel=panel;
     const changed=activePanel!==panel;
     activePanel=panel;
     document.body.dataset.activePanel=panel;
     document.querySelectorAll('[data-panel]').forEach(section => section.hidden=section.dataset.panel!==panel);
+    byId('setupNav').hidden=area!=='setup';
+    document.querySelectorAll('#setupNav [data-navigate]').forEach(button=>{
+      const selected=button.dataset.navigate===panel;
+      button.classList.toggle('active',selected);
+      button.setAttribute('aria-pressed',String(selected));
+    });
     byId('workspace').hidden=panel==='projects'||!current.snapshot;
     document.querySelectorAll('.main-nav [data-navigate]').forEach(button => {
-      const selected=button.dataset.navigate===panel;
+      const selected=button.dataset.navigate===area;
       button.classList.toggle('active',selected);
       if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
     });
-    document.title=`${names[panel]} · OpenSchichtplaner5 Generator`;
+    document.title=`${names[area]} · OpenSchichtplaner5 Generator`;
     dispatch('navigate',{panel});
     if(options.focus){const heading=document.querySelector(`[data-panel="${panel}"] h1, [data-panel="${panel}"] h2`);if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}}
     if(options.scroll||changed)window.scrollTo({top:0,behavior:'instant'});
@@ -117,6 +128,7 @@
     const previousBusy=lastUiBusy;
     current={...current,...detail};
     const project=current.snapshot;
+    show('cancel',!!(current.solving||current.jobId));
     document.querySelectorAll('[data-requires-project]').forEach(button=>button.disabled=!project);
     // Ohne Projekt trägt die Kopfleiste nichts: „Projekt benennen · 0 Tage ·"
     // und „0 Personen, 0 % belegt" sind keine Auskunft, sondern Rauschen.
@@ -141,7 +153,7 @@
     const checked=['ready','issues'].includes(readiness.state);
     const hints=checked?readiness.count:0;
     const readinessLabels={unchecked:'noch nicht geprüft',pending:'wird geprüft',draft:'Bearbeitung offen',error:'Prüfung fehlgeschlagen',ready:'Eingabehinweise',issues:'Eingabehinweise'};
-    const readinessMessages={unchecked:'Noch keine aktuelle Eingabeprüfung. Beim Öffnen von Planen wird automatisch geprüft.',pending:'Aktuelle Eingaben werden geprüft …',draft:'Offene Bearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Eingabeprüfung.',error:'Vorprüfung nicht abgeschlossen. Bitte den angezeigten Fehler prüfen und erneut versuchen.',ready:'Keine offenen Eingabehinweise. Berechnung und unabhängige Ergebnisprüfung stehen noch aus.',issues:`${number(hints)} Hinweise aus der aktuellen Eingabeprüfung. Die konkreten Hinweise unten fachlich bearbeiten.`};
+    const readinessMessages={unchecked:'Noch keine aktuelle Eingabeprüfung. Beim Öffnen des Plans wird automatisch geprüft.',pending:'Aktuelle Eingaben werden geprüft …',draft:'Offene Bearbeitung zuerst übernehmen oder verwerfen. Noch keine aktuelle Eingabeprüfung.',error:'Vorprüfung nicht abgeschlossen. Bitte den angezeigten Fehler prüfen und erneut versuchen.',ready:'Keine offenen Eingabehinweise. Berechnung und unabhängige Ergebnisprüfung stehen noch aus.',issues:`${number(hints)} Hinweise aus der aktuellen Eingabeprüfung. Die konkreten Hinweise unten fachlich bearbeiten.`};
     const title=projectName(project);
     if(document.activeElement!==byId('projectName'))byId('projectName').value=title;
     byId('projectName').readOnly=busy();
@@ -170,6 +182,11 @@
   document.querySelectorAll('[data-navigate]').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.navigate,{focus:true,scroll:true})));
   // Eine eigene Eingabe bleibt stehen, auch wenn sich der Zuschnitt neu berechnet.
   byId('limit').addEventListener('input',()=>{byId('limit').dataset.touched='1';});
+  byId('openCalculationOptions').addEventListener('click',()=>{
+    byId('calculationOptions').open=true;
+    byId('limit').focus();
+    byId('calculationOptions').scrollIntoView({block:'center'});
+  });
   byId('toWeights').addEventListener('click',()=>{
     navigate('rules',{focus:true,scroll:true});
     // Die Einstellungsbereiche zeigen einen Abschnitt zur Zeit.

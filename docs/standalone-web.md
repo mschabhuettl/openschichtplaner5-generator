@@ -20,8 +20,12 @@ Schichten mit ihrem Besetzungsbedarf ab. Ruhevorgaben werden ausdrücklich
 bestätigt. Freigaben und dienstfreie Randzeiten werden nur nach entsprechender
 Bestätigung übernommen und können andernfalls später ergänzt werden.
 
-Die Hauptnavigation führt zu **Team & Freigaben**, **Regeln & Bedarf**,
-**Berechnen** und **Dienstplan**. Schichttabellen und weitere Detailbereiche
+Die Hauptnavigation führt zu **Projekte**, **Plan**, **Team** und **Einrichtung**.
+Im Plan stehen Kalender, Berechnung, Fortschritt, Prüfung und Exporte gemeinsam
+bereit. **Rechenoptionen** öffnet Rechenzeit und Teilplanung; die ausführliche
+Eingabeprüfung lässt sich darunter aufklappen. Unter Einrichtung wechselt die
+lokale Auswahl zwischen **Dienste & Bedarf** und **Regeln & Projektdaten**.
+Schichttabellen und weitere Detailbereiche
 werden beim Öffnen geladen. Größere Listen und Monatspläne lassen sich
 seitenweise durchblättern; Berechnung und Exporte verwenden weiterhin sämtliche
 Daten des Projekts.
@@ -40,8 +44,9 @@ Nach **Teams laden** das Team, den neuen Planungszeitraum, die ausdrücklich gew
 
 **Tag/Nacht beim Import nach Zeitregel zuordnen** ist standardmäßig ausgeschaltet.
 Ohne diese ausdrückliche Zuordnung müssen Dienst- und Randzeitmuster vor der
-Berechnung unter **Regeln & Bedarf → Wiederkehrende Dienste gesammelt einstellen**
-je Muster als Tag oder Nacht bestätigt werden.
+Berechnung unter **Einrichtung → Regeln & Projektdaten → Dienste** im Abschnitt
+**Wiederkehrende Dienste gesammelt einstellen** je Muster als Tag oder Nacht
+bestätigt werden.
 
 Die Befundgruppen im Prüfbericht nennen für Randarbeitsarten, Regelprofile, offene
 Importangaben, Verfügbarkeit, Freigaben und Qualifikationen den Bereich zur

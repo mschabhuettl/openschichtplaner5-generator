@@ -38,10 +38,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       await page.evaluate(()=>{window.scrollTo(0,0);return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
       await page.screenshot({path:path.join(process.env.WEB_TEST_SCREENSHOT_DIR,name),fullPage:!name.startsWith('reference-overview-')&&!name.startsWith('automatic-preflight-')});
     }
-    async function navigate(panel){
-      await page.locator(`.main-nav [data-navigate="${panel}"]`).click();
-      await page.locator(`[data-panel="${panel}"]`).waitFor({state:'visible'});
-    }
+    async function navigate(panel){await require('./navigation.cjs')(page,panel);}
     async function reveal(selector){
       const target=page.locator(selector);
       const panel=await target.evaluate(element=>element.closest('[data-panel]')?.dataset.panel);
@@ -468,9 +465,10 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       await navigate('rules');
       await issuesBox.getByRole('button',{name:'Bedarfe am Datum prüfen',exact:true}).click();
       assert.equal(await page.locator('[data-collection-search="demands"]').inputValue(),'2026-02-02');
+      assert(await page.locator('#demands').isVisible(),'demand correction reveals the local editor');
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      await page.locator('#rulesNav [data-config-to="offen"]').click();
       await issueSearch.fill('');
-      await page.evaluate(()=>selectConfig('offen'));
       await page.waitForFunction(()=>document.querySelectorAll('#unresolved .card').length===3);
     }
     assert.match(await issuesBox.locator('.card').nth(1).innerText(),/Person ist im aktuellen Projekt nicht vorhanden/);

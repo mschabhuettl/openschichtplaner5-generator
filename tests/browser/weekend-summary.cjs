@@ -39,8 +39,8 @@ module.exports=async function weekendSummary({page,base}){
  }
  async function solved(fixture){
   await page.evaluate(value=>load(value,true),fixture);
-  await page.locator('.main-nav [data-navigate="calculate"]').click();
-  await page.locator('[data-panel="calculate"]').waitFor({state:'visible'});
+  await require('./navigation.cjs')(page,'calculate');
+  await page.locator('[data-panel="plan"]').waitFor({state:'visible'});
   await page.click('#solve');
   await page.waitForFunction(()=>document.querySelector('#result').textContent.includes('geprüft'),null,{timeout:30000});
   await page.locator('#planAnalysis > summary').click();

@@ -108,7 +108,7 @@ a  { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-of
   display: flex; align-items: center; gap: 11px; width: 100%;
   background: transparent; border: 0; border-radius: var(--r);
   padding: 9px 10px; color: var(--shell-ink); font: inherit; font-size: 13px; font-weight: 500;
-  cursor: pointer; text-align: left; min-height: 38px;
+  cursor: pointer; text-align: left; min-height: 44px;
 }
 .nav-item:hover:not(:disabled) { background: #2b2926; }
 .nav-item.active { background: var(--accent); color: #fff; font-weight: 600; }
@@ -125,7 +125,7 @@ a  { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-of
 .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 7px; padding: 0 8px; font-size: 11px; color: var(--shell-muted); }
 .local-status { display: flex; align-items: center; gap: 7px; }
 .local-status span { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
-.sidebar-bottom button { width: 100%; }
+.sidebar-bottom button { width: 100%; min-height: 44px; }
 
 .app-main { display: flex; flex-direction: column; min-width: 0; }
 .app-footer { display: none; }
@@ -267,6 +267,7 @@ details.surface > summary {
   padding: 15px var(--pad); font-family: var(--display); font-size: 15px; font-weight: 600;
 }
 details.surface > summary::-webkit-details-marker { display: none; }
+details.surface > summary > span { min-width: 0; overflow-wrap: anywhere; }
 details.surface > summary::after {
   content: ""; margin-left: auto; width: 7px; height: 7px; flex: 0 0 auto;
   border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted);
@@ -330,6 +331,13 @@ details.surface > summary + .details-content { border-top: 1px solid var(--line)
 .vacancy-badge { background: var(--warn-bg); border-color: #ecdfc4; color: var(--warn); }
 .personal-badge { background: var(--good-bg); border-color: #d6e3d8; color: var(--good); }
 .shift-badge { font-family: var(--mono); font-size: 10.5px; }
+/* Preserve the calendar's explicit text lines instead of one long flex item.
+   Full labels wrap; neither names nor duty information are truncated. */
+.calendar-table .shift-badge, .calendar-table .personal-badge, .calendar-table .vacancy-badge {
+  white-space: pre-line; overflow-wrap: anywhere; width: 140px; max-width: 140px;
+  border-radius: var(--r-sm);
+}
+.legacy-access { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
 
 .legend-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; background: var(--line-2); }
 .legend-dot.allowed, .allowed { --tone: var(--good); }
@@ -368,6 +376,7 @@ td input, td select, th input { min-height: 30px; padding: 4px 8px; font-size: 1
 
 .matrix-table th:first-child, .calendar-table th:first-child, .demand-table th:first-child { position: sticky; left: 0; z-index: 3; background: var(--surface); }
 .matrix-table thead th:first-child, .calendar-table thead th:first-child, .demand-table thead th:first-child { z-index: 4; background: var(--surface-2); }
+.calendar-table th:first-child { width: 120px; min-width: 120px; max-width: 120px; white-space: normal; overflow-wrap: anywhere; }
 .matrix-cell {
   display: block; width: 100%; min-height: 28px; padding: 4px 8px;
   border: 1px solid transparent; border-radius: var(--r-sm); background: var(--surface-2);
@@ -409,6 +418,7 @@ th.weekend, td.weekend { background: var(--surface-2); }
   padding: 16px 17px; min-height: 108px; align-items: flex-start; cursor: pointer;
 }
 .project-card:hover { border-color: var(--accent-line); background: var(--accent-bg); }
+.project-card > * { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
 .project-card strong { font-family: var(--display); font-size: 15.5px; font-weight: 600; }
 .project-card span, .project-card small { font-size: 12px; color: var(--muted); font-weight: 400; }
 .project-entry-actions { display: flex; flex-wrap: wrap; gap: 9px; }
@@ -418,6 +428,11 @@ th.weekend, td.weekend { background: var(--surface-2); }
 .history-heading { margin-top: 6px; }
 
 .job-list { display: flex; flex-direction: column; gap: 8px; }
+/* Berechnungseinträge dürfen auch oberhalb des Importformulars die Seite
+   nicht verbreitern. Alle Angaben bleiben lesbar, statt sie abzuschneiden. */
+.job-row { flex-wrap: wrap; justify-content: flex-start; text-align: left; }
+.job-row > span:nth-child(2) { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.job-row-name, .job-row-date { display: block; }
 .job-badge { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 9px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
 .job-badge.succeeded { background: var(--good-bg); color: var(--good); border-color: #d6e3d8; }
 .job-badge.failed { background: var(--danger-bg); color: var(--danger); border-color: #edd2cd; }
@@ -478,6 +493,8 @@ th.weekend, td.weekend { background: var(--surface-2); }
 .calendar-view select { max-width: 280px; }
 .plan-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .plan-empty { margin: 0; }
+.setup-nav { margin-bottom: 18px; }
+#job:empty { display: none; }
 .export-actions { gap: 9px; }
 .assignment-composer { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .absence-row, .team-row, .demand-row { border-bottom: 1px solid var(--line); }
@@ -497,18 +514,28 @@ th.weekend, td.weekend { background: var(--surface-2); }
     padding: 9px 12px; min-width: 0;
   }
   .brand, .sidebar-label, .nav-divider { display: none; }
-  .main-nav { flex-direction: row; gap: 4px; max-width: 100%; overflow-x: auto; }
-  /* Scroll navigation separately; the existing authenticated logout stays
-     visible on its own row, including when all project tabs are enabled. */
+  .main-nav { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 4px; max-width: 100%; }
+  /* All four destinations fit; authenticated logout retains its own row. */
   .sidebar-bottom { margin: 0; padding: 0; align-self: flex-end; }
   .sidebar-bottom > :not(#logout), .sidebar-bottom:has(#logout[hidden]) { display: none; }
-  .sidebar-bottom button { min-height: 44px; }
-  .nav-item { flex-direction: column; gap: 4px; padding: 7px 10px; font-size: 11px; min-height: 52px; white-space: nowrap; }
+
+  .nav-item { position: relative; flex-direction: column; gap: 4px; padding: 7px 3px; font-size: 11px; min-height: 52px; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+  .nav-item .nav-count, .nav-item .running-dot { position: absolute; right: 4px; top: 3px; }
   .nav-item span:first-of-type { flex: 0 0 auto; }
   .topbar { flex-wrap: wrap; gap: 12px; padding: 11px 16px; position: static; }
   .topbar-actions { margin-left: auto; flex-wrap: wrap; max-width: 100%; }
   #mainContent { padding: 18px 16px 44px; }
   .panel { gap: 18px; }
+  /* Keep the work object ahead of repeated explanatory copy. Actions remain
+     named and available; the project type is secondary to its name/period. */
+  .plan-panel { gap: 12px; }
+  .plan-panel .page-section-heading { gap: 10px; }
+  .plan-panel .page-section-heading p { display: none; }
+  body[data-active-panel="plan"] #projectKind { display: none; }
+  body[data-active-panel="plan"] .topbar { padding-top: 8px; padding-bottom: 8px; gap: 8px; }
+  .plan-panel .export-actions { gap: 6px; }
+  .plan-panel #openCalculationOptions { order: 1; }
+  .plan-panel #job { margin-top: -8px; }
   h1 { font-size: 23px; }
   h2 { font-size: 19px; }
   .grid { grid-template-columns: minmax(0, 1fr); }

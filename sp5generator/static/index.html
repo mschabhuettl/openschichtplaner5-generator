@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#142624">
   <meta name="description" content="Dienstpläne erstellen, Regeln prüfen und im Team den Überblick behalten.">
   <title>OpenSchichtplaner5 Generator · Dienstplanung</title>
-  <link rel="icon" href='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"%3E%3Crect width="24" height="24" rx="5" fill="%23c96442"/%3E%3Cg fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"%3E%3Crect x="3.5" y="7.5" width="13" height="10" rx="2.5"/%3E%3Cpath d="M16.5 11h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2M7 7.5V6m5 1.5V6"/%3E%3Cpath d="m10.6 10.2-1.8 2.9h2l-.8 2.5 2.6-3.1h-2l.8-2.3Z"/%3E%3C/g%3E%3C/svg%3E'>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/design.css">
   <script src="/static/project-json.js" defer></script>
   <script src="/static/workspace.js" defer></script>
@@ -39,12 +39,9 @@
     <div class="sidebar-label">Arbeitsbereich</div>
     <nav class="main-nav">
       <button class="nav-item active" type="button" data-navigate="projects" aria-current="page"><svg class="icon"><use href="#icon-grid"/></svg><span>Projekte</span></button>
-      <span class="nav-divider"></span>
-      <button class="nav-item" type="button" data-navigate="team" data-requires-project disabled><svg class="icon"><use href="#icon-people"/></svg><span>Team &amp; Freigaben</span><span id="navPeople" class="nav-count"></span></button>
-      <button class="nav-item" type="button" data-navigate="rules" data-requires-project disabled><svg class="icon"><use href="#icon-sliders"/></svg><span>Regeln</span><span id="navBlockers" class="nav-count warning" hidden></span></button>
-      <button class="nav-item" type="button" data-navigate="demand" data-requires-project disabled><svg class="icon"><use href="#icon-grid"/></svg><span>Bedarf</span></button>
-      <button class="nav-item" type="button" data-navigate="calculate" data-requires-project disabled><svg class="icon"><use href="#icon-spark"/></svg><span>Planen</span><span id="navRunning" class="running-dot" hidden></span></button>
-      <button class="nav-item" type="button" data-navigate="plan" data-requires-project disabled><svg class="icon"><use href="#icon-calendar"/></svg><span>Dienstplan</span></button>
+      <button class="nav-item" type="button" data-navigate="plan" data-requires-project disabled><svg class="icon"><use href="#icon-calendar"/></svg><span>Plan</span><span id="navRunning" class="running-dot" hidden></span></button>
+      <button class="nav-item" type="button" data-navigate="team" data-requires-project disabled><svg class="icon"><use href="#icon-people"/></svg><span>Team</span><span id="navPeople" class="nav-count"></span></button>
+      <button class="nav-item" type="button" data-navigate="setup" data-requires-project disabled><svg class="icon"><use href="#icon-sliders"/></svg><span>Einrichtung</span><span id="navBlockers" class="nav-count warning" hidden></span></button>
     </nav>
     <div class="sidebar-bottom"><div class="local-status"><span></span>Lokaler Arbeitsbereich</div><span id="version">Version wird geladen …</span><form id="logout" method="post" action="/logout" hidden><button type="submit">Abmelden</button></form></div>
   </aside>
@@ -362,6 +359,10 @@
           </details>
           <div class="panel-footer"><span>Freigaben und persönliche Vorgaben werden im Projekt gespeichert.</span><button id="save" class="primary" type="button">Änderungen dauerhaft speichern</button></div>
         </section>
+        <nav id="setupNav" class="sub-nav setup-nav" aria-label="Einrichtung" hidden>
+          <button type="button" data-navigate="demand">Dienste &amp; Bedarf</button>
+          <button type="button" data-navigate="rules">Regeln &amp; Projektdaten</button>
+        </nav>
         <section class="panel" data-panel="rules" hidden aria-labelledby="rulesTitle">
           <div class="section-heading page-section-heading"><div><h2 id="rulesTitle">Regeln</h2><p>Dienste, Grenzen und Ziele der Planung – ein Bereich nach dem anderen.</p></div><button type="button" class="quiet" data-navigate="demand">Weiter zum Bedarf<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
           <section id="referenceImport" class="surface padded" aria-labelledby="referenceImportTitle" hidden></section>
@@ -432,7 +433,7 @@
           </div>
         </section>
         <section class="panel demand-panel" data-panel="demand" hidden aria-labelledby="demandTitle">
-          <div class="section-heading page-section-heading"><div><h2 id="demandTitle">Bedarf</h2><p>Mindestbesetzung nach Funktion oder Datum bearbeiten und mit den Vertragssollstunden abgleichen.</p></div><button type="button" class="quiet" data-navigate="calculate">Weiter zur Berechnung<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
+          <div class="section-heading page-section-heading"><div><h2 id="demandTitle">Bedarf</h2><p>Mindestbesetzung nach Funktion oder Datum bearbeiten und mit den Vertragssollstunden abgleichen.</p></div><button type="button" class="quiet" data-navigate="plan">Weiter zur Berechnung<svg class="icon"><use href="#icon-arrow"/></svg></button></div>
           <div id="demandSummary" class="surface padded demand-summary" aria-live="polite" aria-atomic="true"></div>
           <div class="surface demand-surface">
             <div class="surface-toolbar demand-view-toolbar">
@@ -453,17 +454,72 @@
             <div class="surface-footer"><span class="helper-text">Änderungen werden mit dem Projekt gespeichert. „Zeile zurücksetzen“ stellt den Stand beim Öffnen des Projekts wieder her.</span></div>
           </div>
         </section>
-        <section class="panel" data-panel="calculate" hidden aria-labelledby="calculateTitle">
+        <section class="panel plan-panel" data-panel="plan" hidden aria-labelledby="planTitle">
           <div class="section-heading page-section-heading">
             <div>
-              <h2 id="calculateTitle">Planen</h2>
-              <p>Stand ansehen, rechnen lassen, Ergebnis prüfen.</p>
+              <h2 id="planTitle">Ihr Dienstplan
+              </h2>
+              <p>Einteilungen prüfen und bearbeiten.
+              </p>
+            </div>
+            <div class="actions export-actions">
+
+                <button id="solve" type="button" class="primary"><svg class="icon"><use href="#icon-spark"/></svg>Speichern und berechnen</button>
+                <button id="cancel" type="button" hidden disabled>Abbrechen</button>
+
+              <button id="openCalculationOptions" type="button">Rechenoptionen</button>
+              <button data-export="csv" type="button">CSV
+              </button>
+              <button data-export="xlsx" class="primary" type="button"><svg class="icon"><use href="#icon-download"/></svg>Excel exportieren
+              </button>
             </div>
           </div>
-          <div class="calculation-layout">
+          <div id="result" class="result-summary"></div>
+              <div id="calculationProgress" class="calculation-progress" hidden>
+                <div class="progress-head">
+                  <span class="activity-spinner" aria-hidden="true"></span>
+                  <div><strong>Berechnung läuft</strong><span id="progressPhase">Wird vorbereitet …</span></div>
+                </div>
+                <div class="progress-bar" role="presentation"><span id="progressFill"></span></div>
+                <ol id="progressSteps" class="trace" aria-live="polite"></ol>
+                <figure id="progressBoard" class="flow-board" hidden>
+                  <figcaption><span id="flowMoved">Belegung wird aufgebaut …</span></figcaption>
+                  <div id="flowGrid" class="flow-grid" role="img" aria-label="Laufende Belegung: Personen über Kalendertage"></div>
+                  <div class="flow-legend"><span><i class="flow-key day"></i>Tagdienst</span><span><i class="flow-key night"></i>Nachtdienst</span><span><i class="flow-key idle"></i>frei</span></div>
+                </figure>
+              </div>
+              <p id="job" aria-live="polite" class="job-status"></p>
 
-            <section class="surface padded calculation-foundation" aria-labelledby="automaticReadinessTitle">
-              <h3 id="automaticReadinessTitle">Stand</h3>
+          <div id="planEmpty" class="empty-state plan-empty">
+            <div class="empty-icon"><svg class="icon"><use href="#icon-calendar"/></svg>
+            </div>
+            <div>
+              <h3>Ihr Plan wartet auf die erste Besetzung.
+              </h3>
+              <p>Mit „Speichern und berechnen“ starten oder Einteilungen manuell hinzufügen.
+              </p>
+            </div>
+
+          </div>
+          <div class="surface calendar-surface">
+            <div class="surface-toolbar calendar-toolbar">
+              <div class="month-navigation">
+                <button id="prevMonth" type="button" class="icon-button" aria-label="Vorheriger Monat">‹
+                </button><strong id="planMonth"></strong>
+                <button id="nextMonth" type="button" class="icon-button" aria-label="Nächster Monat">›
+                </button>
+              </div>
+              <label class="calendar-view"><span class="sr-only">Ansicht</span><select id="planView"><option value="employees">Dienstplan · Personen</option><option value="positions">Einsatzplan · Funktionen / Arbeitsplätze</option></select>
+              </label>
+            </div>
+            <div id="calendar" class="scroll sheet">
+            </div>
+            <div class="surface-footer">
+              <div class="matrix-legend"><span><i class="legend-dot day"></i>Tagdienst</span><span><i class="legend-dot night"></i>Nachtdienst</span>
+              </div><span class="helper-text">Einteilung anklicken, um sie zu bearbeiten.</span>
+            </div>
+          </div>
+          <details id="inputReview" class="surface"><summary id="automaticReadinessTitle">Eingabeprüfung &amp; offene Entscheidungen</summary><div class="details-content">
               <dl class="planning-facts">
                 <div><dt>Zeitraum (einschließlich)</dt><dd id="calcPeriod">—</dd></div>
                 <div><dt>Kalendertage</dt><dd id="calcDays">—</dd></div>
@@ -489,85 +545,16 @@
                 </dl>
                 <p class="helper-text small-text">Die Prüfung läuft beim Öffnen dieser Ansicht. Sie speichert nichts, startet keine Berechnung und beweist keine lösbare oder vollständig besetzte Planung.</p>
               </details>
-            </section>
-
-            <section class="surface calculation-card" aria-labelledby="calculationRunTitle">
-              <div class="calculation-symbol"><svg class="icon"><use href="#icon-spark"/></svg></div>
-              <h3 id="calculationRunTitle">Dienstplan berechnen</h3>
+          </div></details>
+          <details id="calculationOptions" class="surface"><summary id="calculateTitle">Berechnungsoptionen</summary><div class="details-content">
+              <h3 id="calculationRunTitle">Suche einstellen</h3>
               <div class="calculation-options">
                 <label>Rechenzeit<span class="input-suffix"><input id="limit" type="number" min="1" max="600" value="30" required><span>Sekunden</span></span></label>
                 <p id="limitSuggestion" class="helper-text small-text">1–600 Sekunden. Die Berechnung kann früher fertig sein.</p>
                 <label class="checkbox-card"><input id="partial" type="checkbox"><span><strong>Teilplan zulassen</strong><small>Bei Unterbesetzung einen prüfbaren Entwurf mit offenen Stellen erstellen.</small></span></label>
               </div>
               <p class="helper-text small-text">Wie stark Blockbildung, Wochenenden und Wünsche zählen, steht unter <button id="toWeights" type="button" class="quiet">Optimierungswünsche</button>.</p>
-              <div class="actions">
-                <button id="solve" type="button" class="primary"><svg class="icon"><use href="#icon-spark"/></svg>Speichern und berechnen</button>
-                <button id="cancel" type="button" disabled>Abbrechen</button>
-              </div>
-              <div id="calculationProgress" class="calculation-progress" hidden>
-                <div class="progress-head">
-                  <span class="activity-spinner" aria-hidden="true"></span>
-                  <div><strong>Berechnung läuft</strong><span id="progressPhase">Wird vorbereitet …</span></div>
-                </div>
-                <div class="progress-bar" role="presentation"><span id="progressFill"></span></div>
-                <ol id="progressSteps" class="trace" aria-live="polite"></ol>
-                <figure id="progressBoard" class="flow-board" hidden>
-                  <figcaption><span id="flowMoved">Belegung wird aufgebaut …</span></figcaption>
-                  <div id="flowGrid" class="flow-grid" role="img" aria-label="Laufende Belegung: Personen über Kalendertage"></div>
-                  <div class="flow-legend"><span><i class="flow-key day"></i>Tagdienst</span><span><i class="flow-key night"></i>Nachtdienst</span><span><i class="flow-key idle"></i>frei</span></div>
-                </figure>
-              </div>
-              <p id="job" aria-live="polite" class="job-status"></p>
-            </section>
-
-          </div>
-        </section>
-        <section class="panel plan-panel" data-panel="plan" hidden aria-labelledby="planTitle">
-          <div class="section-heading page-section-heading">
-            <div>
-              <h2 id="planTitle">Ihr Dienstplan
-              </h2>
-              <p>Einteilungen prüfen und bearbeiten.
-              </p>
-            </div>
-            <div class="actions export-actions">
-              <button data-export="csv" type="button">CSV
-              </button>
-              <button data-export="xlsx" class="primary" type="button"><svg class="icon"><use href="#icon-download"/></svg>Excel exportieren
-              </button>
-            </div>
-          </div>
-          <div id="result" class="result-summary"></div>
-          <div id="planEmpty" class="empty-state plan-empty">
-            <div class="empty-icon"><svg class="icon"><use href="#icon-calendar"/></svg>
-            </div>
-            <div>
-              <h3>Ihr Plan wartet auf die erste Besetzung.
-              </h3>
-              <p>Starten Sie eine Berechnung oder fügen Sie Einteilungen manuell hinzu.
-              </p>
-            </div>
-            <button type="button" class="primary" data-navigate="calculate">Plan berechnen<svg class="icon"><use href="#icon-arrow"/></svg>
-            </button>
-          </div>
-          <div class="surface calendar-surface">
-            <div class="surface-toolbar calendar-toolbar">
-              <div class="month-navigation">
-                <button id="prevMonth" type="button" class="icon-button" aria-label="Vorheriger Monat">‹
-                </button><strong id="planMonth"></strong>
-                <button id="nextMonth" type="button" class="icon-button" aria-label="Nächster Monat">›
-                </button>
-              </div>
-              <label class="calendar-view"><span class="sr-only">Ansicht</span><select id="planView"><option value="employees">Dienstplan · Personen</option><option value="positions">Einsatzplan · Funktionen / Arbeitsplätze</option></select>
-              </label>
-            </div>
-            <div id="calendar" class="scroll sheet">
-            </div>
-            <div class="surface-footer">
-              <div class="matrix-legend"><span><i class="legend-dot day"></i>Tagdienst</span><span><i class="legend-dot night"></i>Nachtdienst</span>
-              </div><span class="helper-text">Einteilung anklicken, um sie zu bearbeiten.</span>
-            </div>
-          </div>
+          </div></details>
           <details id="planAnalysis" class="surface" hidden><summary>Berechnung &amp; Kennzahlen</summary><div id="planAnalysisContent" class="details-content result-summary"></div></details>
           <details id="replacementPanel" class="surface"><summary>Krankmeldung &amp; Ersatzsuche <span class="summary-description">Wer kann kurzfristig einspringen?</span></summary>
             <div class="details-content">

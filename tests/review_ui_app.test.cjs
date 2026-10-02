@@ -89,7 +89,7 @@ test('T09 capability loss during save response never advances revision or draft 
 for(const mode of ['manual','automatic'])test('T07 '+mode+' readiness cannot acknowledge an unversioned numeric edit',async()=>{
  const h=await harness(),pending=deferred();h.c.respond=()=>pending.promise;let checking;
  if(mode==='manual'){h.run('renderSetupReview()');checking=h.button('setupReview','Planungsbereitschaft prüfen').onclick();}
- else h.run("activePanel='calculate';refreshAutomaticReadiness(true)");
+ else h.run("activePanel='plan';refreshAutomaticReadiness(true)");
  h.run("snapshot.metadata.n=BigInt('9007199254740993')");pending.resolve({ready:true,diagnostics:[]});await checking;await new Promise(r=>setImmediate(r));
  assert.notEqual(h.state().readiness.state,'ready');assert.doesNotMatch(h.get('setupReview')?.textContent??'',/Berechnung kann gestartet werden/);
 });
@@ -489,7 +489,7 @@ test('UI-005 literal group IDs never collide with independent demands',async()=>
 
 function boundedReport(shown){return {diagnostics:Array.from({length:shown},(_,i)=>({code:'unresolved',message:'Synthetic issue '+i})),diagnostics_total:3,diagnostics_omitted:3-shown,diagnostics_by_code:{unresolved:3}};}
 for(const shown of [0,1])test(`SEC-04 automatic readiness respects bounded diagnostics: ${shown} shown`,async()=>{
- const h=await harness();h.c.respond=()=>({ready:false,...boundedReport(shown)});h.run("activePanel='calculate';refreshAutomaticReadiness(true)");await new Promise(r=>setImmediate(r));
+ const h=await harness();h.c.respond=()=>({ready:false,...boundedReport(shown)});h.run("activePanel='plan';refreshAutomaticReadiness(true)");await new Promise(r=>setImmediate(r));
  assert.equal(h.get('automaticReadinessStatus').dataset.state,'issues','a truncated report is not a failed request');assert.equal(h.state().readiness.count,3);
  assert.match(h.get('automaticReadinessStatus').textContent,/3 Hinweise/);assert.match(h.get('automaticReadinessDetails').textContent,new RegExp(`${shown}.*angezeigt.*${3-shown}.*ausgelassen`));
  assert.equal(h.get('retryReadiness').hidden,true);
@@ -500,7 +500,7 @@ for(const report of [
  {ready:false,...boundedReport(1),diagnostics_omitted:0},
  {ready:false,...boundedReport(1),diagnostics_total:'3'},
 ])test(`SEC-04 inconsistent readiness counts fail closed: ${JSON.stringify(report)}`,async()=>{
- const h=await harness();h.c.respond=()=>report;h.run("activePanel='calculate';refreshAutomaticReadiness(true)");await new Promise(r=>setImmediate(r));
+ const h=await harness();h.c.respond=()=>report;h.run("activePanel='plan';refreshAutomaticReadiness(true)");await new Promise(r=>setImmediate(r));
  assert.equal(h.get('automaticReadinessStatus').dataset.state,'error');assert.equal(h.get('retryReadiness').hidden,false);
 });
 for(const shown of [0,1])test(`SEC-04 manual readiness reports omitted diagnostics: ${shown} shown`,async()=>{

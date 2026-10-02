@@ -45,9 +45,9 @@ async function createAndSolve(page){
  for(const id of ['wizardRulesConfirmed','wizardApprovalsConfirmed','wizardContextConfirmed'])await page.check('#'+id);
  await page.click('#wizardCreate');await page.waitForFunction(()=>!document.getElementById('createProjectDialog').open&&PlannerApp.getState().snapshot);
  await page.locator('#people tbody tr:first-child input[type="number"]').fill('32');await page.locator('#people tbody tr:first-child input[type="number"]').press('Tab');
- await page.click('.main-nav [data-navigate="demand"]');
+ await require('./navigation.cjs')(page,'demand');
  const demand=page.locator('td[data-demand-day="2026-10-05"] input.demand-value');await demand.fill('2');await demand.press('Tab');
- await page.click('.main-nav [data-navigate="calculate"]');await page.fill('#limit','5');await page.click('#solve');
+ await require('./navigation.cjs')(page,'calculate');await page.fill('#limit','5');await page.click('#solve');
  await page.waitForFunction(()=>!PlannerApp.getState().solving&&!PlannerApp.getState().jobId&&document.getElementById('result').textContent.includes('Vollständig'),null,{timeout:40000});
  assert.equal(await page.locator('#calendar .shift-badge').count(),6);
  return page.evaluate(()=>currentSnapshot());
@@ -58,19 +58,42 @@ async function capture(page,name){
  fs.mkdirSync(out,{recursive:true});await page.screenshot({path:path.join(out,name+'.png')});
 }
 test('UX-02A calendar precedes optional analysis in the first viewport',async()=>withWorkspace(async page=>{
- await createAndSolve(page);
+ const solved=await createAndSolve(page);
  const measurements=[];
  for(const width of [1440,390]){
-  await page.setViewportSize({width,height:1000});await page.evaluate(()=>window.scrollTo(0,0));
+  await page.setViewportSize({width,height:1000});
+  await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0);return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
+  await pause(150);
   const measured=await page.evaluate(()=>{
-   const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right};};
-   return {width:innerWidth,height:innerHeight,scrollY,calendar:rect('#calendar'),row:rect('#calendar tbody tr'),shift:rect('#calendar .shift-badge')};
+   const rect=e=>{const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right};};
+   const visible=e=>{
+    const r=rect(e),clip={left:0,right:innerWidth,top:Math.max(0,document.querySelector('.topbar').getBoundingClientRect().bottom),bottom:innerHeight};
+    for(let p=e.parentElement;p;p=p.parentElement){
+     const s=getComputedStyle(p),q=p.getBoundingClientRect();
+     if(/auto|scroll|hidden|clip/.test(s.overflowX)){clip.left=Math.max(clip.left,q.left+p.clientLeft);clip.right=Math.min(clip.right,q.left+p.clientLeft+p.clientWidth);}
+     if(/auto|scroll|hidden|clip/.test(s.overflowY)){clip.top=Math.max(clip.top,q.top+p.clientTop);clip.bottom=Math.min(clip.bottom,q.top+p.clientTop+p.clientHeight);}
+    }
+    const fullyVisible=r.left>=clip.left&&r.right<=clip.right&&r.top>=clip.top&&r.bottom<=clip.bottom;
+    const points=[[.1,.1],[.5,.5],[.9,.9]].map(([x,y])=>document.elementFromPoint(r.left+(r.right-r.left)*x,r.top+(r.bottom-r.top)*y));
+    return {...r,clip,fullyVisible,uncovered:points.every(hit=>hit===e||e.contains(hit))};
+   };
+   return {width:innerWidth,height:innerHeight,scrollX,scrollY,documentWidth:document.documentElement.scrollWidth,
+    calendar:rect(document.querySelector('#calendar')),row:rect(document.querySelector('#calendar tbody tr')),person:visible(document.querySelector('#calendar tbody tr th')),
+    shifts:[...document.querySelectorAll('#calendar .shift-badge')].map(e=>({date:e.closest('td').dataset.date,...visible(e)})),
+    localScrolls:[...document.querySelectorAll('#calendar,#calendar *')].filter(e=>e.scrollLeft||e.scrollTop).map(e=>({className:e.className,left:e.scrollLeft,top:e.scrollTop}))};
   });measurements.push(measured);await capture(page,'calendar-'+width);
  }
  console.log('UX-02A layout',JSON.stringify(measurements));
  const [desktop,mobile]=measurements;
- assert(desktop.shift.top>=0&&desktop.shift.bottom<=desktop.height&&desktop.shift.left<desktop.width,'first desktop duty visible without scrolling: '+JSON.stringify(desktop));
- assert(mobile.calendar.top>=0&&mobile.row.bottom<=mobile.height,'mobile calendar and first relevant row visible without scrolling: '+JSON.stringify(mobile));
+ // Solver assignments vary by person. DOM-first is not chronologically first.
+ // Require BOTH actual duties on the first planning day, not a partially clipped
+ // later-day badge that happened to be assigned to the first person.
+ const firstDay=desktop.shifts.filter(s=>s.date===solved.period_start);
+ assert.equal(firstDay.length,2,'reference first day has two real duties');
+ assert(firstDay.every(s=>s.fullyVisible&&s.uncovered),'first-day desktop duties fully visible and hit-testable without scrolling: '+JSON.stringify(desktop));
+ for(const view of measurements){assert.equal(view.scrollX,0);assert.equal(view.scrollY,0);assert.deepEqual(view.localScrolls,[]);assert.equal(view.documentWidth,view.width);}
+ assert(mobile.calendar.top>=0&&mobile.person.fullyVisible&&mobile.person.uncovered,'mobile calendar and first person label visible without scrolling; no mobile duty claim: '+JSON.stringify(mobile));
+ assert(mobile.row.bottom<=mobile.height-32,'UX-02B adds at least 32px mobile reserve below the first complete person row: '+JSON.stringify(mobile));
  const analysis=page.locator('#planAnalysis');assert.equal(await analysis.evaluate(e=>e.open),false,'long analysis starts closed');
  await analysis.locator(':scope > summary').press('Enter');assert.equal(await analysis.evaluate(e=>e.open),true);
  assert.match(await analysis.innerText(),/Sollerfüllung/);assert.match(await analysis.innerText(),/Freigabedecke/);
