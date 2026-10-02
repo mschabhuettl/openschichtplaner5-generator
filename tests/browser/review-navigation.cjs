@@ -64,6 +64,7 @@ test('UX-02B four real main destinations preserve the project through local setu
  await page.click('#newProject');await page.fill('#wizardName','Synthetische Navigation');
  await page.fill('#wizardStart','2026-10-05');await page.fill('#wizardEnd','2026-10-09');await page.fill('#wizardTimezone','Europe/Vienna');
  await page.click('#wizardNext');await page.fill('#wizardPeople','Testperson A\nTestperson B\nTestperson C');await page.click('#wizardNext');
+ await page.click('#wizardNext'); // Separate rule review after shifts.
  for(const id of ['wizardRulesConfirmed','wizardApprovalsConfirmed','wizardContextConfirmed'])await page.check('#'+id);
  await page.click('#wizardCreate');await page.waitForFunction(()=>!document.getElementById('createProjectDialog').open&&PlannerApp.getState().snapshot);
  const before=await page.evaluate(()=>({wire:ProjectJSON.stringify(currentSnapshot()),dirty,changeVersion}));
@@ -92,6 +93,7 @@ test('UX-02B Plan owns input checking, options and the real calculation without 
  await page.click('#newProject');await page.fill('#wizardName','Synthetischer gemeinsamer Plan');
  await page.fill('#wizardStart','2026-10-05');await page.fill('#wizardEnd','2026-10-09');await page.fill('#wizardTimezone','Europe/Vienna');
  await page.click('#wizardNext');await page.fill('#wizardPeople','Testperson A\nTestperson B\nTestperson C');await page.click('#wizardNext');
+ await page.click('#wizardNext'); // Separate rule review after shifts.
  for(const id of ['wizardRulesConfirmed','wizardApprovalsConfirmed','wizardContextConfirmed'])await page.check('#'+id);
  await page.click('#wizardCreate');await page.waitForFunction(()=>!document.getElementById('createProjectDialog').open&&PlannerApp.getState().snapshot);
  const initial=await page.evaluate(()=>currentSnapshot());
@@ -220,6 +222,7 @@ test('UX-B07 import fits a 320px document without clipping its controls',async()
  await page.click('#newProject');await page.fill('#wizardName','Synthetisches Team Oktober');
  await page.fill('#wizardStart','2026-10-05');await page.fill('#wizardEnd','2026-10-09');await page.fill('#wizardTimezone','Europe/Vienna');
  await page.click('#wizardNext');await page.fill('#wizardPeople','Testperson A\nTestperson B\nTestperson C');await page.click('#wizardNext');
+ await page.click('#wizardNext'); // Separate rule review after shifts.
  for(const id of ['wizardRulesConfirmed','wizardApprovalsConfirmed','wizardContextConfirmed'])await page.check('#'+id);
  await page.click('#wizardCreate');await page.waitForFunction(()=>!document.getElementById('createProjectDialog').open&&PlannerApp.getState().snapshot);
  await require('./navigation.cjs')(page,'calculate');await page.fill('#limit','1');await page.click('#solve');

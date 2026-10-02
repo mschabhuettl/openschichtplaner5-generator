@@ -732,3 +732,46 @@ tr.excluded td:first-child::after { content: " · ausgenommen"; font-size: 11px;
 .matrix-table th[scope="row"] small { font-weight: 400; font-size: 11px; color: var(--faint); }
 .matrix-filter { flex-direction: row; align-items: center; gap: 8px; font-size: 12px; }
 .matrix-filter select { min-width: 210px; }
+
+/* Einrichtung: eine Aufgabe pro Schritt, Abschlussaktionen bleiben erreichbar.
+   Nur der Dialog scrollt; der Footer belegt zusätzlich seinen normalen Platz. */
+.project-wizard {
+  width: min(780px, calc(100% - 24px)); max-width: none;
+  max-height: calc(100dvh - 24px); padding: 20px 20px 0;
+  border: 1px solid var(--line-2); border-radius: var(--r-lg);
+  background: var(--surface); color: var(--ink); overflow: auto;
+  scroll-padding-block: 20px 88px;
+}
+.project-wizard::backdrop { background: rgb(20 20 19 / 55%); }
+.project-wizard .wizard-heading { display: grid; gap: 6px; }
+.project-wizard .wizard-heading > p:last-child, .project-wizard .muted { font-size: 13px; color: var(--muted); }
+.project-wizard .wizard-steps { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; padding: 0; margin: 16px 0; font-size: 12px; color: var(--muted); }
+.project-wizard .wizard-steps [aria-current] { color: var(--ink); font-weight: 700; border-bottom: 2px solid var(--accent); }
+.project-wizard .wizard-step { display: flex; flex-direction: column; gap: 12px; }
+.project-wizard .wizard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.project-wizard .wizard-template { padding: 12px; gap: 12px; }
+.project-wizard #wizardTemplates { display: grid; gap: 16px; }
+.project-wizard .wizard-weekdays { flex-direction: row; flex-wrap: wrap; gap: 6px; padding: 8px; }
+.project-wizard .wizard-weekdays label { align-items: center; min-height: 44px; padding: 8px; gap: 6px; }
+.project-wizard .wizard-weekdays input { margin: 0; }
+.project-wizard .wizard-demands { display: grid; gap: 12px; }
+.project-wizard .wizard-demand { display: grid; grid-template-columns: minmax(0,1fr) minmax(70px,100px) minmax(70px,100px); align-items: center; gap: 8px; }
+.project-wizard .wizard-demand strong { overflow-wrap: anywhere; }
+.project-wizard .wizard-rule-values { display: grid; gap: 6px; margin: 0; font-size: 13px; }
+.project-wizard .wizard-rule-values > div { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.project-wizard .wizard-rule-values dd { margin: 0; font-weight: 600; white-space: nowrap; }
+.project-wizard #wizardRuleEditor > summary { min-height: 44px; padding: 10px 0; cursor: pointer; color: var(--accent-ink); font-weight: 600; }
+.project-wizard #wizardRuleEditor[open] > .muted { margin-top: 12px; }
+.project-wizard .wizard-summary { font-size: 13px; font-weight: 600; }
+.project-wizard .wizard-check { padding: 10px; min-height: 44px; }
+.project-wizard .wizard-error { color: var(--danger); background: var(--danger-bg); padding: 10px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.project-wizard button, .project-wizard input:not([type=checkbox]), .project-wizard select { min-height: 44px; }
+.project-wizard .wizard-actions { position: sticky; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; margin-top: 16px; border-top: 1px solid var(--line); background: var(--surface); }
+.project-wizard .wizard-actions .primary { margin-left: auto; }
+@media (max-width: 600px) {
+  .project-wizard { padding: 14px 14px 0; }
+  .project-wizard .wizard-actions button { padding-inline: 10px; }
+  .project-wizard .wizard-grid { grid-template-columns: minmax(0,1fr); }
+  .project-wizard .wizard-demand { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .project-wizard .wizard-demand strong { grid-column: 1 / -1; }
+}

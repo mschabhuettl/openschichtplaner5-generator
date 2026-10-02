@@ -42,6 +42,7 @@ async function createAndSolve(page){
  await page.click('#newProject');await page.fill('#wizardName','Synthetisches Team Oktober');
  await page.fill('#wizardStart','2026-10-05');await page.fill('#wizardEnd','2026-10-09');await page.fill('#wizardTimezone','Europe/Vienna');
  await page.click('#wizardNext');await page.fill('#wizardPeople','Testperson A\nTestperson B\nTestperson C');await page.click('#wizardNext');
+ await page.click('#wizardNext'); // Separate rule review after shifts.
  for(const id of ['wizardRulesConfirmed','wizardApprovalsConfirmed','wizardContextConfirmed'])await page.check('#'+id);
  await page.click('#wizardCreate');await page.waitForFunction(()=>!document.getElementById('createProjectDialog').open&&PlannerApp.getState().snapshot);
  await page.locator('#people tbody tr:first-child input[type="number"]').fill('32');await page.locator('#people tbody tr:first-child input[type="number"]').press('Tab');

@@ -84,7 +84,7 @@ test('T07 real readiness, validation, replacement, approval and export send exac
 
 async function fillNumericWizard(page){
  await page.evaluate(()=>navigate('projects'));
- await page.click('#newProject');await page.fill('#wizardName','Synthetic retained wizard');await page.fill('#wizardStart','2026-01-05');await page.fill('#wizardEnd','2026-01-05');await page.fill('#wizardTimezone','UTC');await page.click('#wizardNext');await page.fill('#wizardPeople','Synthetic Ada; 40; 100');await page.click('#wizardNext');await page.check('#wizardRulesConfirmed');
+ await page.click('#newProject');await page.fill('#wizardName','Synthetic retained wizard');await page.fill('#wizardStart','2026-01-05');await page.fill('#wizardEnd','2026-01-05');await page.fill('#wizardTimezone','UTC');await page.click('#wizardNext');await page.fill('#wizardPeople','Synthetic Ada; 40; 100');await page.click('#wizardNext');await page.click('#wizardNext');await page.check('#wizardRulesConfirmed');
 }
 for(const failure of ['capability','decode','changed'])test('T09 wizard '+failure+' keeps dialog, input, incumbent and durable state',{timeout:90000},async()=>withPage(async({page,db})=>{
  await page.evaluate(()=>openSavedProject('numeric-source'));await fillNumericWizard(page);const before=db();
@@ -160,7 +160,7 @@ test('T06 T11 real wizard direct response and demo retain canonical numeric sema
  let delivered;
  // Explicit response-injection seam for the wizard's otherwise numeric-small output.
  await page.route('**/api/projects/new',async route=>{const r=await route.fetch();delivered=(await r.text()).replace('\"metadata\":{','\"metadata\":{\"numeric_probe\":9007199254740993,\"float_probe\":-0.0,');await route.fulfill({response:r,body:delivered});});
- await page.click('#newProject');await page.fill('#wizardName','Synthetic numeric wizard');await page.fill('#wizardStart','2026-01-05');await page.fill('#wizardEnd','2026-01-05');await page.fill('#wizardTimezone','UTC');await page.click('#wizardNext');await page.fill('#wizardPeople','Synthetic Ada; 40; 100');await page.click('#wizardNext');await page.check('#wizardRulesConfirmed');
+ await page.click('#newProject');await page.fill('#wizardName','Synthetic numeric wizard');await page.fill('#wizardStart','2026-01-05');await page.fill('#wizardEnd','2026-01-05');await page.fill('#wizardTimezone','UTC');await page.click('#wizardNext');await page.fill('#wizardPeople','Synthetic Ada; 40; 100');await page.click('#wizardNext');await page.click('#wizardNext');await page.check('#wizardRulesConfirmed');
  const created=page.waitForResponse(r=>r.url().endsWith('/api/projects/new')),checked=page.waitForResponse(r=>r.url().endsWith('/api/snapshots/check'));await page.click('#wizardCreate');
  const response=await created;assert.equal(response.status(),200);const wire=await response.text(),check=await checked;assert.equal(check.status(),200);
  python('compare',JSON.stringify([{source:wire,output:'{"snapshot":'+check.request().postData()+'}',path:['snapshot']}]));

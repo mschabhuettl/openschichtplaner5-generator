@@ -30,6 +30,7 @@ module.exports=async function productFlows({page,base,navigate,reveal,uploadProj
   await page.fill('#wizardPeople','Testperson 001\nTestperson 002\nTestperson 003\nTestperson 004');
   await page.fill('#wizardPositions','Funktion A');
   await page.click('#wizardNext');
+  await page.click('#wizardNext'); // Separate rule review after shifts.
   await page.check('#wizardRulesConfirmed');
   await page.check('#wizardApprovalsConfirmed');
   await page.uncheck('#wizardContextConfirmed');

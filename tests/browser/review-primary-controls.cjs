@@ -24,6 +24,7 @@ async function fixture(name,run){
   const response=await page.goto(base);assert.equal(response.headers()['content-security-policy'],"default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");await page.waitForFunction(()=>window.PlannerApp);
   await page.click('#newProject');await page.fill('#wizardName','Synthetische Bedienregression');await page.fill('#wizardStart','2026-10-05');await page.fill('#wizardEnd','2026-10-09');await page.fill('#wizardTimezone','Europe/Vienna');
   await page.click('#wizardNext');await page.fill('#wizardPeople','Testperson A\nTestperson B\nTestperson C');await page.click('#wizardNext');
+  await page.click('#wizardNext'); // Separate rule review after shifts.
   for(const id of ['wizardRulesConfirmed','wizardApprovalsConfirmed','wizardContextConfirmed'])await page.check('#'+id);
   await page.click('#wizardCreate');await page.waitForFunction(()=>snapshot&&!document.getElementById('createProjectDialog').open&&!projectSwitchBusy());
   // Load a declared synthetic unresolved item through the original client path;

@@ -1,7 +1,7 @@
 > Historisches UX-01-Dokument, unverändert aus der abgenommenen Ausgangsmessung.
 > Die genannten Logs, Bilder und absoluten Runnerpfade gehören zum getrennten
 > lokalen Abnahmearchiv und sind nicht Bestandteil dieser Distribution.
-> Für den umgesetzten Umfang siehe [Version 0.32.0](../release-0.32.0.md).
+> Für den umgesetzten Umfang siehe [Version 0.33.0](../release-0.33.0.md).
 
 # UX-01 — Zielablauf und kleines Designsystem
 

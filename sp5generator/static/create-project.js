@@ -8,8 +8,8 @@
   dialog.setAttribute('aria-labelledby', 'wizardTitle');
   dialog.innerHTML = `
     <form id="createProjectForm" novalidate>
-      <header class="wizard-heading"><p class="eyebrow">NEUES PROJEKT</p><h2 id="wizardTitle">Neues Projekt anlegen</h2><p>Zeitraum, Team und Schichten in drei Schritten einrichten. Alle Angaben bleiben anschließend bearbeitbar.</p></header>
-      <ol class="wizard-steps" aria-label="Einrichtung"><li>1 · Zeitraum</li><li>2 · Team</li><li>3 · Schichten & Regeln</li></ol>
+      <header class="wizard-heading"><p class="eyebrow">NEUES PROJEKT</p><h2 id="wizardTitle">Neues Projekt anlegen</h2><p>Zeitraum, Team, Schichten und Regeln in vier Schritten einrichten. Alle Angaben bleiben anschließend bearbeitbar.</p></header>
+      <ol class="wizard-steps" aria-label="Einrichtung"><li>1 · Zeitraum</li><li>2 · Team</li><li>3 · Schichten</li><li>4 · Regeln prüfen</li></ol>
       <p id="wizardError" class="wizard-error" role="alert" hidden></p>
       <section class="wizard-step" data-step="0" aria-labelledby="wizardBasicsTitle">
         <h3 id="wizardBasicsTitle" tabindex="-1">Projekt benennen</h3>
@@ -31,7 +31,11 @@
         <h3 id="wizardShiftsTitle" tabindex="-1">Welche Schichten werden besetzt?</h3>
         <p class="muted">Vorlagen wiederholen sich an den ausgewählten Wochentagen. Endet eine Schicht vor ihrem Beginn, läuft sie über Mitternacht. Die gesamte Dauer zählt als Arbeitszeit.</p>
         <div id="wizardTemplates"></div><button id="wizardAddTemplate" type="button" class="secondary">Schichtvorlage hinzufügen</button>
-        <h3>Planungsregeln festlegen</h3><p class="muted">Die Startwerte sind bearbeitbare Vorgaben. Bitte die für das Team vereinbarten Regeln prüfen; die Einrichtung enthält keine rechtliche Prüfung.</p>
+      </section>
+      <section class="wizard-step" data-step="3" aria-labelledby="wizardRulesTitle" hidden>
+        <h3 id="wizardRulesTitle" tabindex="-1">Regeln prüfen und Projekt erstellen</h3><p class="muted">Die Startwerte sind bearbeitbare Vorgaben, keine rechtliche Prüfung. Bestätigungen sind nicht vorausgewählt.</p>
+        <dl id="wizardRuleValues" class="wizard-rule-values"></dl>
+        <details id="wizardRuleEditor"><summary>Regeln anpassen</summary>
         <div class="wizard-grid">
           <label class="wizard-field">Mindestruhe · Stunden<input id="wizardMinRest" type="number" min="0" max="168" step="0.25" value="11" required></label>
           <label class="wizard-field">Ruhe nach Nachtschicht · Stunden<input id="wizardNightRest" type="number" min="0" max="168" step="0.25" value="11" required></label>
@@ -42,6 +46,7 @@
           <label class="wizard-field">Zusammenhängende Wochenruhe · Stunden<input id="wizardWeeklyRest" type="number" min="0" max="168" step="0.25" value="36" required></label>
         </div>
         <p class="muted">Standard: 11 Stunden tägliche Ruhe und 36 Stunden zusammenhängende Ruhe je Kalenderwoche (Montag–Sonntag), einschließlich der darin liegenden täglichen Ruhe, nicht 36 + 11 Stunden. Das ist keine rollierende Siebentageregel; Randdienste müssen vollständig sein. 0 deaktiviert die Wochenruhe. Neue Projekte bevorzugen Dienstblöcke und zusammenhängende Freizeit als weiches Ziel (Gewicht 100), ohne zusätzliche maximale Blocklänge oder Garantie der längsten Freizeit. Weitere Regeln stehen nach der Einrichtung unter „Regeln & Bedarf“ zur Verfügung.</p>
+        </details>
         <div id="wizardSummary" class="wizard-summary" aria-live="polite"></div>
         <label class="wizard-check"><input id="wizardRulesConfirmed" type="checkbox" required><span>Ich habe die gewählten Planungsregeln geprüft und bestätige sie für dieses Team.</span></label>
         <label class="wizard-check"><input id="wizardApprovalsConfirmed" type="checkbox"><span>Alle genannten Personen dürfen alle angelegten Funktionen ohne zusätzliche Qualifikationsnachweise ausführen. Ohne diese Bestätigung erteile ich die Freigaben später einzeln in der Teammatrix.</span></label>
@@ -85,16 +90,22 @@
       else item.removeAttribute('aria-current');
     });
     get('wizardBack').hidden = step === 0;
-    get('wizardNext').hidden = step === 2;
-    get('wizardCreate').hidden = step !== 2;
+    get('wizardNext').hidden = step === steps.length - 1;
+    get('wizardCreate').hidden = step !== steps.length - 1;
     showError('');
-    steps[step].querySelector('h3').focus();
-    if (step === 2) updateSummary();
+    steps[step].querySelector('h3').focus({preventScroll: true});
+    dialog.scrollTop = 0;
+    if (step === steps.length - 1) updateSummary();
   }
   function invalid(input, message) {
     input.setAttribute('aria-invalid', 'true');
+    // Reveal the existing input, including native unadmitted number text.
+    for (let parent = input.parentElement; parent && parent !== dialog; parent = parent.parentElement) {
+      if (parent.tagName === 'DETAILS') parent.open = true;
+    }
     showError(message);
-    input.focus();
+    input.focus({preventScroll: true});
+    input.scrollIntoView({block: 'center'});
     return false;
   }
   function validateInputs(section) {
@@ -138,20 +149,25 @@
       const names = lines(get('wizardPositions').value);
       if (!names.length || names.length > 100 || names.some(name => name.length > 120)) return invalid(get('wizardPositions'), 'Bitte 1 bis 100 Funktionen mit höchstens 120 Zeichen pro Name eintragen.');
       if (new Set(names.map(name => name.toLocaleLowerCase())).size !== names.length) return invalid(get('wizardPositions'), 'Jede Funktion benötigt einen unterscheidbaren Namen.');
+      const positionsChanged = names.length !== positionNames.length || names.some((name, index) => name !== positionNames[index]);
       positionNames = names;
-      templates.forEach(template => {
-        template.demands = positionNames.map(name => template.demands.find(demand => demand.name === name) || {name, minimum: 1, maximum: 1});
-      });
-      if (!templates.length) templates.push(newTemplate());
-      renderTemplates();
+      if (positionsChanged || !templates.length) {
+        templates.forEach(template => {
+          template.demands = positionNames.map(name => template.demands.find(demand => demand.name === name) || {name, minimum: 1, maximum: 1});
+        });
+        if (!templates.length) templates.push(newTemplate());
+        renderTemplates();
+      }
     }
     if (step === 2) {
-      for (const template of templates) {
-        if (!template.name.trim()) { showError('Bitte jeder Schichtvorlage einen Namen geben.'); return false; }
-        if (!template.weekdays.length) { showError(`Für „${template.name}“ mindestens einen Wochentag auswählen.`); return false; }
-        if (template.start_time === template.end_time) { showError(`Für „${template.name}“ unterschiedliche Start- und Endzeiten eingeben.`); return false; }
-        if (template.demands.some(demand => demand.minimum > demand.maximum)) { showError(`Für „${template.name}“ muss die Höchstbesetzung mindestens der Mindestbesetzung entsprechen.`); return false; }
-        if (!template.demands.some(demand => demand.maximum > 0)) { showError(`Für „${template.name}“ wird mindestens eine Funktion mit einer Höchstbesetzung über null benötigt.`); return false; }
+      for (const [index, template] of templates.entries()) {
+        const box = get('wizardTemplates').children[index];
+        if (!template.name.trim()) return invalid(box.querySelector('[data-field="name"]'), 'Bitte jeder Schichtvorlage einen Namen geben.');
+        if (!template.weekdays.length) return invalid(box.querySelector('[data-weekday="0"]'), `Für „${template.name}“ mindestens einen Wochentag auswählen.`);
+        if (template.start_time === template.end_time) return invalid(box.querySelector('[data-field="end"]'), `Für „${template.name}“ unterschiedliche Start- und Endzeiten eingeben.`);
+        const excess = template.demands.findIndex(demand => demand.minimum > demand.maximum);
+        if (excess >= 0) return invalid(box.querySelector(`[data-field="maximum"][data-position="${excess}"]`), `Für „${template.name}“ muss die Höchstbesetzung mindestens der Mindestbesetzung entsprechen.`);
+        if (!template.demands.some(demand => demand.maximum > 0)) return invalid(box.querySelector('[data-field="maximum"]'), `Für „${template.name}“ wird mindestens eine Funktion mit einer Höchstbesetzung über null benötigt.`);
       }
     }
     return true;
@@ -159,67 +175,87 @@
   function newTemplate() {
     return {name: templates.length ? `Schicht ${templates.length + 1}` : 'Tagschicht', kind: 'day', start_time: '08:00', end_time: '16:00', weekdays: [0, 1, 2, 3, 4], demands: positionNames.map(name => ({name, minimum: 1, maximum: 1}))};
   }
+  const templateElements = new WeakMap(), demandElements = new WeakMap();
+  function createTemplateElement(template) {
+    const box = node('fieldset');
+    box.className = 'wizard-template';
+    node('legend', '', box);
+    const grid = node('div', undefined, box);
+    grid.className = 'wizard-grid';
+    const field = (label, key, type) => {
+      const wrapper = node('label', label, grid);
+      wrapper.className = 'wizard-field';
+      const input = node('input', undefined, wrapper);
+      input.type = type; input.value = template[key]; input.required = true;
+      input.dataset.field = key.replace('_time', '');
+      if (type === 'text') input.maxLength = 120;
+      input.addEventListener('input', () => { template[key] = input.value; updateSummary(); });
+    };
+    field('Bezeichnung', 'name', 'text');
+    const kindLabel = node('label', 'Dienstart', grid);
+    kindLabel.className = 'wizard-field';
+    const kind = node('select', undefined, kindLabel);
+    kind.dataset.field = 'kind';
+    for (const [value, text] of [['day', 'Tag'], ['night', 'Nacht']]) {
+      const option = node('option', text, kind); option.value = value;
+    }
+    kind.value = template.kind;
+    kind.addEventListener('change', () => { template.kind = kind.value; });
+    field('Beginn', 'start_time', 'time'); field('Ende', 'end_time', 'time');
+    const days = node('fieldset', undefined, box);
+    days.className = 'wizard-weekdays'; node('legend', 'Wochentage', days);
+    weekdays.forEach((name, day) => {
+      const label = node('label', undefined, days);
+      const check = node('input', undefined, label); check.type = 'checkbox'; check.checked = template.weekdays.includes(day);
+      check.dataset.weekday = day;
+      node('span', name, label);
+      check.addEventListener('change', () => {
+        template.weekdays = check.checked ? [...template.weekdays, day].sort() : template.weekdays.filter(value => value !== day);
+        updateSummary();
+      });
+    });
+    node('div', undefined, box).className = 'wizard-demands';
+    const remove = node('button', 'Vorlage entfernen', box); remove.type = 'button'; remove.className = 'secondary';
+    remove.addEventListener('click', () => { templates.splice(templates.indexOf(template), 1); renderTemplates(); updateSummary(); });
+    templateElements.set(template, box);
+    return box;
+  }
   function renderTemplates() {
     const parent = get('wizardTemplates');
-    parent.replaceChildren();
+    const retained = new Set(templates.map(template => templateElements.get(template)));
+    for (const box of Array.from(parent.children)) if (!retained.has(box)) box.remove();
     templates.forEach((template, index) => {
-      const box = node('fieldset', undefined, parent);
-      box.className = 'wizard-template';
-      node('legend', `Schichtvorlage ${index + 1}`, box);
-      const grid = node('div', undefined, box);
-      grid.className = 'wizard-grid';
-      const field = (label, key, type, min, max) => {
-        const wrapper = node('label', label, grid);
-        wrapper.className = 'wizard-field';
-        const input = node('input', undefined, wrapper);
-        input.type = type; input.value = template[key]; input.required = true;
-        input.dataset.field = key.replace('_time', '');
-        if (min !== undefined) input.min = min;
-        if (max !== undefined) input.max = max;
-        if (type === 'text') input.maxLength = 120;
-        input.addEventListener('input', () => { template[key] = input.value; updateSummary(); });
-      };
-      field('Bezeichnung', 'name', 'text');
-      const kindLabel = node('label', 'Dienstart', grid);
-      kindLabel.className = 'wizard-field';
-      const kind = node('select', undefined, kindLabel);
-      kind.dataset.field = 'kind';
-      for (const [value, text] of [['day', 'Tag'], ['night', 'Nacht']]) {
-        const option = node('option', text, kind); option.value = value;
-      }
-      kind.value = template.kind;
-      kind.addEventListener('change', () => { template.kind = kind.value; });
-      field('Beginn', 'start_time', 'time'); field('Ende', 'end_time', 'time');
-      const days = node('fieldset', undefined, box);
-      days.className = 'wizard-weekdays'; node('legend', 'Wochentage', days);
-      weekdays.forEach((name, day) => {
-        const label = node('label', undefined, days);
-        const check = node('input', undefined, label); check.type = 'checkbox'; check.checked = template.weekdays.includes(day);
-        check.setAttribute('aria-label', `${name}, Schichtvorlage ${index + 1}`);
-        check.dataset.weekday = day;
-        node('span', name, label);
-        check.addEventListener('change', () => {
-          template.weekdays = check.checked ? [...template.weekdays, day].sort() : template.weekdays.filter(value => value !== day);
-          updateSummary();
-        });
-      });
-      const needs = node('div', undefined, box); needs.className = 'wizard-demands';
+      const box = templateElements.get(template) || createTemplateElement(template);
+      if (parent.children[index] !== box) parent.insertBefore(box, parent.children[index] || null);
+      box.querySelector(':scope > legend').textContent = `Schichtvorlage ${index + 1}`;
+      for (const check of box.querySelectorAll('[data-weekday]')) check.setAttribute('aria-label', `${weekdays[check.dataset.weekday]}, Schichtvorlage ${index + 1}`);
+      const needs = box.querySelector('.wizard-demands');
+      const retainedDemands = new Set(template.demands.map(demand => demandElements.get(demand)));
+      for (const row of Array.from(needs.children)) if (!retainedDemands.has(row)) row.remove();
       template.demands.forEach((demand, position) => {
-        const row = node('div', undefined, needs); row.className = 'wizard-demand';
-        node('strong', demand.name, row);
-        for (const [key, text] of [['minimum', 'Minimum'], ['maximum', 'Maximum']]) {
-          const label = node('label', text, row); label.className = 'wizard-field';
-          const input = node('input', undefined, label); input.type = 'number'; input.min = 0; input.max = 1000; input.step = 1; input.required = true; input.value = demand[key];
+        let row = demandElements.get(demand);
+        if (!row) {
+          row = node('div'); row.className = 'wizard-demand';
+          node('strong', demand.name, row);
+          for (const [key, text] of [['minimum', 'Minimum'], ['maximum', 'Maximum']]) {
+            const label = node('label', text, row); label.className = 'wizard-field';
+            const input = node('input', undefined, label); input.type = 'number'; input.min = 0; input.max = 1000; input.step = 1; input.required = true; input.value = demand[key];
+            input.dataset.field = key;
+            input.addEventListener('input', () => { demand[key] = input.value === '' ? NaN : Number(input.value); updateSummary(); });
+          }
+          demandElements.set(demand, row);
+        }
+        // Keep native, possibly unadmitted text in the existing inputs.
+        if (needs.children[position] !== row) needs.insertBefore(row, needs.children[position] || null);
+        for (const input of row.querySelectorAll('input')) {
+          const text = input.dataset.field === 'minimum' ? 'Minimum' : 'Maximum';
           input.setAttribute('aria-label', `${demand.name} ${text}, Schichtvorlage ${index + 1}`);
-          input.dataset.position = position; input.dataset.field = key;
-          input.addEventListener('input', () => { demand[key] = input.value === '' ? NaN : Number(input.value); updateSummary(); });
+          input.dataset.position = position;
         }
       });
-      if (templates.length > 1) {
-        const remove = node('button', 'Vorlage entfernen', box); remove.type = 'button'; remove.className = 'secondary';
-        remove.setAttribute('aria-label', `Schichtvorlage ${index + 1} entfernen`);
-        remove.addEventListener('click', () => { templates.splice(index, 1); renderTemplates(); updateSummary(); });
-      }
+      const remove = box.querySelector(':scope > button');
+      remove.hidden = templates.length <= 1;
+      remove.setAttribute('aria-label', `Schichtvorlage ${index + 1} entfernen`);
     });
     get('wizardAddTemplate').disabled = templates.length >= 32;
   }
@@ -227,7 +263,22 @@
     return {min_rest_hours: Number(get('wizardMinRest').value), after_night_rest_hours: Number(get('wizardNightRest').value), max_consecutive_work_days: Number(get('wizardWorkDays').value), max_consecutive_nights: Number(get('wizardNights').value), max_daily_hours: Number(get('wizardDailyHours').value), max_weekly_hours: Number(get('wizardMaxWeeklyHours').value), weekly_rest_hours: Number(get('wizardWeeklyRest').value)};
   }
   function updateSummary() {
-    if (step !== 2) return;
+    if (step !== steps.length - 1) return;
+    const summary = get('wizardRuleValues');
+    summary.replaceChildren();
+    for (const [id, label, unit] of [
+      ['wizardMinRest', 'Mindestruhe', 'Stunden'],
+      ['wizardNightRest', 'Ruhe nach Nachtschicht', 'Stunden'],
+      ['wizardWorkDays', 'Arbeitstage in Folge · höchstens', 'Tage'],
+      ['wizardNights', 'Nächte in Folge · höchstens', 'Nächte'],
+      ['wizardDailyHours', 'Arbeitszeit pro Tag · höchstens', 'Stunden'],
+      ['wizardMaxWeeklyHours', 'Arbeitszeit pro Kalenderwoche · höchstens', 'Stunden'],
+      ['wizardWeeklyRest', 'Zusammenhängende Wochenruhe', 'Stunden'],
+    ]) {
+      const row = node('div', undefined, summary), input = get(id);
+      node('dt', label, row);
+      node('dd', input.validity.valid ? `${input.value} ${unit}` : 'Bitte prüfen', row);
+    }
     const start = get('wizardStart').value, end = get('wizardEnd').value;
     const dayCount = (utcDate(end) - utcDate(start)) / 86400000 + 1;
     const startDay = (utcDate(start).getUTCDay() + 6) % 7;
@@ -258,6 +309,21 @@
   });
   get('wizardCancel').addEventListener('click', () => { if (!busy) dialog.close(); });
   dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+  dialog.addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    const controls = Array.from(dialog.querySelectorAll('button, input, select, textarea, summary')).filter(control => {
+      if (control.disabled || control.closest('[hidden]') || !control.getClientRects().length) return false;
+      for (let parent = control.parentElement; parent && parent !== dialog; parent = parent.parentElement) {
+        if (parent.tagName === 'DETAILS' && !parent.open && !parent.querySelector(':scope > summary')?.contains(control)) return false;
+      }
+      return true;
+    });
+    const first = controls[0], last = controls[controls.length - 1];
+    if (first && ((event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last))) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+  });
   get('wizardBack').addEventListener('click', () => gotoStep(Math.max(0, step - 1)));
   get('wizardNext').addEventListener('click', () => { if (validateStep()) gotoStep(step + 1); });
   get('wizardAddTemplate').addEventListener('click', () => {
@@ -265,7 +331,7 @@
     templates.push(newTemplate()); renderTemplates(); updateSummary();
     get('wizardTemplates').lastElementChild.querySelector('input').focus();
   });
-  for (const input of steps[2].querySelectorAll('input[type=number]')) input.addEventListener('input', () => {
+  for (const input of steps[3].querySelectorAll('input[type=number]')) input.addEventListener('input', () => {
     get('wizardRulesConfirmed').checked = false;
     get('wizardContextConfirmed').checked = false;
     updateSummary();
@@ -280,7 +346,7 @@
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (busy) return;
-    if (step < 2) { if (validateStep()) gotoStep(step + 1); return; }
+    if (step < steps.length - 1) { if (validateStep()) gotoStep(step + 1); return; }
     if (!validateStep()) return;
     const payload = {project_name: get('wizardName').value.trim(), period_start: get('wizardStart').value, period_end: get('wizardEnd').value, timezone: get('wizardTimezone').value.trim(), people: readPeople(), positions: positionNames.map(name => ({name})), shift_templates: templates.map(template => ({name: template.name.trim(), kind: template.kind, start_time: template.start_time, end_time: template.end_time, weekdays: template.weekdays, demands: template.demands.map((demand, position) => ({position, minimum: demand.minimum, maximum: demand.maximum}))})), rules: ruleValues(), rules_confirmed: get('wizardRulesConfirmed').checked, approvals_confirmed: get('wizardApprovalsConfirmed').checked, context_duty_free_confirmed: get('wizardContextConfirmed').checked};
     busy = true;
